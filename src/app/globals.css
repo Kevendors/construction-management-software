@@ -1,0 +1,183 @@
+@import "tailwindcss";
+
+/*
+  SiteHub design system — construction/architecture firm.
+  Slate neutrals + amber (construction) accent. Light default, dark supported.
+*/
+
+:root {
+  --radius: 0.625rem;
+
+  --background: hsl(210 20% 98%);
+  --foreground: hsl(222 47% 11%);
+
+  --card: hsl(0 0% 100%);
+  --card-foreground: hsl(222 47% 11%);
+
+  --popover: hsl(0 0% 100%);
+  --popover-foreground: hsl(222 47% 11%);
+
+  /* primary = deep slate-blue (office/architecture) */
+  --primary: hsl(222 47% 20%);
+  --primary-foreground: hsl(210 40% 98%);
+
+  --secondary: hsl(210 16% 93%);
+  --secondary-foreground: hsl(222 47% 20%);
+
+  --muted: hsl(210 16% 93%);
+  --muted-foreground: hsl(215 16% 47%);
+
+  /* accent = amber (construction / hi-vis) */
+  --accent: hsl(38 92% 50%);
+  --accent-foreground: hsl(222 47% 11%);
+
+  --destructive: hsl(0 72% 51%);
+  --destructive-foreground: hsl(210 40% 98%);
+
+  --success: hsl(142 71% 38%);
+  --warning: hsl(38 92% 50%);
+
+  --border: hsl(214 20% 88%);
+  --input: hsl(214 20% 88%);
+  --ring: hsl(222 47% 30%);
+
+  /* chart palette */
+  --chart-1: hsl(222 47% 35%);
+  --chart-2: hsl(38 92% 50%);
+  --chart-3: hsl(199 89% 48%);
+  --chart-4: hsl(142 71% 38%);
+  --chart-5: hsl(280 60% 55%);
+
+  /* sidebar */
+  --sidebar: hsl(222 47% 13%);
+  --sidebar-foreground: hsl(210 30% 88%);
+  --sidebar-muted: hsl(217 33% 60%);
+  --sidebar-accent: hsl(217 33% 22%);
+  --sidebar-border: hsl(217 33% 20%);
+  --sidebar-ring: hsl(38 92% 50%);
+}
+
+.dark {
+  --background: hsl(222 47% 8%);
+  --foreground: hsl(210 40% 96%);
+
+  --card: hsl(222 47% 11%);
+  --card-foreground: hsl(210 40% 96%);
+
+  --popover: hsl(222 47% 11%);
+  --popover-foreground: hsl(210 40% 96%);
+
+  --primary: hsl(210 40% 96%);
+  --primary-foreground: hsl(222 47% 11%);
+
+  --secondary: hsl(217 33% 18%);
+  --secondary-foreground: hsl(210 40% 96%);
+
+  --muted: hsl(217 33% 18%);
+  --muted-foreground: hsl(215 20% 65%);
+
+  --accent: hsl(38 92% 50%);
+  --accent-foreground: hsl(222 47% 11%);
+
+  --destructive: hsl(0 63% 45%);
+  --destructive-foreground: hsl(210 40% 98%);
+
+  --success: hsl(142 65% 45%);
+  --warning: hsl(38 92% 55%);
+
+  --border: hsl(217 33% 20%);
+  --input: hsl(217 33% 22%);
+  --ring: hsl(212 30% 65%);
+
+  --chart-1: hsl(210 70% 60%);
+  --chart-2: hsl(38 92% 55%);
+  --chart-3: hsl(199 89% 60%);
+  --chart-4: hsl(142 65% 50%);
+  --chart-5: hsl(280 65% 65%);
+
+  --sidebar: hsl(222 47% 6%);
+  --sidebar-foreground: hsl(210 30% 88%);
+  --sidebar-muted: hsl(217 33% 55%);
+  --sidebar-accent: hsl(217 33% 16%);
+  --sidebar-border: hsl(217 33% 14%);
+  --sidebar-ring: hsl(38 92% 50%);
+}
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-muted: var(--sidebar-muted);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+}
+
+* {
+  border-color: var(--border);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* thin scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+/* print: strip the app chrome so only the document remains */
+@media print {
+  [data-app-chrome] {
+    display: none !important;
+  }
+  main {
+    padding: 0 !important;
+  }
+  body {
+    background: #fff !important;
+  }
+  @page {
+    size: A4;
+    margin: 14mm;
+  }
+}

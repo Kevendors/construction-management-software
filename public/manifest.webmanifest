@@ -1,0 +1,18 @@
+{
+  "name": "SiteHub — Construction & Design PM",
+  "short_name": "SiteHub",
+  "description": "Internal construction & design project-management platform for Charu.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f1f3a",
+  "theme_color": "#0f1f3a",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
