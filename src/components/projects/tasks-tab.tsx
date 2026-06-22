@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ChevronRight, Plus } from "lucide-react";
+import { ChevronRight, Pencil, Plus, Trash2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -22,13 +22,23 @@ function progressLabel(t: Task) {
   return `${t.progressValue} / ${t.progressTarget} ${t.unit}`;
 }
 
-function TaskRow({ task, child }: { task: Task; child?: boolean }) {
+function TaskRow({
+  task,
+  child,
+  onEdit,
+  onDelete,
+}: {
+  task: Task;
+  child?: boolean;
+  onEdit: (t: Task) => void;
+  onDelete: (t: Task) => void;
+}) {
   const meta = taskStatusMeta[task.status];
   const assignee = getUser(task.assigneeId);
   const pct = taskProgressPercent(task);
   return (
     <div
-      className={`flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center ${
+      className={`group flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center ${
         child ? "bg-secondary/30 pl-10" : ""
       }`}
     >
@@ -69,6 +79,20 @@ function TaskRow({ task, child }: { task: Task; child?: boolean }) {
             </p>
           )}
         </div>
+        <div className="flex items-center gap-0.5 sm:opacity-0 sm:transition-opacity sm:group-hover:opacity-100">
+          <Button size="icon" variant="ghost" className="h-7 w-7" aria-label="Edit task" onClick={() => onEdit(task)}>
+            <Pencil className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-7 w-7 text-muted-foreground hover:text-destructive"
+            aria-label="Delete task"
+            onClick={() => onDelete(task)}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </Button>
+        </div>
       </div>
     </div>
   );
@@ -77,17 +101,20 @@ function TaskRow({ task, child }: { task: Task; child?: boolean }) {
 const UNITS: ProgressUnit[] = ["percent", "numbers", "meter", "sqft", "lumpsum"];
 const STATUSES: TaskStatus[] = ["not_started", "ongoing", "delayed", "completed"];
 
-function AddTaskDialog({
+function TaskDialog({
   projectId,
   open,
   onClose,
+  editing,
 }: {
   projectId: string;
   open: boolean;
   onClose: () => void;
+  editing: Task | null;
 }) {
-  const { addTask } = useStore();
+  const { addTask, updateTask } = useStore();
   const today = new Date().toISOString().slice(0, 10);
+
   const [name, setName] = React.useState("");
   const [assigneeId, setAssigneeId] = React.useState(users[0]?.id ?? "");
   const [startDate, setStartDate] = React.useState(today);
@@ -97,22 +124,33 @@ function AddTaskDialog({
   const [progressValue, setProgressValue] = React.useState("0");
   const [progressTarget, setProgressTarget] = React.useState("100");
 
-  function reset() {
-    setName("");
-    setStatus("ongoing");
-    setUnit("percent");
-    setProgressValue("0");
-    setProgressTarget("100");
-    setStartDate(today);
-    setEndDate(today);
-  }
+  // Load the editing task's values when the dialog opens.
+  React.useEffect(() => {
+    if (!open) return;
+    if (editing) {
+      setName(editing.name);
+      setAssigneeId(editing.assigneeId ?? users[0]?.id ?? "");
+      setStartDate(editing.startDate);
+      setEndDate(editing.endDate);
+      setStatus(editing.status);
+      setUnit(editing.unit);
+      setProgressValue(String(editing.progressValue));
+      setProgressTarget(String(editing.progressTarget));
+    } else {
+      setName("");
+      setStatus("ongoing");
+      setUnit("percent");
+      setProgressValue("0");
+      setProgressTarget("100");
+      setStartDate(today);
+      setEndDate(today);
+    }
+  }, [open, editing, today]);
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) return;
-    addTask({
-      projectId,
-      parentId: null,
+    const fields = {
       name: name.trim(),
       assigneeId: assigneeId || null,
       startDate,
@@ -121,9 +159,9 @@ function AddTaskDialog({
       progressValue: Number(progressValue) || 0,
       progressTarget: Number(progressTarget) || 0,
       unit,
-      delayDays: 0,
-    });
-    reset();
+    };
+    if (editing) updateTask(editing.id, fields);
+    else addTask({ projectId, parentId: null, delayDays: 0, ...fields });
     onClose();
   }
 
@@ -131,20 +169,13 @@ function AddTaskDialog({
     <Dialog
       open={open}
       onClose={onClose}
-      title="Add Task"
-      description="Saved to this browser — survives refresh."
+      title={editing ? "Edit Task" : "Add Task"}
+      description="Saved to this browser — updates the completion gauge live."
     >
       <form onSubmit={submit} className="space-y-4">
         <div className="space-y-1.5">
           <Label htmlFor="t-name">Task name</Label>
-          <Input
-            id="t-name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="e.g. Roof waterproofing"
-            autoFocus
-            required
-          />
+          <Input id="t-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Roof waterproofing" autoFocus required />
         </div>
 
         <div className="grid grid-cols-2 gap-3">
@@ -152,23 +183,15 @@ function AddTaskDialog({
             <Label htmlFor="t-assignee">Assignee</Label>
             <Select id="t-assignee" value={assigneeId} onChange={(e) => setAssigneeId(e.target.value)}>
               {users.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.name}
-                </option>
+                <option key={u.id} value={u.id}>{u.name}</option>
               ))}
             </Select>
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="t-status">Status</Label>
-            <Select
-              id="t-status"
-              value={status}
-              onChange={(e) => setStatus(e.target.value as TaskStatus)}
-            >
+            <Select id="t-status" value={status} onChange={(e) => setStatus(e.target.value as TaskStatus)}>
               {STATUSES.map((s) => (
-                <option key={s} value={s}>
-                  {taskStatusMeta[s].label}
-                </option>
+                <option key={s} value={s}>{taskStatusMeta[s].label}</option>
               ))}
             </Select>
           </div>
@@ -190,9 +213,7 @@ function AddTaskDialog({
             <Label htmlFor="t-unit">Unit</Label>
             <Select id="t-unit" value={unit} onChange={(e) => setUnit(e.target.value as ProgressUnit)}>
               {UNITS.map((u) => (
-                <option key={u} value={u}>
-                  {u}
-                </option>
+                <option key={u} value={u}>{u}</option>
               ))}
             </Select>
           </div>
@@ -207,10 +228,8 @@ function AddTaskDialog({
         </div>
 
         <div className="flex justify-end gap-2 pt-2">
-          <Button type="button" variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button type="submit">Add Task</Button>
+          <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+          <Button type="submit">{editing ? "Save Changes" : "Add Task"}</Button>
         </div>
       </form>
     </Dialog>
@@ -219,8 +238,22 @@ function AddTaskDialog({
 
 export function TasksTab({ projectId }: { projectId: string }) {
   const all = useProjectTasks(projectId);
+  const { deleteTask } = useStore();
   const parents = all.filter((t) => t.parentId === null);
   const [open, setOpen] = React.useState(false);
+  const [editing, setEditing] = React.useState<Task | null>(null);
+
+  function openAdd() {
+    setEditing(null);
+    setOpen(true);
+  }
+  function openEdit(t: Task) {
+    setEditing(t);
+    setOpen(true);
+  }
+  function remove(t: Task) {
+    if (window.confirm(`Delete task “${t.name}”?`)) deleteTask(t.id);
+  }
 
   return (
     <div className="space-y-4">
@@ -229,7 +262,11 @@ export function TasksTab({ projectId }: { projectId: string }) {
           <CardTitle className="text-base">Project Timeline</CardTitle>
         </CardHeader>
         <CardContent>
-          <GanttChart tasks={parents} />
+          {parents.length ? (
+            <GanttChart tasks={parents} />
+          ) : (
+            <p className="py-10 text-center text-sm text-muted-foreground">No tasks yet.</p>
+          )}
         </CardContent>
       </Card>
 
@@ -238,7 +275,7 @@ export function TasksTab({ projectId }: { projectId: string }) {
           <p className="text-sm font-medium">
             {all.length} tasks · {parents.length} top-level
           </p>
-          <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
+          <Button size="sm" variant="outline" onClick={openAdd}>
             <Plus /> Add Task
           </Button>
         </div>
@@ -247,17 +284,22 @@ export function TasksTab({ projectId }: { projectId: string }) {
             const children = all.filter((t) => t.parentId === parent.id);
             return (
               <div key={parent.id} className="divide-y divide-border">
-                <TaskRow task={parent} />
+                <TaskRow task={parent} onEdit={openEdit} onDelete={remove} />
                 {children.map((c) => (
-                  <TaskRow key={c.id} task={c} child />
+                  <TaskRow key={c.id} task={c} child onEdit={openEdit} onDelete={remove} />
                 ))}
               </div>
             );
           })}
+          {parents.length === 0 && (
+            <p className="py-8 text-center text-sm text-muted-foreground">
+              No tasks yet — click “Add Task” to create one.
+            </p>
+          )}
         </CardContent>
       </Card>
 
-      <AddTaskDialog projectId={projectId} open={open} onClose={() => setOpen(false)} />
+      <TaskDialog projectId={projectId} open={open} onClose={() => setOpen(false)} editing={editing} />
     </div>
   );
 }

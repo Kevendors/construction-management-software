@@ -3,16 +3,28 @@
 import * as React from "react";
 import {
   dprs as seedDprs,
+  labourAttendance as seedAttendance,
+  salesInvoices as seedInvoices,
   siteInstructions as seedInstructions,
   tasks as seedTasks,
+  transactions as seedTxns,
 } from "@/lib/mock/data";
-import type { Dpr, Project, SiteInstruction, Task } from "@/lib/types";
+import type {
+  Dpr,
+  LabourAttendance,
+  Project,
+  SalesInvoice,
+  SiteInstruction,
+  Task,
+  Transaction,
+} from "@/lib/types";
 
 /**
  * Client-side data store backed by localStorage. Seed data (from the mock
- * layer) provides the baseline; user-created rows are persisted to the browser
- * so Add Task / New DPR / Site Instruction survive a page refresh — no backend
- * required. Swappable for Supabase later without changing the consuming UI.
+ * layer) provides the baseline; every create/edit in the Projects module is
+ * persisted to the browser so all project data — tasks, expenses, invoices,
+ * payments, attendance — updates live and survives a page refresh.
+ * Swappable for Supabase later without changing the consuming UI.
  */
 
 const LS_KEY = "sitehub:store:v1";
@@ -20,22 +32,47 @@ const LS_KEY = "sitehub:store:v1";
 interface AddedData {
   projects: Project[];
   tasks: Task[];
+  taskEdits: Record<string, Partial<Task>>;
+  taskDeletes: string[];
   dprs: Dpr[];
   instructions: SiteInstruction[];
+  transactions: Transaction[];
+  invoices: SalesInvoice[];
+  invoiceReceipts: Record<string, number>;
+  attendance: LabourAttendance[];
 }
 
-const EMPTY: AddedData = { projects: [], tasks: [], dprs: [], instructions: [] };
+const EMPTY: AddedData = {
+  projects: [],
+  tasks: [],
+  taskEdits: {},
+  taskDeletes: [],
+  dprs: [],
+  instructions: [],
+  transactions: [],
+  invoices: [],
+  invoiceReceipts: {},
+  attendance: [],
+};
 
 interface StoreValue {
-  /** User-created projects only (seed projects come from the server fetch). */
   addedProjects: Project[];
   tasks: Task[];
   dprs: Dpr[];
   instructions: SiteInstruction[];
+  transactions: Transaction[];
+  invoices: SalesInvoice[];
+  attendance: LabourAttendance[];
   addProject: (p: Omit<Project, "id">) => Project;
   addTask: (t: Omit<Task, "id">) => void;
+  updateTask: (id: string, patch: Partial<Task>) => void;
+  deleteTask: (id: string) => void;
   addDpr: (d: Omit<Dpr, "id">) => void;
   addInstruction: (s: Omit<SiteInstruction, "id">) => void;
+  addTransaction: (t: Omit<Transaction, "id">) => void;
+  addInvoice: (i: Omit<SalesInvoice, "id">) => void;
+  recordPayment: (invoiceId: string, amount: number) => void;
+  addAttendance: (a: Omit<LabourAttendance, "id">) => void;
 }
 
 const StoreContext = React.createContext<StoreValue | null>(null);
@@ -49,12 +86,18 @@ function loadAdded(): AddedData {
   try {
     const raw = window.localStorage.getItem(LS_KEY);
     if (!raw) return EMPTY;
-    const parsed = JSON.parse(raw) as Partial<AddedData>;
+    const p = JSON.parse(raw) as Partial<AddedData>;
     return {
-      projects: parsed.projects ?? [],
-      tasks: parsed.tasks ?? [],
-      dprs: parsed.dprs ?? [],
-      instructions: parsed.instructions ?? [],
+      projects: p.projects ?? [],
+      tasks: p.tasks ?? [],
+      taskEdits: p.taskEdits ?? {},
+      taskDeletes: p.taskDeletes ?? [],
+      dprs: p.dprs ?? [],
+      instructions: p.instructions ?? [],
+      transactions: p.transactions ?? [],
+      invoices: p.invoices ?? [],
+      invoiceReceipts: p.invoiceReceipts ?? {},
+      attendance: p.attendance ?? [],
     };
   } catch {
     return EMPTY;
@@ -62,90 +105,152 @@ function loadAdded(): AddedData {
 }
 
 export function ProjectStoreProvider({ children }: { children: React.ReactNode }) {
-  // Start empty so server and first client render match (no hydration mismatch);
-  // hydrate from localStorage right after mount.
+  // Start empty so server and first client render match; hydrate after mount.
   const [added, setAdded] = React.useState<AddedData>(EMPTY);
 
   React.useEffect(() => {
     setAdded(loadAdded());
   }, []);
 
-  const persist = React.useCallback((next: AddedData) => {
-    setAdded(next);
-    try {
-      window.localStorage.setItem(LS_KEY, JSON.stringify(next));
-    } catch {
-      /* storage full / unavailable — keep in-memory state */
-    }
+  const update = React.useCallback((updater: (prev: AddedData) => AddedData) => {
+    setAdded((prev) => {
+      const next = updater(prev);
+      try {
+        window.localStorage.setItem(LS_KEY, JSON.stringify(next));
+      } catch {
+        /* storage unavailable — keep in-memory */
+      }
+      return next;
+    });
   }, []);
+
+  const addProject = React.useCallback(
+    (p: Omit<Project, "id">): Project => {
+      const project: Project = { ...p, id: genId("proj") };
+      update((prev) => ({ ...prev, projects: [...prev.projects, project] }));
+      return project;
+    },
+    [update]
+  );
 
   const addTask = React.useCallback(
     (t: Omit<Task, "id">) =>
-      setAdded((prev) => {
-        const next = { ...prev, tasks: [...prev.tasks, { ...t, id: genId("task") }] };
-        try {
-          window.localStorage.setItem(LS_KEY, JSON.stringify(next));
-        } catch {}
-        return next;
-      }),
-    []
+      update((prev) => ({ ...prev, tasks: [...prev.tasks, { ...t, id: genId("task") }] })),
+    [update]
+  );
+
+  const updateTask = React.useCallback(
+    (id: string, patch: Partial<Task>) =>
+      update((prev) => ({
+        ...prev,
+        taskEdits: { ...prev.taskEdits, [id]: { ...prev.taskEdits[id], ...patch } },
+      })),
+    [update]
+  );
+
+  const deleteTask = React.useCallback(
+    (id: string) =>
+      update((prev) => ({
+        ...prev,
+        tasks: prev.tasks.filter((t) => t.id !== id),
+        taskDeletes: prev.taskDeletes.includes(id) ? prev.taskDeletes : [...prev.taskDeletes, id],
+      })),
+    [update]
   );
 
   const addDpr = React.useCallback(
     (d: Omit<Dpr, "id">) =>
-      setAdded((prev) => {
-        const next = { ...prev, dprs: [{ ...d, id: genId("dpr") }, ...prev.dprs] };
-        try {
-          window.localStorage.setItem(LS_KEY, JSON.stringify(next));
-        } catch {}
-        return next;
-      }),
-    []
+      update((prev) => ({ ...prev, dprs: [{ ...d, id: genId("dpr") }, ...prev.dprs] })),
+    [update]
   );
 
   const addInstruction = React.useCallback(
     (s: Omit<SiteInstruction, "id">) =>
-      setAdded((prev) => {
-        const next = {
-          ...prev,
-          instructions: [{ ...s, id: genId("si") }, ...prev.instructions],
-        };
-        try {
-          window.localStorage.setItem(LS_KEY, JSON.stringify(next));
-        } catch {}
-        return next;
-      }),
-    []
+      update((prev) => ({
+        ...prev,
+        instructions: [{ ...s, id: genId("si") }, ...prev.instructions],
+      })),
+    [update]
   );
 
-  const addProject = React.useCallback((p: Omit<Project, "id">): Project => {
-    const project: Project = { ...p, id: genId("proj") };
-    setAdded((prev) => {
-      const next = { ...prev, projects: [...prev.projects, project] };
-      try {
-        window.localStorage.setItem(LS_KEY, JSON.stringify(next));
-      } catch {}
-      return next;
+  const addTransaction = React.useCallback(
+    (t: Omit<Transaction, "id">) =>
+      update((prev) => ({
+        ...prev,
+        transactions: [{ ...t, id: genId("txn") }, ...prev.transactions],
+      })),
+    [update]
+  );
+
+  const addInvoice = React.useCallback(
+    (i: Omit<SalesInvoice, "id">) =>
+      update((prev) => ({ ...prev, invoices: [{ ...i, id: genId("inv") }, ...prev.invoices] })),
+    [update]
+  );
+
+  const recordPayment = React.useCallback(
+    (invoiceId: string, amount: number) =>
+      update((prev) => ({
+        ...prev,
+        invoiceReceipts: {
+          ...prev.invoiceReceipts,
+          [invoiceId]: (prev.invoiceReceipts[invoiceId] ?? 0) + amount,
+        },
+      })),
+    [update]
+  );
+
+  const addAttendance = React.useCallback(
+    (a: Omit<LabourAttendance, "id">) =>
+      update((prev) => ({
+        ...prev,
+        attendance: [{ ...a, id: genId("la") }, ...prev.attendance],
+      })),
+    [update]
+  );
+
+  const value = React.useMemo<StoreValue>(() => {
+    const tasks = [...seedTasks, ...added.tasks]
+      .filter((t) => !added.taskDeletes.includes(t.id))
+      .map((t) => (added.taskEdits[t.id] ? { ...t, ...added.taskEdits[t.id] } : t));
+
+    const invoices = [...seedInvoices, ...added.invoices].map((inv) => {
+      const extra = added.invoiceReceipts[inv.id] ?? 0;
+      return extra ? { ...inv, received: inv.received + extra } : inv;
     });
-    return project;
-  }, []);
 
-  // keep persist referenced (used by potential future bulk ops) without lint noise
-  void persist;
-
-  const value = React.useMemo<StoreValue>(
-    () => ({
+    return {
       addedProjects: added.projects,
-      tasks: [...seedTasks, ...added.tasks],
+      tasks,
       dprs: [...added.dprs, ...seedDprs],
       instructions: [...added.instructions, ...seedInstructions],
+      transactions: [...added.transactions, ...seedTxns],
+      invoices,
+      attendance: [...added.attendance, ...seedAttendance],
       addProject,
       addTask,
+      updateTask,
+      deleteTask,
       addDpr,
       addInstruction,
-    }),
-    [added, addProject, addTask, addDpr, addInstruction]
-  );
+      addTransaction,
+      addInvoice,
+      recordPayment,
+      addAttendance,
+    };
+  }, [
+    added,
+    addProject,
+    addTask,
+    updateTask,
+    deleteTask,
+    addDpr,
+    addInstruction,
+    addTransaction,
+    addInvoice,
+    recordPayment,
+    addAttendance,
+  ]);
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
 }
@@ -175,6 +280,34 @@ export function useProjectInstructions(projectId: string) {
   return instructions
     .filter((s) => s.projectId === projectId)
     .sort((a, b) => +new Date(b.date) - +new Date(a.date));
+}
+
+export function useProjectTransactions(projectId: string) {
+  const { transactions } = useStore();
+  return transactions.filter((t) => t.projectId === projectId);
+}
+
+export function useProjectInvoices(projectId: string) {
+  const { invoices } = useStore();
+  return invoices
+    .filter((i) => i.projectId === projectId)
+    .sort((a, b) => +new Date(b.date) - +new Date(a.date));
+}
+
+/** Project-scoped attendance aggregated per day, most recent 7 days. */
+export function useProjectAttendance(projectId: string) {
+  const { attendance } = useStore();
+  const byDate = new Map<string, { date: string; present: number; absent: number }>();
+  for (const a of attendance) {
+    if (a.projectId !== projectId) continue;
+    const cur = byDate.get(a.date) ?? { date: a.date, present: 0, absent: 0 };
+    cur.present += a.present;
+    cur.absent += a.absent;
+    byDate.set(a.date, cur);
+  }
+  return Array.from(byDate.values())
+    .sort((a, b) => +new Date(a.date) - +new Date(b.date))
+    .slice(-7);
 }
 
 /** Resolve a user-created project by id (returns null for seed/unknown ids). */

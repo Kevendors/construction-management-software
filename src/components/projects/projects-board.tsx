@@ -235,12 +235,15 @@ function NewProjectDialog({
 }
 
 export function ProjectsBoard({ initial }: { initial: OverviewItem[] }) {
-  const { addedProjects, tasks } = useStore();
+  const { addedProjects, tasks, transactions } = useStore();
   const [open, setOpen] = React.useState(false);
 
   // Build cards for user-created projects, deriving margin/counts/progress live.
   const addedItems: OverviewItem[] = addedProjects.map((p) => {
     const projTasks = tasks.filter((t) => t.projectId === p.id);
+    const spent = transactions
+      .filter((t) => t.projectId === p.id && t.direction === "out")
+      .reduce((s, t) => s + t.amount, 0);
     const parents = projTasks.filter((t) => t.parentId === null);
     const counts: Record<TaskStatus, number> = {
       not_started: 0,
@@ -260,7 +263,7 @@ export function ProjectsBoard({ initial }: { initial: OverviewItem[] }) {
     return {
       project: { ...p, percentComplete: pct },
       client: clients.find((c) => c.id === p.clientId) ?? null,
-      margin: p.value, // no expenses recorded yet → margin = value
+      margin: p.value - spent, // live: value minus recorded expenses
       counts,
     };
   });

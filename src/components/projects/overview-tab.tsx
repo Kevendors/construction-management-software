@@ -1,6 +1,9 @@
 "use client";
 
+import * as React from "react";
+import { Plus, Receipt, IndianRupee, Wallet, Users } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -15,20 +18,23 @@ import { CompletionGauge } from "@/components/charts/completion-gauge";
 import { TaskStatusDonut } from "@/components/charts/task-status-donut";
 import { FinancialHealthChart, ExpenseCategoryChart, AttendanceChart } from "@/components/charts/bar-charts";
 import { CostCodePie } from "@/components/charts/cost-code-pie";
-import { attendance } from "@/lib/mock/data";
 import {
-  expenseByCategory,
-  expenseByCostCode,
-  getProject,
-  getProjectInvoices,
-  lineTotalWithTax,
-  projectPnL,
-  taskProgressPercent,
-} from "@/lib/mock/selectors";
-import { useAddedProject, useProjectTasks } from "@/lib/store/project-store";
+  AddAttendanceDialog,
+  AddExpenseDialog,
+  AddInvoiceDialog,
+  RecordPaymentDialog,
+} from "./project-dialogs";
+import { boqValue, getProject, lineTotalWithTax, taskProgressPercent } from "@/lib/mock/selectors";
+import {
+  useAddedProject,
+  useProjectAttendance,
+  useProjectInvoices,
+  useProjectTasks,
+  useProjectTransactions,
+} from "@/lib/store/project-store";
 import { taskStatusMeta } from "@/lib/labels";
 import { formatINR } from "@/lib/utils";
-import type { ProgressUnit, TaskStatus } from "@/lib/types";
+import type { CostCode, ExpenseCategory, ProgressUnit, TaskStatus } from "@/lib/types";
 
 function progressText(value: number, target: number, unit: ProgressUnit) {
   if (unit === "percent" || unit === "lumpsum") return `${Math.round(taskProgressPercentRaw(value, target))}%`;
@@ -39,28 +45,21 @@ function taskProgressPercentRaw(value: number, target: number) {
 }
 
 export function OverviewTab({ projectId }: { projectId: string }) {
-  // Seed projects have full P&L data; user-created ones start at zero.
   const addedProject = useAddedProject(projectId);
-  const pnl = getProject(projectId)
-    ? projectPnL(projectId)
-    : {
-        projectValue: addedProject?.value ?? 0,
-        totalExpense: 0,
-        salesInvoiced: 0,
-        salesReceived: 0,
-        boqValue: 0,
-        margin: addedProject?.value ?? 0,
-        marginPct: 0,
-      };
-  const byCat = expenseByCategory(projectId);
-  const byCode = expenseByCostCode(projectId);
-  const invoices = getProjectInvoices(projectId);
+  const project = getProject(projectId) ?? addedProject;
 
-  // Tasks come from the live store so newly added tasks update the gauge,
-  // donut and schedule table immediately.
+  // Everything reads from the live store so all charts update on any edit.
   const allTasks = useProjectTasks(projectId);
-  const tasks = allTasks.filter((t) => t.parentId === null);
+  const txns = useProjectTransactions(projectId);
+  const invoices = useProjectInvoices(projectId);
+  const attendance = useProjectAttendance(projectId);
 
+  const [expenseOpen, setExpenseOpen] = React.useState(false);
+  const [invoiceOpen, setInvoiceOpen] = React.useState(false);
+  const [paymentOpen, setPaymentOpen] = React.useState(false);
+  const [attendanceOpen, setAttendanceOpen] = React.useState(false);
+
+  const tasks = allTasks.filter((t) => t.parentId === null);
   const counts = allTasks.reduce(
     (acc, t) => {
       acc[t.status]++;
@@ -68,25 +67,53 @@ export function OverviewTab({ projectId }: { projectId: string }) {
     },
     { not_started: 0, ongoing: 0, delayed: 0, completed: 0 } as Record<TaskStatus, number>
   );
-
   const completion = tasks.length
     ? Math.round(tasks.reduce((s, t) => s + taskProgressPercent(t), 0) / tasks.length)
     : 0;
+
+  const out = txns.filter((t) => t.direction === "out");
+  const catMap = new Map<ExpenseCategory, number>();
+  const codeMap = new Map<CostCode, number>();
+  for (const t of out) {
+    catMap.set(t.category, (catMap.get(t.category) ?? 0) + t.amount);
+    codeMap.set(t.costCode, (codeMap.get(t.costCode) ?? 0) + t.amount);
+  }
+  const byCat = Array.from(catMap, ([category, amount]) => ({ category, amount }));
+  const byCode = Array.from(codeMap, ([costCode, amount]) => ({ costCode, amount }));
 
   const invoicedTotal = invoices.reduce((s, i) => s + lineTotalWithTax(i.items, i.taxRate), 0);
   const receivedTotal = invoices.reduce((s, i) => s + i.received, 0);
   const pendingTotal = invoicedTotal - receivedTotal;
   const receivedPct = invoicedTotal > 0 ? (receivedTotal / invoicedTotal) * 100 : 0;
 
+  const totalExpense = out.reduce((s, t) => s + t.amount, 0);
   const financialHealth = [
-    { label: "Value", value: pnl.projectValue },
-    { label: "Expense", value: pnl.totalExpense },
-    { label: "Invoiced", value: pnl.salesInvoiced },
-    { label: "BOQ", value: pnl.boqValue },
+    { label: "Value", value: project?.value ?? 0 },
+    { label: "Expense", value: totalExpense },
+    { label: "Invoiced", value: invoicedTotal },
+    { label: "BOQ", value: boqValue(projectId) },
   ];
+
+  const nextInvoiceNumber = `INV-2026-${100 + invoices.length + 1}`;
 
   return (
     <div className="space-y-4">
+      {/* live-data action toolbar */}
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" variant="outline" onClick={() => setExpenseOpen(true)}>
+          <Wallet /> Add Expense
+        </Button>
+        <Button size="sm" variant="outline" onClick={() => setInvoiceOpen(true)}>
+          <Receipt /> Add Invoice
+        </Button>
+        <Button size="sm" variant="outline" onClick={() => setPaymentOpen(true)}>
+          <IndianRupee /> Record Payment
+        </Button>
+        <Button size="sm" variant="outline" onClick={() => setAttendanceOpen(true)}>
+          <Users /> Add Attendance
+        </Button>
+      </div>
+
       {/* top row: gauge + task donut + invoices KPI */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Card>
@@ -152,7 +179,11 @@ export function OverviewTab({ projectId }: { projectId: string }) {
             <CardTitle className="text-base">Total Expense by Category</CardTitle>
           </CardHeader>
           <CardContent>
-            <ExpenseCategoryChart data={byCat} />
+            {byCat.length ? (
+              <ExpenseCategoryChart data={byCat} />
+            ) : (
+              <p className="py-10 text-center text-sm text-muted-foreground">No expenses recorded yet.</p>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -164,7 +195,11 @@ export function OverviewTab({ projectId }: { projectId: string }) {
             <CardTitle className="text-base">Expense Analysis by Cost Code</CardTitle>
           </CardHeader>
           <CardContent>
-            <CostCodePie data={byCode} />
+            {byCode.length ? (
+              <CostCodePie data={byCode} />
+            ) : (
+              <p className="py-10 text-center text-sm text-muted-foreground">No expenses recorded yet.</p>
+            )}
           </CardContent>
         </Card>
         <Card>
@@ -172,7 +207,13 @@ export function OverviewTab({ projectId }: { projectId: string }) {
             <CardTitle className="text-base">Labour Attendance · last 7 days</CardTitle>
           </CardHeader>
           <CardContent>
-            <AttendanceChart data={attendance} />
+            {attendance.length ? (
+              <AttendanceChart data={attendance} />
+            ) : (
+              <p className="py-10 text-center text-sm text-muted-foreground">
+                No attendance logged yet.
+              </p>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -229,10 +270,28 @@ export function OverviewTab({ projectId }: { projectId: string }) {
                   </TableRow>
                 );
               })}
+              {tasks.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={5} className="py-6 text-center text-sm text-muted-foreground">
+                    No tasks yet — add one from the Tasks tab.
+                  </TableCell>
+                </TableRow>
+              )}
             </TableBody>
           </Table>
         </CardContent>
       </Card>
+
+      <AddExpenseDialog projectId={projectId} open={expenseOpen} onClose={() => setExpenseOpen(false)} />
+      <AddInvoiceDialog
+        projectId={projectId}
+        clientId={project?.clientId ?? ""}
+        open={invoiceOpen}
+        onClose={() => setInvoiceOpen(false)}
+        nextNumber={nextInvoiceNumber}
+      />
+      <RecordPaymentDialog projectId={projectId} open={paymentOpen} onClose={() => setPaymentOpen(false)} />
+      <AddAttendanceDialog projectId={projectId} open={attendanceOpen} onClose={() => setAttendanceOpen(false)} />
     </div>
   );
 }
