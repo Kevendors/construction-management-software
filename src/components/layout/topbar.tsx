@@ -1,8 +1,9 @@
 "use client";
 
-import { Menu, Search } from "lucide-react";
+import { Menu } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { Notifications } from "./notifications";
+import { GlobalSearch } from "./global-search";
 import { currentUser } from "@/lib/mock/data";
 import { roleLabel } from "@/lib/labels";
 
@@ -20,13 +21,7 @@ export function Topbar({ onMenu }: { onMenu: () => void }) {
         <Menu className="h-5 w-5" />
       </button>
 
-      <div className="relative hidden max-w-sm flex-1 sm:block">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <input
-          placeholder="Search projects, clients, drawings…"
-          className="h-9 w-full rounded-md border border-input bg-background pl-9 pr-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        />
-      </div>
+      <GlobalSearch />
 
       <div className="ml-auto flex items-center gap-2">
         <Notifications />
