@@ -165,6 +165,18 @@ body {
   scrollbar-color: var(--border) transparent;
 }
 
+/* Recharts: suppress the browser's default focus box on clicked chart
+   segments (pie sectors, bars, etc.) — it renders as a stray black outline. */
+.recharts-wrapper:focus,
+.recharts-wrapper *:focus,
+.recharts-surface:focus,
+.recharts-sector:focus,
+.recharts-layer:focus,
+.recharts-pie:focus,
+.recharts-pie-sector:focus {
+  outline: none;
+}
+
 /* print: strip the app chrome so only the document remains */
 @media print {
   [data-app-chrome] {
