@@ -166,15 +166,18 @@ body {
 }
 
 /* Recharts: suppress the browser's default focus box on clicked chart
-   segments (pie sectors, bars, etc.) — it renders as a stray black outline. */
+   segments (pie sectors, bars, etc.) — it renders as a stray black outline.
+   The focusable element is the <svg class="recharts-surface" tabindex="0">. */
 .recharts-wrapper:focus,
+.recharts-wrapper:focus-visible,
 .recharts-wrapper *:focus,
+.recharts-wrapper *:focus-visible,
 .recharts-surface:focus,
+.recharts-surface:focus-visible,
+svg.recharts-surface:focus,
 .recharts-sector:focus,
-.recharts-layer:focus,
-.recharts-pie:focus,
-.recharts-pie-sector:focus {
-  outline: none;
+.recharts-layer:focus {
+  outline: none !important;
 }
 
 /* print: strip the app chrome so only the document remains */
