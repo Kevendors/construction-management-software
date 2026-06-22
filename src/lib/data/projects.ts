@@ -4,7 +4,7 @@ import type { Client, Project, TaskStatus } from "@/lib/types";
 import type { ProjectPnL } from "@/lib/mock/selectors";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createClient as createSupabase } from "@/lib/supabase/server";
-import { computeProjectPnL, computeTaskCounts } from "./compute";
+import { computeProjectPnL, computeTaskCompletion, computeTaskCounts } from "./compute";
 import {
   mapBoq,
   mapClient,
@@ -46,7 +46,8 @@ export async function getProjectsOverview(): Promise<ProjectOverview[]> {
       const boq = mockBoqs.find((b) => b.projectId === project.id) ?? null;
       const tasks = mockTasks.filter((t) => t.projectId === project.id);
       return {
-        project,
+        // percentComplete is auto-derived from task progress, not stored.
+        project: { ...project, percentComplete: computeTaskCompletion(tasks) },
         client,
         pnl: computeProjectPnL(project, txns, invoices, boq),
         taskCounts: computeTaskCounts(tasks),
@@ -76,8 +77,10 @@ export async function getProjectsOverview(): Promise<ProjectOverview[]> {
   return (projectsRes.data as ProjectRow[]).map(mapProject).map((project) => {
     const client = clients.find((c) => c.id === project.clientId) ?? null;
     const boq = boqs.find((b) => b.projectId === project.id) ?? null;
+    const projectTasks = tasks.filter((t) => t.projectId === project.id);
     return {
-      project,
+      // percentComplete is auto-derived from task progress, not stored.
+      project: { ...project, percentComplete: computeTaskCompletion(projectTasks) },
       client,
       pnl: computeProjectPnL(
         project,
@@ -85,7 +88,7 @@ export async function getProjectsOverview(): Promise<ProjectOverview[]> {
         invoices.filter((i) => i.projectId === project.id),
         boq
       ),
-      taskCounts: computeTaskCounts(tasks.filter((t) => t.projectId === project.id)),
+      taskCounts: computeTaskCounts(projectTasks),
     };
   });
 }

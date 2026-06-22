@@ -27,6 +27,22 @@ export const lineTotalWithTax = (items: LineItem[], taxRate: number) => {
 export const boqValueOf = (boq: Boq | null) =>
   boq ? lineSubtotal(boq.items) : 0;
 
+/** Per-task progress as a 0-100 percentage. */
+export const taskProgressPct = (t: Task) =>
+  t.progressTarget > 0 ? Math.min(100, (t.progressValue / t.progressTarget) * 100) : 0;
+
+/**
+ * Task-based project completion — the average progress across top-level
+ * (parent) tasks. Drives the auto-updated project % complete so it always
+ * reflects task progress rather than a hand-entered figure.
+ */
+export const computeTaskCompletion = (tasks: Task[]): number => {
+  const parents = tasks.filter((t) => t.parentId === null);
+  if (parents.length === 0) return 0;
+  const sum = parents.reduce((s, t) => s + taskProgressPct(t), 0);
+  return Math.round(sum / parents.length);
+};
+
 export const computeTaskCounts = (tasks: Task[]): Record<TaskStatus, number> => {
   const counts: Record<TaskStatus, number> = {
     not_started: 0,

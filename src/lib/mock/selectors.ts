@@ -107,6 +107,18 @@ export const taskProgressPercent = (task: Task) =>
     ? Math.min(100, (task.progressValue / task.progressTarget) * 100)
     : 0;
 
+/**
+ * Task-based project completion — average progress across top-level (parent)
+ * tasks. The project's % complete auto-updates from this rather than a stored
+ * figure.
+ */
+export const taskBasedCompletion = (projectId: string): number => {
+  const parents = getProjectTasks(projectId).filter((t) => t.parentId === null);
+  if (parents.length === 0) return 0;
+  const sum = parents.reduce((s, t) => s + taskProgressPercent(t), 0);
+  return Math.round(sum / parents.length);
+};
+
 /* ---------- project P&L ---------- */
 
 export interface ProjectPnL {

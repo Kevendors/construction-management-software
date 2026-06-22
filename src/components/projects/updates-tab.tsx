@@ -1,17 +1,203 @@
 "use client";
 
+import * as React from "react";
 import { CloudSun, Users, Image as ImageIcon, Plus, AlertTriangle } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
-import { getProjectDprs, getProjectInstructions, getUser } from "@/lib/mock/selectors";
+import { Input, Label } from "@/components/ui/input";
+import { Dialog, Select, Textarea } from "@/components/ui/dialog";
+import { getUser } from "@/lib/mock/selectors";
+import { users } from "@/lib/mock/data";
+import { useProjectDprs, useProjectInstructions, useStore } from "@/lib/store/project-store";
+import type { SiteInstruction } from "@/lib/types";
 
 const priorityVariant = { low: "muted", medium: "warning", high: "destructive" } as const;
+const PRIORITIES: SiteInstruction["priority"][] = ["low", "medium", "high"];
+
+function NewDprDialog({
+  projectId,
+  open,
+  onClose,
+}: {
+  projectId: string;
+  open: boolean;
+  onClose: () => void;
+}) {
+  const { addDpr } = useStore();
+  const today = new Date().toISOString().slice(0, 10);
+  const [date, setDate] = React.useState(today);
+  const [authorId, setAuthorId] = React.useState(users[0]?.id ?? "");
+  const [weather, setWeather] = React.useState("Clear, 34°C");
+  const [workDone, setWorkDone] = React.useState("");
+  const [labourCount, setLabourCount] = React.useState("0");
+  const [photos, setPhotos] = React.useState("0");
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!workDone.trim()) return;
+    addDpr({
+      projectId,
+      date,
+      authorId,
+      weather: weather.trim(),
+      workDone: workDone.trim(),
+      labourCount: Number(labourCount) || 0,
+      photos: Number(photos) || 0,
+    });
+    setWorkDone("");
+    setLabourCount("0");
+    setPhotos("0");
+    onClose();
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onClose={onClose}
+      title="New Daily Progress Report"
+      description="Saved to this browser — survives refresh."
+    >
+      <form onSubmit={submit} className="space-y-4">
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="d-date">Date</Label>
+            <Input id="d-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="d-author">Reported by</Label>
+            <Select id="d-author" value={authorId} onChange={(e) => setAuthorId(e.target.value)}>
+              {users.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.name}
+                </option>
+              ))}
+            </Select>
+          </div>
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="d-weather">Weather</Label>
+          <Input id="d-weather" value={weather} onChange={(e) => setWeather(e.target.value)} />
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="d-work">Work done</Label>
+          <Textarea
+            id="d-work"
+            value={workDone}
+            onChange={(e) => setWorkDone(e.target.value)}
+            placeholder="Describe the day's progress…"
+            autoFocus
+            required
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="d-labour">Labour count</Label>
+            <Input id="d-labour" type="number" value={labourCount} onChange={(e) => setLabourCount(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="d-photos">Photos</Label>
+            <Input id="d-photos" type="number" value={photos} onChange={(e) => setPhotos(e.target.value)} />
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-2 pt-2">
+          <Button type="button" variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit">Save DPR</Button>
+        </div>
+      </form>
+    </Dialog>
+  );
+}
+
+function NewInstructionDialog({
+  projectId,
+  open,
+  onClose,
+}: {
+  projectId: string;
+  open: boolean;
+  onClose: () => void;
+}) {
+  const { addInstruction } = useStore();
+  const today = new Date().toISOString().slice(0, 10);
+  const [byId, setById] = React.useState(users[0]?.id ?? "");
+  const [priority, setPriority] = React.useState<SiteInstruction["priority"]>("medium");
+  const [text, setText] = React.useState("");
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!text.trim()) return;
+    addInstruction({ projectId, date: today, byId, text: text.trim(), priority });
+    setText("");
+    setPriority("medium");
+    onClose();
+  }
+
+  return (
+    <Dialog open={open} onClose={onClose} title="New Site Instruction">
+      <form onSubmit={submit} className="space-y-4">
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="s-by">Issued by</Label>
+            <Select id="s-by" value={byId} onChange={(e) => setById(e.target.value)}>
+              {users.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.name}
+                </option>
+              ))}
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="s-priority">Priority</Label>
+            <Select
+              id="s-priority"
+              value={priority}
+              onChange={(e) => setPriority(e.target.value as SiteInstruction["priority"])}
+            >
+              {PRIORITIES.map((p) => (
+                <option key={p} value={p}>
+                  {p}
+                </option>
+              ))}
+            </Select>
+          </div>
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="s-text">Instruction</Label>
+          <Textarea
+            id="s-text"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="e.g. Use M30 grade concrete for the floor 9 slab…"
+            autoFocus
+            required
+          />
+        </div>
+
+        <div className="flex justify-end gap-2 pt-2">
+          <Button type="button" variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit">Add Instruction</Button>
+        </div>
+      </form>
+    </Dialog>
+  );
+}
 
 export function UpdatesTab({ projectId }: { projectId: string }) {
-  const dprs = getProjectDprs(projectId);
-  const instructions = getProjectInstructions(projectId);
+  const dprs = useProjectDprs(projectId);
+  const instructions = useProjectInstructions(projectId);
+  const [dprOpen, setDprOpen] = React.useState(false);
+  const [siOpen, setSiOpen] = React.useState(false);
 
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -20,7 +206,7 @@ export function UpdatesTab({ projectId }: { projectId: string }) {
         <Card>
           <CardHeader className="flex-row items-center justify-between">
             <CardTitle className="text-base">Daily Progress Reports</CardTitle>
-            <Button size="sm">
+            <Button size="sm" onClick={() => setDprOpen(true)}>
               <Plus /> New DPR
             </Button>
           </CardHeader>
@@ -68,7 +254,7 @@ export function UpdatesTab({ projectId }: { projectId: string }) {
       <Card>
         <CardHeader className="flex-row items-center justify-between">
           <CardTitle className="text-base">Site Instructions</CardTitle>
-          <Button size="sm" variant="outline">
+          <Button size="sm" variant="outline" onClick={() => setSiOpen(true)}>
             <Plus />
           </Button>
         </CardHeader>
@@ -96,6 +282,9 @@ export function UpdatesTab({ projectId }: { projectId: string }) {
           )}
         </CardContent>
       </Card>
+
+      <NewDprDialog projectId={projectId} open={dprOpen} onClose={() => setDprOpen(false)} />
+      <NewInstructionDialog projectId={projectId} open={siOpen} onClose={() => setSiOpen(false)} />
     </div>
   );
 }

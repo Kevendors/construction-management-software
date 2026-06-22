@@ -11,6 +11,7 @@ import { FilesTab } from "./files-tab";
 import { CommercialTab } from "./commercial-tab";
 import { DrawingList } from "@/components/design/drawing-list";
 import { getClient, getProject, getProjectDrawings, getUser } from "@/lib/mock/selectors";
+import { ProjectStoreProvider } from "@/lib/store/project-store";
 import { projectStatusMeta } from "@/lib/labels";
 import { formatINR } from "@/lib/utils";
 
@@ -22,6 +23,7 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
   const drawings = getProjectDrawings(projectId);
 
   return (
+    <ProjectStoreProvider>
     <div>
       <Link
         href="/projects"
@@ -63,9 +65,15 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="tasks">Tasks</TabsTrigger>
           <TabsTrigger value="updates">Updates</TabsTrigger>
-          <TabsTrigger value="design">Design</TabsTrigger>
-          <TabsTrigger value="commercial">Commercial</TabsTrigger>
-          <TabsTrigger value="files">Files</TabsTrigger>
+          <TabsTrigger value="design" disabled className="opacity-40 cursor-not-allowed" title="Coming soon">
+            Design
+          </TabsTrigger>
+          <TabsTrigger value="commercial" disabled className="opacity-40 cursor-not-allowed" title="Coming soon">
+            Commercial
+          </TabsTrigger>
+          <TabsTrigger value="files" disabled className="opacity-40 cursor-not-allowed" title="Coming soon">
+            Files
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview">
@@ -88,5 +96,6 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
         </TabsContent>
       </Tabs>
     </div>
+    </ProjectStoreProvider>
   );
 }

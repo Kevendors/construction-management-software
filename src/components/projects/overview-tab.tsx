@@ -19,17 +19,15 @@ import { attendance } from "@/lib/mock/data";
 import {
   expenseByCategory,
   expenseByCostCode,
-  getProject,
   getProjectInvoices,
-  getProjectTasks,
   lineTotalWithTax,
   projectPnL,
   taskProgressPercent,
-  taskStatusCounts,
 } from "@/lib/mock/selectors";
+import { useProjectTasks } from "@/lib/store/project-store";
 import { taskStatusMeta } from "@/lib/labels";
 import { formatINR } from "@/lib/utils";
-import type { ProgressUnit } from "@/lib/types";
+import type { ProgressUnit, TaskStatus } from "@/lib/types";
 
 function progressText(value: number, target: number, unit: ProgressUnit) {
   if (unit === "percent" || unit === "lumpsum") return `${Math.round(taskProgressPercentRaw(value, target))}%`;
@@ -40,16 +38,31 @@ function taskProgressPercentRaw(value: number, target: number) {
 }
 
 export function OverviewTab({ projectId }: { projectId: string }) {
-  const project = getProject(projectId)!;
   const pnl = projectPnL(projectId);
-  const counts = taskStatusCounts(projectId);
   const byCat = expenseByCategory(projectId);
   const byCode = expenseByCostCode(projectId);
-  const tasks = getProjectTasks(projectId).filter((t) => t.parentId === null);
   const invoices = getProjectInvoices(projectId);
+
+  // Tasks come from the live store so newly added tasks update the gauge,
+  // donut and schedule table immediately.
+  const allTasks = useProjectTasks(projectId);
+  const tasks = allTasks.filter((t) => t.parentId === null);
+
+  const counts = allTasks.reduce(
+    (acc, t) => {
+      acc[t.status]++;
+      return acc;
+    },
+    { not_started: 0, ongoing: 0, delayed: 0, completed: 0 } as Record<TaskStatus, number>
+  );
+
+  const completion = tasks.length
+    ? Math.round(tasks.reduce((s, t) => s + taskProgressPercent(t), 0) / tasks.length)
+    : 0;
 
   const invoicedTotal = invoices.reduce((s, i) => s + lineTotalWithTax(i.items, i.taxRate), 0);
   const receivedTotal = invoices.reduce((s, i) => s + i.received, 0);
+  const pendingTotal = invoicedTotal - receivedTotal;
   const receivedPct = invoicedTotal > 0 ? (receivedTotal / invoicedTotal) * 100 : 0;
 
   const financialHealth = [
@@ -68,7 +81,10 @@ export function OverviewTab({ projectId }: { projectId: string }) {
             <CardTitle className="text-base">Project Completion</CardTitle>
           </CardHeader>
           <CardContent>
-            <CompletionGauge value={project.percentComplete} />
+            <CompletionGauge value={completion} />
+            <p className="mt-2 text-center text-xs text-muted-foreground">
+              Auto-calculated from task progress
+            </p>
           </CardContent>
         </Card>
 
@@ -93,13 +109,16 @@ export function OverviewTab({ projectId }: { projectId: string }) {
             <div className="space-y-1.5">
               <div className="flex justify-between text-xs">
                 <span className="text-muted-foreground">Received</span>
-                <span className="font-medium">{formatINR(receivedTotal, { compact: true })}</span>
+                <span className="font-medium text-success">
+                  {formatINR(receivedTotal, { compact: true })}
+                </span>
               </div>
               <Progress value={receivedPct} indicatorClassName="bg-success" />
-              <p className="text-xs text-muted-foreground">
-                {receivedPct.toFixed(0)}% collected ·{" "}
-                {formatINR(invoicedTotal - receivedTotal, { compact: true })} outstanding
-              </p>
+              <div className="flex justify-between text-xs">
+                <span className="text-muted-foreground">Pending</span>
+                <span className="font-medium">{formatINR(pendingTotal, { compact: true })}</span>
+              </div>
+              <p className="text-xs text-muted-foreground">{receivedPct.toFixed(0)}% collected</p>
             </div>
           </CardContent>
         </Card>
