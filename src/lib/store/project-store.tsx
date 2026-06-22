@@ -6,7 +6,7 @@ import {
   siteInstructions as seedInstructions,
   tasks as seedTasks,
 } from "@/lib/mock/data";
-import type { Dpr, SiteInstruction, Task } from "@/lib/types";
+import type { Dpr, Project, SiteInstruction, Task } from "@/lib/types";
 
 /**
  * Client-side data store backed by localStorage. Seed data (from the mock
@@ -18,17 +18,21 @@ import type { Dpr, SiteInstruction, Task } from "@/lib/types";
 const LS_KEY = "sitehub:store:v1";
 
 interface AddedData {
+  projects: Project[];
   tasks: Task[];
   dprs: Dpr[];
   instructions: SiteInstruction[];
 }
 
-const EMPTY: AddedData = { tasks: [], dprs: [], instructions: [] };
+const EMPTY: AddedData = { projects: [], tasks: [], dprs: [], instructions: [] };
 
 interface StoreValue {
+  /** User-created projects only (seed projects come from the server fetch). */
+  addedProjects: Project[];
   tasks: Task[];
   dprs: Dpr[];
   instructions: SiteInstruction[];
+  addProject: (p: Omit<Project, "id">) => Project;
   addTask: (t: Omit<Task, "id">) => void;
   addDpr: (d: Omit<Dpr, "id">) => void;
   addInstruction: (s: Omit<SiteInstruction, "id">) => void;
@@ -47,6 +51,7 @@ function loadAdded(): AddedData {
     if (!raw) return EMPTY;
     const parsed = JSON.parse(raw) as Partial<AddedData>;
     return {
+      projects: parsed.projects ?? [],
       tasks: parsed.tasks ?? [],
       dprs: parsed.dprs ?? [],
       instructions: parsed.instructions ?? [],
@@ -113,19 +118,33 @@ export function ProjectStoreProvider({ children }: { children: React.ReactNode }
     []
   );
 
+  const addProject = React.useCallback((p: Omit<Project, "id">): Project => {
+    const project: Project = { ...p, id: genId("proj") };
+    setAdded((prev) => {
+      const next = { ...prev, projects: [...prev.projects, project] };
+      try {
+        window.localStorage.setItem(LS_KEY, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+    return project;
+  }, []);
+
   // keep persist referenced (used by potential future bulk ops) without lint noise
   void persist;
 
   const value = React.useMemo<StoreValue>(
     () => ({
+      addedProjects: added.projects,
       tasks: [...seedTasks, ...added.tasks],
       dprs: [...added.dprs, ...seedDprs],
       instructions: [...added.instructions, ...seedInstructions],
+      addProject,
       addTask,
       addDpr,
       addInstruction,
     }),
-    [added, addTask, addDpr, addInstruction]
+    [added, addProject, addTask, addDpr, addInstruction]
   );
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
@@ -156,4 +175,10 @@ export function useProjectInstructions(projectId: string) {
   return instructions
     .filter((s) => s.projectId === projectId)
     .sort((a, b) => +new Date(b.date) - +new Date(a.date));
+}
+
+/** Resolve a user-created project by id (returns null for seed/unknown ids). */
+export function useAddedProject(projectId: string) {
+  const { addedProjects } = useStore();
+  return addedProjects.find((p) => p.id === projectId) ?? null;
 }

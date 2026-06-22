@@ -11,19 +11,49 @@ import { FilesTab } from "./files-tab";
 import { CommercialTab } from "./commercial-tab";
 import { DrawingList } from "@/components/design/drawing-list";
 import { getClient, getProject, getProjectDrawings, getUser } from "@/lib/mock/selectors";
-import { ProjectStoreProvider } from "@/lib/store/project-store";
+import { ProjectStoreProvider, useAddedProject } from "@/lib/store/project-store";
 import { projectStatusMeta } from "@/lib/labels";
 import { formatINR } from "@/lib/utils";
 
 export function ProjectDetail({ projectId }: { projectId: string }) {
-  const project = getProject(projectId)!;
+  return (
+    <ProjectStoreProvider>
+      <ProjectDetailInner projectId={projectId} />
+    </ProjectStoreProvider>
+  );
+}
+
+function ProjectDetailInner({ projectId }: { projectId: string }) {
+  // Seed projects come from the mock layer; user-created ones live in the store.
+  const seedProject = getProject(projectId);
+  const addedProject = useAddedProject(projectId);
+  const project = seedProject ?? addedProject;
+
+  if (!project) {
+    return (
+      <div>
+        <Link
+          href="/projects"
+          className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+        >
+          <ArrowLeft className="h-4 w-4" /> Projects
+        </Link>
+        <div className="rounded-xl border border-border bg-card p-10 text-center">
+          <p className="text-sm text-muted-foreground">
+            This project could not be found. It may have been created in a different browser, or the
+            link is invalid.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   const client = getClient(project.clientId);
   const pm = getUser(project.pmId);
   const meta = projectStatusMeta[project.status];
   const drawings = getProjectDrawings(projectId);
 
   return (
-    <ProjectStoreProvider>
     <div>
       <Link
         href="/projects"
@@ -96,6 +126,5 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
         </TabsContent>
       </Tabs>
     </div>
-    </ProjectStoreProvider>
   );
 }

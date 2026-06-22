@@ -19,12 +19,13 @@ import { attendance } from "@/lib/mock/data";
 import {
   expenseByCategory,
   expenseByCostCode,
+  getProject,
   getProjectInvoices,
   lineTotalWithTax,
   projectPnL,
   taskProgressPercent,
 } from "@/lib/mock/selectors";
-import { useProjectTasks } from "@/lib/store/project-store";
+import { useAddedProject, useProjectTasks } from "@/lib/store/project-store";
 import { taskStatusMeta } from "@/lib/labels";
 import { formatINR } from "@/lib/utils";
 import type { ProgressUnit, TaskStatus } from "@/lib/types";
@@ -38,7 +39,19 @@ function taskProgressPercentRaw(value: number, target: number) {
 }
 
 export function OverviewTab({ projectId }: { projectId: string }) {
-  const pnl = projectPnL(projectId);
+  // Seed projects have full P&L data; user-created ones start at zero.
+  const addedProject = useAddedProject(projectId);
+  const pnl = getProject(projectId)
+    ? projectPnL(projectId)
+    : {
+        projectValue: addedProject?.value ?? 0,
+        totalExpense: 0,
+        salesInvoiced: 0,
+        salesReceived: 0,
+        boqValue: 0,
+        margin: addedProject?.value ?? 0,
+        marginPct: 0,
+      };
   const byCat = expenseByCategory(projectId);
   const byCode = expenseByCostCode(projectId);
   const invoices = getProjectInvoices(projectId);
