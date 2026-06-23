@@ -86,6 +86,8 @@ export interface Dpr {
   workDone: string;
   labourCount: number;
   photos: number;
+  /** Uploaded site photos as compressed data URLs (client-stored). */
+  photoUrls?: string[];
 }
 
 export interface SiteInstruction {

@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { CloudSun, Users, Image as ImageIcon, Plus, AlertTriangle } from "lucide-react";
+import { CloudSun, Users, Image as ImageIcon, Plus, AlertTriangle, Upload, X } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -10,8 +10,11 @@ import { Input, Label } from "@/components/ui/input";
 import { Dialog, Select, Textarea } from "@/components/ui/dialog";
 import { getUser } from "@/lib/mock/selectors";
 import { users } from "@/lib/mock/data";
+import { fileToResizedDataUrl } from "@/lib/image";
 import { useProjectDprs, useProjectInstructions, useStore } from "@/lib/store/project-store";
 import type { SiteInstruction } from "@/lib/types";
+
+const MAX_PHOTOS = 8;
 
 const priorityVariant = { low: "muted", medium: "warning", high: "destructive" } as const;
 const PRIORITIES: SiteInstruction["priority"][] = ["low", "medium", "high"];
@@ -32,7 +35,29 @@ function NewDprDialog({
   const [weather, setWeather] = React.useState("Clear, 34°C");
   const [workDone, setWorkDone] = React.useState("");
   const [labourCount, setLabourCount] = React.useState("0");
-  const [photos, setPhotos] = React.useState("0");
+  const [photos, setPhotos] = React.useState<string[]>([]);
+  const [uploading, setUploading] = React.useState(false);
+  const fileRef = React.useRef<HTMLInputElement>(null);
+
+  async function handleFiles(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []).filter((f) => f.type.startsWith("image/"));
+    if (files.length === 0) return;
+    setUploading(true);
+    try {
+      const room = Math.max(0, MAX_PHOTOS - photos.length);
+      const urls = await Promise.all(files.slice(0, room).map((f) => fileToResizedDataUrl(f)));
+      setPhotos((prev) => [...prev, ...urls].slice(0, MAX_PHOTOS));
+    } catch {
+      /* skip files that fail to decode */
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  }
+
+  function removePhoto(i: number) {
+    setPhotos((prev) => prev.filter((_, idx) => idx !== i));
+  }
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -44,11 +69,12 @@ function NewDprDialog({
       weather: weather.trim(),
       workDone: workDone.trim(),
       labourCount: Number(labourCount) || 0,
-      photos: Number(photos) || 0,
+      photos: photos.length,
+      photoUrls: photos,
     });
     setWorkDone("");
     setLabourCount("0");
-    setPhotos("0");
+    setPhotos([]);
     onClose();
   }
 
@@ -94,15 +120,58 @@ function NewDprDialog({
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1.5">
-            <Label htmlFor="d-labour">Labour count</Label>
-            <Input id="d-labour" type="number" value={labourCount} onChange={(e) => setLabourCount(e.target.value)} />
+        <div className="space-y-1.5">
+          <Label htmlFor="d-labour">Labour count</Label>
+          <Input id="d-labour" type="number" value={labourCount} onChange={(e) => setLabourCount(e.target.value)} />
+        </div>
+
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <Label htmlFor="d-photos">Site photos</Label>
+            <span className="text-xs text-muted-foreground">
+              {photos.length}/{MAX_PHOTOS}
+            </span>
           </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="d-photos">Photos</Label>
-            <Input id="d-photos" type="number" value={photos} onChange={(e) => setPhotos(e.target.value)} />
-          </div>
+          <input
+            ref={fileRef}
+            id="d-photos"
+            type="file"
+            accept="image/*"
+            multiple
+            className="hidden"
+            onChange={handleFiles}
+          />
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            disabled={uploading || photos.length >= MAX_PHOTOS}
+            className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-input bg-card px-3 py-4 text-sm text-muted-foreground transition-colors hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Upload className="h-4 w-4" />
+            {uploading
+              ? "Processing…"
+              : photos.length >= MAX_PHOTOS
+                ? "Maximum photos added"
+                : "Click to upload photos"}
+          </button>
+          {photos.length > 0 && (
+            <div className="mt-2 grid grid-cols-4 gap-2">
+              {photos.map((src, i) => (
+                <div key={i} className="group relative aspect-square overflow-hidden rounded-md border border-border">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={src} alt={`Site photo ${i + 1}`} className="h-full w-full object-cover" />
+                  <button
+                    type="button"
+                    onClick={() => removePhoto(i)}
+                    aria-label="Remove photo"
+                    className="absolute right-1 top-1 rounded-full bg-black/60 p-0.5 text-white opacity-0 transition-opacity group-hover:opacity-100"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="flex justify-end gap-2 pt-2">
@@ -229,6 +298,22 @@ export function UpdatesTab({ projectId }: { projectId: string }) {
                     </div>
                   </div>
                   <p className="mt-3 text-sm">{d.workDone}</p>
+                  {d.photoUrls && d.photoUrls.length > 0 && (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {d.photoUrls.map((src, i) => (
+                        <a
+                          key={i}
+                          href={src}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="h-16 w-16 overflow-hidden rounded-md border border-border"
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={src} alt={`DPR photo ${i + 1}`} className="h-full w-full object-cover" />
+                        </a>
+                      ))}
+                    </div>
+                  )}
                   <div className="mt-3 flex flex-wrap gap-3 text-xs text-muted-foreground">
                     <span className="inline-flex items-center gap-1">
                       <CloudSun className="h-3.5 w-3.5" /> {d.weather}
@@ -237,7 +322,7 @@ export function UpdatesTab({ projectId }: { projectId: string }) {
                       <Users className="h-3.5 w-3.5" /> {d.labourCount} labour
                     </span>
                     <span className="inline-flex items-center gap-1">
-                      <ImageIcon className="h-3.5 w-3.5" /> {d.photos} photos
+                      <ImageIcon className="h-3.5 w-3.5" /> {d.photoUrls?.length ?? d.photos} photos
                     </span>
                   </div>
                 </div>
