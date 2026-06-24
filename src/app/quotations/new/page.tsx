@@ -179,7 +179,7 @@ export default function NewQuotationPage() {
                   <div className="grid grid-cols-5 gap-2">
                     <Field label="Unit" small>
                       <Select value={l.unit} onChange={(e) => updateLine(l.id, { unit: e.target.value as QuoteLine["unit"] })} className="h-8 text-xs">
-                        {["SQFT", "RFT", "NOS", "POINT", "LUMPSUM"].map((u) => <option key={u} value={u}>{u}</option>)}
+                        {["SQFT", "SQM", "RFT", "RMT", "CUM", "KG", "MT", "NOS", "POINT", "LUMPSUM"].map((u) => <option key={u} value={u}>{u}</option>)}
                       </Select>
                     </Field>
                     <Field label="Qty" small><Input type="number" value={l.qty} onChange={(e) => updateLine(l.id, { qty: Number(e.target.value) })} className="h-8 text-xs" /></Field>

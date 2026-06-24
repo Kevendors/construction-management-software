@@ -2,7 +2,17 @@
 // historical Keyvendors quotations. Each entry carries a standard description
 // and default unit; rate/quantity/sqft are filled per quotation.
 
-export type QuoteUnit = "SQFT" | "RFT" | "NOS" | "POINT" | "LUMPSUM";
+export type QuoteUnit =
+  | "SQFT"
+  | "SQM"
+  | "RFT"
+  | "RMT"
+  | "CUM"
+  | "KG"
+  | "MT"
+  | "NOS"
+  | "POINT"
+  | "LUMPSUM";
 
 export interface MasterItem {
   id: string;
@@ -19,10 +29,15 @@ export const ITEM_CATEGORIES = [
   "Tiling & Flooring",
   "Ceiling & Partition",
   "Carpentry & Interiors",
+  "Civil & RCC",
   "Waterproofing",
   "Structural Repair",
+  "Structural Strengthening",
+  "Facade & Metal",
+  "Doors & Sanitary",
   "Civil & Misc",
   "MEP",
+  "Site & Services",
   "Cleaning",
 ];
 
@@ -104,4 +119,96 @@ export const ITEM_MASTER: MasterItem[] = [
   // ---- Cleaning ----
   { id: "deep-clean", name: "Home Deep Cleaning", category: "Cleaning", unit: "SQFT", usesSqft: true,
     description: "Home deep cleaning including floors, bathrooms, kitchen and surfaces using professional equipment and materials." },
+
+  /* ================================================================= */
+  /* Items distilled from the full set of historical quotations (53)   */
+  /* ================================================================= */
+
+  // ---- Painting (additional) ----
+  { id: "white-wash", name: "White Wash / Distemper", category: "Painting", unit: "SQFT", usesSqft: true,
+    description: "White washing / dry distemper including surface cleaning and the required number of coats." },
+
+  // ---- Civil & RCC ----
+  { id: "rcc-casting", name: "RCC Casting Work", category: "Civil & RCC", unit: "CUM", usesSqft: false,
+    description: "Providing and laying design-mix RCC (M20/M25/M30) for slabs, beams, columns and footings, including pumping/placing, compaction, finishing and curing (shuttering & reinforcement separate unless specified)." },
+  { id: "pcc", name: "PCC – Plain Cement Concrete", category: "Civil & RCC", unit: "CUM", usesSqft: false,
+    description: "Providing and laying plain cement concrete (PCC) of specified grade in foundations / sub-base, including compaction and curing." },
+  { id: "brick-masonry", name: "Brick Masonry Work", category: "Civil & RCC", unit: "SQFT", usesSqft: true,
+    description: "Brick masonry in cement mortar (1:6) for walls of specified thickness (9\" / 4\"), including scaffolding and curing." },
+  { id: "aac-block", name: "AAC Block Masonry", category: "Civil & RCC", unit: "SQFT", usesSqft: true,
+    description: "AAC (Autoclaved Aerated Concrete) block masonry in cement mortar, including jointing, scaffolding and curing." },
+  { id: "plaster-internal", name: "Internal Cement Plaster", category: "Civil & RCC", unit: "SQFT", usesSqft: true,
+    description: "Internal cement plaster 12–15 mm thick (1:4 / 1:6), finished smooth in true line and level, including curing." },
+  { id: "plaster-external", name: "External Cement Plaster", category: "Civil & RCC", unit: "SQFT", usesSqft: true,
+    description: "External cement plaster 15–20 mm thick (two coats) with waterproofing compound, finished to line and level." },
+  { id: "gypsum-plaster", name: "Gypsum Plaster", category: "Civil & RCC", unit: "SQFT", usesSqft: true,
+    description: "Providing and applying 6–12 mm thick gypsum plaster on walls / ceiling in line and level, finished smooth." },
+  { id: "steel-reinf", name: "Steel Reinforcement (TMT)", category: "Civil & RCC", unit: "KG", usesSqft: false,
+    description: "Supplying, cutting, bending and fixing TMT steel reinforcement bars in position, including binding wire and cover blocks." },
+  { id: "shuttering", name: "Centering & Shuttering", category: "Civil & RCC", unit: "SQFT", usesSqft: true,
+    description: "Providing, fixing and removing centering / shuttering (ply / steel) for RCC members, including props and staging at all heights." },
+  { id: "demolition", name: "Demolition & Dismantling", category: "Civil & RCC", unit: "SQFT", usesSqft: true,
+    description: "Demolishing / dismantling of brick, RCC, tiles or plaster manually or by mechanical means, including disposal of debris." },
+  { id: "excavation", name: "Earthwork Excavation", category: "Civil & RCC", unit: "CUM", usesSqft: false,
+    description: "Earthwork in excavation by manual / mechanical means in all soils, including dressing, leveling and disposal." },
+  { id: "scaffolding", name: "Scaffolding (Cup-lock)", category: "Civil & RCC", unit: "SQFT", usesSqft: true,
+    description: "Providing and fixing cup-lock / double scaffolding system as working platform at all heights, including removal after completion." },
+
+  // ---- Structural Strengthening (retrofit) ----
+  { id: "carbon-laminate", name: "Carbon Fibre Laminate Strengthening", category: "Structural Strengthening", unit: "RMT", usesSqft: false,
+    description: "Structural strengthening using carbon-fibre laminates / plates bonded with structural epoxy adhesive (HEXACURE / Sika), as per consultant design." },
+  { id: "fibre-wrap", name: "Carbon / Glass Fibre Wrap", category: "Structural Strengthening", unit: "SQFT", usesSqft: true,
+    description: "Strengthening of RCC members with carbon / glass-fibre wrap using structural saturant and primer, surface preparation included." },
+  { id: "rebar-treatment", name: "Anti-Corrosive Rebar Treatment", category: "Structural Strengthening", unit: "SQFT", usesSqft: true,
+    description: "Cleaning exposed reinforcement of rust, applying rust converter and anti-corrosive / polymer protective coating to rebars and substrate." },
+
+  // ---- Waterproofing (variants) ----
+  { id: "app-membrane", name: "APP Membrane Waterproofing (Torch-on)", category: "Waterproofing", unit: "SQFT", usesSqft: true,
+    description: "Torch-on APP membrane waterproofing (Dr. Fixit Torch Shield / equivalent) including bitumen primer and protective screed, with warranty." },
+  { id: "brickbat-coba", name: "Brickbat Coba Waterproofing", category: "Waterproofing", unit: "SQFT", usesSqft: true,
+    description: "Brickbat coba waterproofing on terrace including slurry coat, brickbat laying in slope, curing and protective finish." },
+  { id: "pu-waterproof", name: "PU Waterproofing / Roof Seal Top", category: "Waterproofing", unit: "SQFT", usesSqft: true,
+    description: "PU-based elastomeric waterproofing / Roof Seal Top coating with heat insulation, applied in multiple coats over a prepared surface." },
+  { id: "roof-seal-coat", name: "Roof Seal Coat (3-coat)", category: "Waterproofing", unit: "SQFT", usesSqft: true,
+    description: "Dr. Fixit Roof Seal single-component cold-applied waterproof coating in 3 coats, including surface preparation." },
+  { id: "sa-membrane", name: "Self-Adhesive Membrane Waterproofing", category: "Waterproofing", unit: "SQFT", usesSqft: true,
+    description: "Application of self-adhesive waterproofing membrane to a prepared surface with primer, fully adhered with no wastage." },
+
+  // ---- Tiling & Flooring (stone / screed / decorative) ----
+  { id: "granite-work", name: "Granite Flooring / Stonework", category: "Tiling & Flooring", unit: "SQFT", usesSqft: true,
+    description: "Providing and laying polished granite flooring / counters over cement mortar base, including jointing, machine polishing and edge moulding." },
+  { id: "marble-work", name: "Marble Flooring / Stonework", category: "Tiling & Flooring", unit: "SQFT", usesSqft: true,
+    description: "Providing and laying marble flooring / cladding over cement mortar base with pigment-matched jointing, rubbing and polishing." },
+  { id: "floor-screed", name: "Floor Screeding", category: "Tiling & Flooring", unit: "SQFT", usesSqft: true,
+    description: "Providing and laying cement / level screed of specified thickness over slab as a base for flooring, finished to level." },
+  { id: "decorative-concrete", name: "RCC / Decorative Concrete Flooring", category: "Tiling & Flooring", unit: "SQFT", usesSqft: true,
+    description: "RCC / decorative concrete flooring with water-wash / trowel finish, including mixing, laying, finishing and curing." },
+
+  // ---- Facade & Metal ----
+  { id: "acp-cladding", name: "ACP / Aluminium Composite Panel Cladding", category: "Facade & Metal", unit: "SQFT", usesSqft: true,
+    description: "Providing and fixing 4 mm ACP cladding over aluminium framework, including cleats, sealant, backer rods and protective-film removal." },
+  { id: "aluminium-glazing", name: "Aluminium / Glass Glazing Work", category: "Facade & Metal", unit: "SQFT", usesSqft: true,
+    description: "Providing and fixing aluminium-framed glazing / curtain wall with glass, including hardware, sealant and finishing." },
+  { id: "structural-steel", name: "Structural Steel Fabrication (MS)", category: "Facade & Metal", unit: "KG", usesSqft: false,
+    description: "Fabrication and erection of structural steel (MS tubular / sections, trusses, columns) including cutting, welding, anti-rust primer and painting." },
+  { id: "railing", name: "MS / Glass Railing", category: "Facade & Metal", unit: "RFT", usesSqft: false,
+    description: "Providing and fixing MS / stainless-steel and glass railing as per design, including anti-rust primer and finishing." },
+
+  // ---- Doors & Sanitary ----
+  { id: "flush-door", name: "Flush Door (Supply & Install)", category: "Doors & Sanitary", unit: "NOS", usesSqft: false,
+    description: "Supply and installation of flush doors with frame, standard hardware and finish as per site requirement." },
+  { id: "toilet-cubicle", name: "Toilet Cubicle (Supply & Install)", category: "Doors & Sanitary", unit: "NOS", usesSqft: false,
+    description: "Supply and installation of toilet cubicle partitions with hardware, complete as per approved design." },
+  { id: "mirror", name: "Mirror (Supply & Fixing)", category: "Doors & Sanitary", unit: "SQFT", usesSqft: true,
+    description: "Supply and fixing of 6 mm clear / full-height mirror with backing and fixing accessories." },
+  { id: "sanitary-ware", name: "Sanitary Ware Installation", category: "Doors & Sanitary", unit: "NOS", usesSqft: false,
+    description: "Supply and installation of sanitary ware (WC, washbasin, urinal, taps, hand dryer) including connections and fittings." },
+
+  // ---- Site & Services ----
+  { id: "ac-jet-clean", name: "AC Jet Cleaning Service", category: "Site & Services", unit: "NOS", usesSqft: false,
+    description: "High-pressure jet cleaning of Split / Cassette AC (indoor + outdoor) including coil, blower and drain cleaning, with reassembly and testing." },
+  { id: "signage", name: "Signage (Acrylic / Sticker)", category: "Site & Services", unit: "SQFT", usesSqft: true,
+    description: "Supply and installation of acrylic / vinyl signage and stickers as per approved artwork." },
+  { id: "barricading", name: "Site Barricading (Tin / MS)", category: "Site & Services", unit: "RFT", usesSqft: false,
+    description: "Providing and fixing tin-sheet / MS-frame site barricading, including supply, installation and removal after completion." },
 ];
