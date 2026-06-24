@@ -1,11 +1,11 @@
 import { notFound } from "next/navigation";
 import { DocumentShell } from "@/components/documents/document-shell";
 import { PoDocument } from "@/components/material/po-document";
-import { getAllPurchaseOrderIds, getPurchaseOrderView } from "@/lib/data/material";
+import { getPurchaseOrderView } from "@/lib/data/material";
 
-export async function generateStaticParams() {
-  return (await getAllPurchaseOrderIds()).map((id) => ({ id }));
-}
+// Rendered on-demand — the data layer reads request cookies (Supabase auth),
+// which aren't available during build-time static generation.
+export const dynamic = "force-dynamic";
 
 export default async function PoPrintPage({
   params,

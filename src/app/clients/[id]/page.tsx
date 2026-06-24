@@ -12,7 +12,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
-  getAllClientIds,
   getClientById,
   getClientQuotations,
   getProjectsByClient,
@@ -21,9 +20,9 @@ import { lineTotalWithTax } from "@/lib/data/compute";
 import { projectStatusMeta, quotationStatusMeta } from "@/lib/labels";
 import { formatINR } from "@/lib/utils";
 
-export async function generateStaticParams() {
-  return (await getAllClientIds()).map((id) => ({ id }));
-}
+// Rendered on-demand — the data layer reads request cookies (Supabase auth),
+// which aren't available during build-time static generation.
+export const dynamic = "force-dynamic";
 
 export default async function ClientPage({
   params,

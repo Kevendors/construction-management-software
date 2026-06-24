@@ -1,11 +1,11 @@
 import { notFound } from "next/navigation";
 import { DocumentShell } from "@/components/documents/document-shell";
 import { WoDocument } from "@/components/subcon/wo-document";
-import { getAllWorkOrderIds, getWorkOrderView } from "@/lib/data/subcon";
+import { getWorkOrderView } from "@/lib/data/subcon";
 
-export async function generateStaticParams() {
-  return (await getAllWorkOrderIds()).map((id) => ({ id }));
-}
+// Rendered on-demand — the data layer reads request cookies (Supabase auth),
+// which aren't available during build-time static generation.
+export const dynamic = "force-dynamic";
 
 export default async function WoPrintPage({
   params,
