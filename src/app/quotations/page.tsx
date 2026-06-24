@@ -25,9 +25,11 @@ export default async function QuotationsPage() {
         title="Quotations"
         description="Proposals & estimates — convert accepted quotes to projects"
         action={
-          <Button>
-            <Plus /> New Quotation
-          </Button>
+          <Link href="/quotations/new">
+            <Button>
+              <Plus /> New Quotation
+            </Button>
+          </Link>
         }
       />
 

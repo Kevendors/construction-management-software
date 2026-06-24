@@ -89,14 +89,22 @@ function ProjectCard({ item }: { item: OverviewItem }) {
 
 const STATUSES: ProjectStatus[] = ["planning", "ongoing", "on_hold", "completed"];
 
+interface ProjectPrefill {
+  name: string;
+  value: number;
+  location: string;
+}
+
 function NewProjectDialog({
   open,
   onClose,
   nextCode,
+  prefill,
 }: {
   open: boolean;
   onClose: () => void;
   nextCode: string;
+  prefill?: ProjectPrefill | null;
 }) {
   const { addProject } = useStore();
   const router = useRouter();
@@ -114,8 +122,15 @@ function NewProjectDialog({
   const [pmId, setPmId] = React.useState(users[0]?.id ?? "");
 
   React.useEffect(() => {
-    if (open) setCode(nextCode);
-  }, [open, nextCode]);
+    if (!open) return;
+    setCode(nextCode);
+    if (prefill) {
+      setName(prefill.name);
+      setValue(String(prefill.value));
+      setLocation(prefill.location);
+      setStatus("planning");
+    }
+  }, [open, nextCode, prefill]);
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -237,6 +252,21 @@ function NewProjectDialog({
 export function ProjectsBoard({ initial }: { initial: OverviewItem[] }) {
   const { addedProjects, tasks, transactions } = useStore();
   const [open, setOpen] = React.useState(false);
+  const [prefill, setPrefill] = React.useState<ProjectPrefill | null>(null);
+
+  // "Convert to Project" from a quotation drops a prefill payload here.
+  React.useEffect(() => {
+    try {
+      const raw = localStorage.getItem("sitehub:newProjectPrefill");
+      if (raw) {
+        setPrefill(JSON.parse(raw) as ProjectPrefill);
+        setOpen(true);
+        localStorage.removeItem("sitehub:newProjectPrefill");
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   // Build cards for user-created projects, deriving margin/counts/progress live.
   const addedItems: OverviewItem[] = addedProjects.map((p) => {
@@ -295,7 +325,15 @@ export function ProjectsBoard({ initial }: { initial: OverviewItem[] }) {
         ))}
       </div>
 
-      <NewProjectDialog open={open} onClose={() => setOpen(false)} nextCode={nextCode} />
+      <NewProjectDialog
+        open={open}
+        onClose={() => {
+          setOpen(false);
+          setPrefill(null);
+        }}
+        nextCode={nextCode}
+        prefill={prefill}
+      />
     </>
   );
 }
