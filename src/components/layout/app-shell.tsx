@@ -10,7 +10,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
   // Auth screens render full-bleed, without the app chrome.
-  if (pathname === "/login") return <>{children}</>;
+  if (pathname === "/login" || pathname === "/reset-password") return <>{children}</>;
 
   return (
     <div className="flex min-h-screen bg-background">

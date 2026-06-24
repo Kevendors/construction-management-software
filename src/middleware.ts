@@ -33,14 +33,16 @@ export async function middleware(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const path = request.nextUrl.pathname;
-  const isAuthRoute = path === "/login";
+  // Public auth routes — never gated (reset-password is reached without a
+  // full session, via the email recovery link).
+  const isPublic = path === "/login" || path === "/reset-password";
 
-  if (!user && !isAuthRoute) {
+  if (!user && !isPublic) {
     const redirect = request.nextUrl.clone();
     redirect.pathname = "/login";
     return NextResponse.redirect(redirect);
   }
-  if (user && isAuthRoute) {
+  if (user && path === "/login") {
     const redirect = request.nextUrl.clone();
     redirect.pathname = "/";
     return NextResponse.redirect(redirect);
