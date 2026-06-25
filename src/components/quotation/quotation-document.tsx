@@ -15,7 +15,7 @@ function Logo({ big }: { big?: boolean }) {
     <img
       src={big ? "/keyvendors-logo-square.png" : "/keyvendors-logo-landscape.png"}
       alt="Keyvendors"
-      className={`object-contain ${big ? "h-24 w-28" : "h-16 w-72"}`}
+      className={`object-contain ${big ? "h-24 w-28" : "h-20 w-auto max-w-full"}`}
     />
   );
 }
@@ -50,7 +50,7 @@ export function QuotationDocument({ s, c }: { s: QuoteState; c: ComputedQuote })
       <div className="grid grid-cols-[1.5fr_1fr]">
         {/* left */}
         <div className="border-r border-slate-400">
-          <div className="px-3 py-3">
+          <div className="flex h-28 items-center justify-center px-3">
             <Logo />
           </div>
           <Bar>From</Bar>
@@ -68,7 +68,7 @@ export function QuotationDocument({ s, c }: { s: QuoteState; c: ComputedQuote })
         </div>
         {/* right */}
         <div>
-          <div className="px-3 py-3 text-[11px]">
+          <div className="flex h-28 flex-col justify-center px-3 text-[11px]">
             <p><span className="font-semibold">DATE</span> &nbsp; {fmtDate(s.date)}</p>
             <p><span className="font-semibold">Ref / Quote No:</span> &nbsp; {s.number || "—"}</p>
             {s.validTill && <p><span className="font-semibold">Valid Till:</span> &nbsp; {fmtDate(s.validTill)}</p>}
