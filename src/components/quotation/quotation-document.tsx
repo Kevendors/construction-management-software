@@ -8,12 +8,14 @@ const fmtDate = (d: string) =>
   d ? new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "long", year: "numeric" }) : "—";
 
 function Logo({ big }: { big?: boolean }) {
+  // Square (stacked) mark for the vertical "Important Links" panel,
+  // landscape (horizontal) mark for the header.
   // eslint-disable-next-line @next/next/no-img-element
   return (
     <img
-      src="/keyvendors-logo.png"
+      src={big ? "/keyvendors-logo-square.png" : "/keyvendors-logo-landscape.png"}
       alt="Keyvendors"
-      className={`object-contain ${big ? "h-24 w-32" : "h-12 w-20"}`}
+      className={`object-contain ${big ? "h-24 w-28" : "h-12 w-44"}`}
     />
   );
 }
