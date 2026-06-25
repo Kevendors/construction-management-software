@@ -36,7 +36,9 @@ export const ITEM_CATEGORIES = [
   "Facade & Metal",
   "Doors & Sanitary",
   "Civil & Misc",
+  "Road Work",
   "MEP",
+  "HVAC & Refrigeration",
   "Site & Services",
   "Cleaning",
 ];
@@ -211,4 +213,83 @@ export const ITEM_MASTER: MasterItem[] = [
     description: "Supply and installation of acrylic / vinyl signage and stickers as per approved artwork." },
   { id: "barricading", name: "Site Barricading (Tin / MS)", category: "Site & Services", unit: "RFT", usesSqft: false,
     description: "Providing and fixing tin-sheet / MS-frame site barricading, including supply, installation and removal after completion." },
+
+  /* ================================================================= */
+  /* Complete set — every remaining distinct item across all 53 quotes */
+  /* (one-off / project-specific items included, deduped)              */
+  /* ================================================================= */
+
+  // ---- Waterproofing (further variants) ----
+  { id: "wp-2k-fastflex", name: "2K / Fast Flex Cementitious Waterproofing", category: "Waterproofing", unit: "SQFT", usesSqft: true,
+    description: "Two-component cementitious + acrylic flexible waterproofing & protective coating (Dr. Fixit Pidifin 2K / Fast Flex / Bostik / Perma) applied to protect concrete and similar structures." },
+  { id: "wp-integral", name: "Integral Cement-Based Waterproofing", category: "Waterproofing", unit: "SQFT", usesSqft: true,
+    description: "Integral cement-based waterproofing treatment for roofs/terraces: neat cement slurry with waterproofing compound, brickbat laying to slope, and protective cement mortar, with curing and leak testing." },
+  { id: "wp-anticarbonation", name: "Anti-Carbonation Coating", category: "Waterproofing", unit: "SQFT", usesSqft: true,
+    description: "Providing and applying non-bleeding anti-carbonation / bituminous coating (e.g. Dekguard) on external surfaces, including surface preparation and consumables." },
+  { id: "protective-plaster", name: "Protective Plaster (over waterproofing)", category: "Waterproofing", unit: "SQFT", usesSqft: true,
+    description: "12 mm thick protective plaster 1:4 with waterproofing compound over treated/waterproofed surface, complete." },
+
+  // ---- Structural Repair (further sub-items) ----
+  { id: "concrete-chipping", name: "Concrete Chipping / Surface Removal", category: "Structural Repair", unit: "SQFT", usesSqft: true,
+    description: "Chipping of unsound/weak concrete from slabs, beams, columns by chisel/power tools, tapering edges, cleaning exposed concrete & reinforcement, and disposal of debris." },
+  { id: "epoxy-bond-coat", name: "Epoxy Bond Coat", category: "Structural Repair", unit: "SQFT", usesSqft: true,
+    description: "Applying epoxy bond coat (two-component base + hardener, BASF/Sika/Fosroc) prior to micro-concrete, for long open time, as per manufacturer specs." },
+  { id: "polymer-mortar", name: "Polymer Modified Mortar Repair", category: "Structural Repair", unit: "SQFT", usesSqft: true,
+    description: "Providing, mixing and applying SBR/acrylic polymer-modified cement mortar (1:4 with min 2% polymer by wt. of cement) for repair, including curing — 25 mm avg in 2 layers." },
+  { id: "curing-compound", name: "Concrete Curing Compound", category: "Structural Repair", unit: "SQFT", usesSqft: true,
+    description: "Supplying and applying pre-tested water-based concrete curing compound to concrete/masonry surfaces as per manufacturer specification." },
+  { id: "epoxy-anchor", name: "Epoxy Anchor / Dowel Grouting", category: "Structural Repair", unit: "NOS", usesSqft: false,
+    description: "Drilling holes in RCC and fixing dowel/anchor bars using epoxy resin anchor grout (HILTI HIT / Fischer or equivalent), excluding reinforcement cost." },
+  { id: "shear-key", name: "Shear Key Installation (CFRP / Epoxy)", category: "Structural Repair", unit: "NOS", usesSqft: false,
+    description: "Providing and fixing L-type shear keys / CFRP shear anchors (10 mm dia) through pre-packed epoxy system in RCC members, including drilling and fixing." },
+  { id: "injection-nipple", name: "PVC Injection Nipple Fixing (crack repair)", category: "Structural Repair", unit: "NOS", usesSqft: false,
+    description: "Providing and inserting 12 mm dia PVC perforated injection nipples in honeycomb/crack zones, drilling and sealing, complete." },
+  { id: "propping", name: "Propping / Shoring of RCC Members", category: "Structural Repair", unit: "NOS", usesSqft: false,
+    description: "Relieving RCC elements (columns/beams/slabs) of superimposed load by props with timber runners for load distribution, maintained till repair completion." },
+  { id: "diamond-grinding", name: "Surface Preparation (Diamond Grinding)", category: "Structural Repair", unit: "SQFT", usesSqft: true,
+    description: "Surface preparation of column/beam/slab by diamond grinding to remove form lines and protrusions, leveling cavities with polymer slim coats to receive fibre-wrap systems." },
+
+  // ---- Civil & RCC (further) ----
+  { id: "scaffold-screening", name: "Scaffolding Screening / Dust Curtain", category: "Civil & RCC", unit: "SQFT", usesSqft: true,
+    description: "Providing and fixing continuous vertical curtain/screening (gunny cloth / HDPE mesh) over scaffolding to prevent dust/debris scatter, with upkeep till removal." },
+  { id: "malba-disposal", name: "Debris / Malba Disposal", category: "Civil & RCC", unit: "CUM", usesSqft: false,
+    description: "Disposal of building rubbish/malba by mechanical means including loading, transporting and unloading to approved dumping ground beyond initial lead." },
+  { id: "inspection-pit", name: "Inspection Pit / Tank Pit Construction", category: "Civil & RCC", unit: "NOS", usesSqft: false,
+    description: "Construction of vehicle inspection pit / water-tank pit with both-side plaster and RCC inner flooring, including excavation and finishing." },
+  { id: "drain-piping", name: "Drain Line / PVC Piping Work", category: "Civil & RCC", unit: "RMT", usesSqft: false,
+    description: "Providing and laying drain line / PVC piping with required slope, pits and connections, including waterproofing of inlets." },
+
+  // ---- Road Work ----
+  { id: "dbm", name: "Dense Graded Bituminous Macadam (DBM)", category: "Road Work", unit: "SQM", usesSqft: false,
+    description: "Providing and laying DBM with crushed aggregates premixed with bituminous binder, laid by paver and rolled to required grade, level and compaction." },
+  { id: "bc-layer", name: "Bituminous Concrete (BC) Layer", category: "Road Work", unit: "SQM", usesSqft: false,
+    description: "Providing and laying bituminous concrete wearing course with crushed aggregates and bitumen (CRMB/VG grade), laid by paver and compacted to specification." },
+  { id: "tack-coat", name: "Tack Coat Application", category: "Road Work", unit: "SQM", usesSqft: false,
+    description: "Providing and applying tack coat using bitumen emulsion / hot bitumen by pressure distributor, after cleaning the existing surface with mechanical broom." },
+  { id: "prime-coat", name: "Prime Coat Application", category: "Road Work", unit: "SQM", usesSqft: false,
+    description: "Providing and applying primer/prime coat on the prepared granular surface prior to bituminous layers, as per specification." },
+
+  // ---- MEP (turnkey) ----
+  { id: "mep-design-build", name: "MEP Design & Build (Turnkey)", category: "MEP", unit: "LUMPSUM", usesSqft: false,
+    description: "MEP design & build — concept design, GFC drawings & BOQ, and execution of plumbing, HVAC/ventilation, electrical and fire-fighting works with handover." },
+  { id: "hvac", name: "HVAC / Ventilation System", category: "MEP", unit: "LUMPSUM", usesSqft: false,
+    description: "Supply, installation and commissioning of HVAC / ventilation system as per design and site requirement." },
+  { id: "fire-fighting", name: "Fire Fighting System", category: "MEP", unit: "LUMPSUM", usesSqft: false,
+    description: "Supply and installation of fire-fighting system (piping, pumps, fixtures) as per approved design and norms." },
+
+  // ---- HVAC & Refrigeration ----
+  { id: "ductable-ac", name: "Ductable AC (Supply / Install / Dismantle)", category: "HVAC & Refrigeration", unit: "NOS", usesSqft: false,
+    description: "Supply, installation, dismantling or gas top-up of ductable air-conditioning units (e.g. 8.5 TR), including ducting and connections as required." },
+  { id: "ac-gas-refill", name: "AC Gas Refilling / General Service", category: "HVAC & Refrigeration", unit: "NOS", usesSqft: false,
+    description: "AC general service and gas refilling — deep jet cleaning, leak inspection/fixing and refrigerant top-up." },
+  { id: "cold-room", name: "Cold Room / Freezer Room (PUF Panels)", category: "HVAC & Refrigeration", unit: "LUMPSUM", usesSqft: false,
+    description: "Supply and installation of cold room / freezer room with PUF insulated panels (PPGI, cam-lock joints), refrigeration unit, door, controls and civil interface." },
+  { id: "puf-panel", name: "PUF Insulated Panel Work", category: "HVAC & Refrigeration", unit: "SQFT", usesSqft: true,
+    description: "Supply and installation of PUF insulated panels (specified thickness/density) for walls/ceiling with cam-lock jointing." },
+
+  // ---- Civil & Misc (one-off) ----
+  { id: "tin-shed", name: "Tin Shed / Roofing Sheet Work", category: "Civil & Misc", unit: "SQFT", usesSqft: true,
+    description: "Supply and fixing of tin/GI roofing sheets over MS structure, including supports and fasteners; replacement of old sheets as required." },
+  { id: "sports-platform", name: "Sports / Basketball Court Platform", category: "Civil & Misc", unit: "SQFT", usesSqft: true,
+    description: "Construction of sports / basketball court platform including brickbat base, PCC/RCC and finishing as per site requirement." },
 ];
