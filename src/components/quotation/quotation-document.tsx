@@ -1,4 +1,3 @@
-import { Crown } from "lucide-react";
 import { KEYVENDORS, OTHER_SERVICES } from "@/lib/quotation/company";
 import type { ComputedLine, ComputedQuote, QuoteState } from "@/lib/quotation/compute";
 
@@ -9,14 +8,13 @@ const fmtDate = (d: string) =>
   d ? new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "long", year: "numeric" }) : "—";
 
 function Logo({ big }: { big?: boolean }) {
+  // eslint-disable-next-line @next/next/no-img-element
   return (
-    <div className="flex items-center gap-1.5">
-      <Crown className={big ? "h-10 w-10" : "h-7 w-7"} style={{ color: "#E8272A" }} fill="#E8272A" />
-      <span className={`font-extrabold tracking-tight ${big ? "text-2xl" : "text-lg"}`}>
-        <span style={{ color: "#E8272A" }}>KEY</span>
-        <span className="text-slate-900">VENDORS</span>
-      </span>
-    </div>
+    <img
+      src="/keyvendors-logo.jpeg"
+      alt="Keyvendors"
+      className={`object-contain ${big ? "h-24 w-24" : "h-14 w-14"}`}
+    />
   );
 }
 
