@@ -89,8 +89,6 @@ export const ITEM_MASTER: MasterItem[] = [
     description: "Office interior design and fit-out including space planning, furniture and finishes." },
 
   // ---- Waterproofing ----
-  { id: "waterproof", name: "Waterproofing (All Types)", category: "Waterproofing", unit: "SQFT", usesSqft: true,
-    description: "All types of waterproofing using Dr. Fixit / Sika / Fosroc products, including surface preparation and application as per industry standards." },
   { id: "waterproof-terrace", name: "Terrace / Roof Waterproofing", category: "Waterproofing", unit: "SQFT", usesSqft: true,
     description: "Terrace / roof waterproofing including cleaning, crack filling, priming and protective coats." },
 
