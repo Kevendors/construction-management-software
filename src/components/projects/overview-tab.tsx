@@ -24,9 +24,9 @@ import {
   AddInvoiceDialog,
   RecordPaymentDialog,
 } from "./project-dialogs";
-import { boqValue, getProject, lineTotalWithTax, taskProgressPercent } from "@/lib/mock/selectors";
+import { boqValue, lineTotalWithTax, taskProgressPercent } from "@/lib/mock/selectors";
 import {
-  useAddedProject,
+  useProject,
   useProjectAttendance,
   useProjectInvoices,
   useProjectTasks,
@@ -45,8 +45,7 @@ function taskProgressPercentRaw(value: number, target: number) {
 }
 
 export function OverviewTab({ projectId }: { projectId: string }) {
-  const addedProject = useAddedProject(projectId);
-  const project = getProject(projectId) ?? addedProject;
+  const project = useProject(projectId);
 
   // Everything reads from the live store so all charts update on any edit.
   const allTasks = useProjectTasks(projectId);

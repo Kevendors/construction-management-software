@@ -5,8 +5,8 @@ export function generateStaticParams() {
   return projects.map((p) => ({ id: p.id }));
 }
 
-// User-created projects live in the browser (localStorage), so the server can't
-// know their ids — render on demand and let the client resolve them.
+// Projects are loaded from Supabase in the client store, which resolves the id
+// on mount — render any id on demand rather than only the prerendered ones.
 export const dynamicParams = true;
 
 export default async function ProjectPage({

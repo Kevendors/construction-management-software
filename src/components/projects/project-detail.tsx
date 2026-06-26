@@ -10,8 +10,14 @@ import { UpdatesTab } from "./updates-tab";
 import { FilesTab } from "./files-tab";
 import { CommercialTab } from "./commercial-tab";
 import { DrawingList } from "@/components/design/drawing-list";
-import { getClient, getProject, getProjectDrawings, getUser } from "@/lib/mock/selectors";
-import { ProjectStoreProvider, useAddedProject } from "@/lib/store/project-store";
+import { getProjectDrawings } from "@/lib/mock/selectors";
+import {
+  ProjectStoreProvider,
+  useClients,
+  useProject,
+  useStore,
+  useUser,
+} from "@/lib/store/project-store";
 import { projectStatusMeta } from "@/lib/labels";
 import { formatINR } from "@/lib/utils";
 
@@ -24,10 +30,28 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
 }
 
 function ProjectDetailInner({ projectId }: { projectId: string }) {
-  // Seed projects come from the mock layer; user-created ones live in the store.
-  const seedProject = getProject(projectId);
-  const addedProject = useAddedProject(projectId);
-  const project = seedProject ?? addedProject;
+  // Projects are loaded from Supabase into the store on mount (RLS-scoped to
+  // the org); resolve this one by id once the load settles.
+  const { loading } = useStore();
+  const project = useProject(projectId);
+  const clients = useClients();
+  const pm = useUser(project?.pmId ?? null);
+
+  if (loading && !project) {
+    return (
+      <div>
+        <Link
+          href="/projects"
+          className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+        >
+          <ArrowLeft className="h-4 w-4" /> Projects
+        </Link>
+        <div className="rounded-xl border border-border bg-card p-10 text-center">
+          <p className="text-sm text-muted-foreground">Loading project…</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!project) {
     return (
@@ -48,8 +72,7 @@ function ProjectDetailInner({ projectId }: { projectId: string }) {
     );
   }
 
-  const client = getClient(project.clientId);
-  const pm = getUser(project.pmId);
+  const client = clients.find((c) => c.id === project.clientId) ?? null;
   const meta = projectStatusMeta[project.status];
   const drawings = getProjectDrawings(projectId);
 

@@ -11,8 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Input, Label } from "@/components/ui/input";
 import { Dialog, Select } from "@/components/ui/dialog";
-import { clients, users } from "@/lib/mock/data";
-import { useStore } from "@/lib/store/project-store";
+import { useClients, useStore, useUsers } from "@/lib/store/project-store";
 import { projectStatusMeta } from "@/lib/labels";
 import { formatINR } from "@/lib/utils";
 import type { Client, Project, ProjectStatus, TaskStatus } from "@/lib/types";
@@ -107,35 +106,39 @@ function NewProjectDialog({
   prefill?: ProjectPrefill | null;
 }) {
   const { addProject } = useStore();
+  const clients = useClients();
+  const users = useUsers();
   const router = useRouter();
   const today = new Date().toISOString().slice(0, 10);
   const nextYear = new Date(Date.now() + 365 * 86400000).toISOString().slice(0, 10);
 
   const [name, setName] = React.useState("");
   const [code, setCode] = React.useState(nextCode);
-  const [clientId, setClientId] = React.useState(clients[0]?.id ?? "");
+  const [clientId, setClientId] = React.useState("");
   const [value, setValue] = React.useState("10000000");
   const [status, setStatus] = React.useState<ProjectStatus>("planning");
   const [location, setLocation] = React.useState("");
   const [startDate, setStartDate] = React.useState(today);
   const [endDate, setEndDate] = React.useState(nextYear);
-  const [pmId, setPmId] = React.useState(users[0]?.id ?? "");
+  const [pmId, setPmId] = React.useState("");
 
   React.useEffect(() => {
     if (!open) return;
     setCode(nextCode);
+    setClientId((c) => c || clients[0]?.id || "");
+    setPmId((p) => p || users[0]?.id || "");
     if (prefill) {
       setName(prefill.name);
       setValue(String(prefill.value));
       setLocation(prefill.location);
       setStatus("planning");
     }
-  }, [open, nextCode, prefill]);
+  }, [open, nextCode, prefill, clients, users]);
 
-  function submit(e: React.FormEvent) {
+  async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) return;
-    const project = addProject({
+    const project = await addProject({
       code: code.trim() || nextCode,
       name: name.trim(),
       clientId,
@@ -148,7 +151,7 @@ function NewProjectDialog({
       pmId,
     });
     onClose();
-    router.push(`/projects/${project.id}`);
+    if (project) router.push(`/projects/${project.id}`);
   }
 
   return (
@@ -156,7 +159,7 @@ function NewProjectDialog({
       open={open}
       onClose={onClose}
       title="New Project"
-      description="Saved to this browser — survives refresh."
+      description="Saved to your workspace — synced across devices."
     >
       <form onSubmit={submit} className="space-y-4">
         <div className="grid grid-cols-[1fr_auto] gap-3">
@@ -250,7 +253,7 @@ function NewProjectDialog({
 }
 
 export function ProjectsBoard({ initial }: { initial: OverviewItem[] }) {
-  const { addedProjects, tasks, transactions } = useStore();
+  const { addedProjects, tasks, transactions, clients } = useStore();
   const [open, setOpen] = React.useState(false);
   const [prefill, setPrefill] = React.useState<ProjectPrefill | null>(null);
 
@@ -298,7 +301,10 @@ export function ProjectsBoard({ initial }: { initial: OverviewItem[] }) {
     };
   });
 
-  const allItems = [...initial, ...addedItems];
+  // After a refresh the server-rendered `initial` already includes any project
+  // created this session, so dedupe by id to avoid showing it twice.
+  const seen = new Set(initial.map((it) => it.project.id));
+  const allItems = [...initial, ...addedItems.filter((it) => !seen.has(it.project.id))];
 
   // Suggest the next SH-### code based on the highest existing one.
   const maxNum = allItems.reduce((max, it) => {

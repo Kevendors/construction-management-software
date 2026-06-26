@@ -8,10 +8,13 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { Input, Label } from "@/components/ui/input";
 import { Dialog, Select, Textarea } from "@/components/ui/dialog";
-import { getUser } from "@/lib/mock/selectors";
-import { users } from "@/lib/mock/data";
 import { fileToResizedDataUrl } from "@/lib/image";
-import { useProjectDprs, useProjectInstructions, useStore } from "@/lib/store/project-store";
+import {
+  useProjectDprs,
+  useProjectInstructions,
+  useStore,
+  useUsers,
+} from "@/lib/store/project-store";
 import type { SiteInstruction } from "@/lib/types";
 
 const MAX_PHOTOS = 8;
@@ -29,6 +32,7 @@ function NewDprDialog({
   onClose: () => void;
 }) {
   const { addDpr } = useStore();
+  const users = useUsers();
   const today = new Date().toISOString().slice(0, 10);
   const [date, setDate] = React.useState(today);
   const [authorId, setAuthorId] = React.useState(users[0]?.id ?? "");
@@ -83,7 +87,7 @@ function NewDprDialog({
       open={open}
       onClose={onClose}
       title="New Daily Progress Report"
-      description="Saved to this browser — survives refresh."
+      description="Saved to your workspace — synced across devices."
     >
       <form onSubmit={submit} className="space-y-4">
         <div className="grid grid-cols-2 gap-3">
@@ -195,6 +199,7 @@ function NewInstructionDialog({
   onClose: () => void;
 }) {
   const { addInstruction } = useStore();
+  const users = useUsers();
   const today = new Date().toISOString().slice(0, 10);
   const [byId, setById] = React.useState(users[0]?.id ?? "");
   const [priority, setPriority] = React.useState<SiteInstruction["priority"]>("medium");
@@ -265,6 +270,8 @@ function NewInstructionDialog({
 export function UpdatesTab({ projectId }: { projectId: string }) {
   const dprs = useProjectDprs(projectId);
   const instructions = useProjectInstructions(projectId);
+  const users = useUsers();
+  const userById = (id: string) => users.find((u) => u.id === id) ?? null;
   const [dprOpen, setDprOpen] = React.useState(false);
   const [siOpen, setSiOpen] = React.useState(false);
 
@@ -281,7 +288,7 @@ export function UpdatesTab({ projectId }: { projectId: string }) {
           </CardHeader>
           <CardContent className="space-y-3 pt-0">
             {dprs.map((d) => {
-              const author = getUser(d.authorId);
+              const author = userById(d.authorId);
               return (
                 <div key={d.id} className="rounded-lg border border-border p-4">
                   <div className="flex items-center gap-2">
@@ -345,7 +352,7 @@ export function UpdatesTab({ projectId }: { projectId: string }) {
         </CardHeader>
         <CardContent className="space-y-3 pt-0">
           {instructions.map((s) => {
-            const by = getUser(s.byId);
+            const by = userById(s.byId);
             return (
               <div key={s.id} className="rounded-lg border border-border p-3">
                 <div className="flex items-center justify-between">

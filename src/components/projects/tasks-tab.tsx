@@ -10,9 +10,8 @@ import { Avatar } from "@/components/ui/avatar";
 import { Input, Label } from "@/components/ui/input";
 import { Dialog, Select } from "@/components/ui/dialog";
 import { GanttChart } from "@/components/charts/gantt-chart";
-import { getUser, taskProgressPercent } from "@/lib/mock/selectors";
-import { users } from "@/lib/mock/data";
-import { useProjectTasks, useStore } from "@/lib/store/project-store";
+import { taskProgressPercent } from "@/lib/mock/selectors";
+import { useProjectTasks, useStore, useUser, useUsers } from "@/lib/store/project-store";
 import { taskStatusMeta } from "@/lib/labels";
 import type { ProgressUnit, Task, TaskStatus } from "@/lib/types";
 
@@ -34,7 +33,7 @@ function TaskRow({
   onDelete: (t: Task) => void;
 }) {
   const meta = taskStatusMeta[task.status];
-  const assignee = getUser(task.assigneeId);
+  const assignee = useUser(task.assigneeId);
   const pct = taskProgressPercent(task);
   return (
     <div
@@ -113,6 +112,7 @@ function TaskDialog({
   editing: Task | null;
 }) {
   const { addTask, updateTask } = useStore();
+  const users = useUsers();
   const today = new Date().toISOString().slice(0, 10);
 
   const [name, setName] = React.useState("");
