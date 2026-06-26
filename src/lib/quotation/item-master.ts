@@ -7,9 +7,11 @@ export type QuoteUnit =
   | "SQM"
   | "RFT"
   | "RMT"
+  | "FEET"
   | "CUM"
   | "KG"
   | "MT"
+  | "BAG"
   | "NOS"
   | "POINT"
   | "LUMPSUM";
