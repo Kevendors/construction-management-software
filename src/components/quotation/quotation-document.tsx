@@ -13,9 +13,9 @@ function Logo({ big }: { big?: boolean }) {
   // eslint-disable-next-line @next/next/no-img-element
   return (
     <img
-      src={big ? "/keyvendors-logo-square.png" : "/keyvendors-logo-landscape.png"}
+      src={big ? "/keyvendors-logo-square.png" : "/keyvendors-landscape.png"}
       alt="Keyvendors"
-      className={`object-contain ${big ? "h-24 w-28" : "h-28 w-auto max-w-full"}`}
+      className={`object-contain ${big ? "h-24 w-28" : "h-auto w-full max-w-[460px] max-h-24"}`}
     />
   );
 }
