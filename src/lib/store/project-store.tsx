@@ -3,6 +3,7 @@
 import * as React from "react";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createClient } from "@/lib/supabase/client";
+import { getDprPhotoUrls, uploadDprPhotos } from "@/app/projects/dpr-actions";
 import {
   mapClient,
   mapInvoice,
@@ -231,6 +232,19 @@ export function ProjectStoreProvider({ children }: { children: React.ReactNode }
       ]);
 
       if (cancelled) return;
+
+      // Mint signed URLs for any DPR photos (private bucket, keyed by dpr id).
+      let dprList = ((dpr.data as DprRow[] | null) ?? []).map(mapDpr);
+      const photoMap = await getDprPhotoUrls(
+        dprList.filter((d) => d.photos > 0).map((d) => ({ id: d.id, photos: d.photos }))
+      );
+      if (Object.keys(photoMap).length) {
+        dprList = dprList.map((d) =>
+          photoMap[d.id] ? { ...d, photoUrls: photoMap[d.id] } : d
+        );
+      }
+
+      if (cancelled) return;
       setData({
         loading: false,
         source: "supabase",
@@ -241,7 +255,7 @@ export function ProjectStoreProvider({ children }: { children: React.ReactNode }
         clients: ((cli.data as ClientRow[] | null) ?? []).map(mapClient),
         users: ((prof.data as UserRow[] | null) ?? []).map(mapUser),
         tasks: ((tsk.data as TaskRow[] | null) ?? []).map(mapTask),
-        dprs: ((dpr.data as DprRow[] | null) ?? []).map(mapDpr),
+        dprs: dprList,
         instructions: ((ins.data as InstructionRow[] | null) ?? []).map(mapInstruction),
         transactions: ((txn.data as TransactionRow[] | null) ?? []).map(mapTransaction),
         invoices: ((inv.data as InvoiceRow[] | null) ?? []).map(mapInvoice),
@@ -416,10 +430,16 @@ export function ProjectStoreProvider({ children }: { children: React.ReactNode }
         })
         .select("*")
         .single()
-        .then(({ data: row, error }) => {
+        .then(async ({ data: row, error }) => {
           if (error || !row) return console.error("[project-store] addDpr failed", error);
-          // Keep the locally-held photo data URLs (not yet persisted to Storage).
-          const real = { ...mapDpr(row as DprRow), photoUrls: d.photoUrls };
+          // Upload photos to the private bucket; fall back to the local data
+          // URLs for instant display if the upload returns nothing.
+          let photoUrls = d.photoUrls;
+          if (d.photoUrls?.length) {
+            const signed = await uploadDprPhotos((row as DprRow).id, d.photoUrls);
+            if (signed.length) photoUrls = signed;
+          }
+          const real = { ...mapDpr(row as DprRow), photoUrls };
           patch((prev) => ({
             ...prev,
             dprs: prev.dprs.map((x) => (x.id === optimistic.id ? real : x)),
