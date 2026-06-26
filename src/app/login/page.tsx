@@ -180,7 +180,7 @@ export default function LoginPage() {
               <>
                 No account yet?{" "}
                 <button type="button" onClick={() => switchMode("signup")} className="font-medium text-primary hover:underline">
-                  Create one
+                  Create Account
                 </button>
               </>
             ) : (
