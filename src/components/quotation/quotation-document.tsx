@@ -39,6 +39,10 @@ export function QuotationDocument({ s, c }: { s: QuoteState; c: ComputedQuote })
   return (
     <article
       id="quote-doc"
+      // print-color-adjust forces the salmon section bars / banners (and their
+      // white text) to render in print & PDF — browsers otherwise strip page
+      // background colours and recolour the text, flattening the layout.
+      style={{ WebkitPrintColorAdjust: "exact", printColorAdjust: "exact" } as React.CSSProperties}
       className="mx-auto w-full max-w-[820px] border border-slate-400 bg-white text-[11px] leading-snug text-slate-900 shadow-sm print:max-w-none print:shadow-none"
     >
       {/* Title banner */}
