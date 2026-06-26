@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { HardHat, Loader2, CheckCircle2 } from "lucide-react";
+import { CheckCircle2, Eye, EyeOff, HardHat, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 import { createClient } from "@/lib/supabase/client";
@@ -17,6 +17,7 @@ export default function ResetPasswordPage() {
   const [error, setError] = React.useState<string | null>(null);
   const [done, setDone] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
+  const [showPassword, setShowPassword] = React.useState(false);
 
   // The recovery email link lands here with a `code` (PKCE) which we exchange
   // for a short-lived session, or an existing PASSWORD_RECOVERY session.
@@ -92,11 +93,23 @@ export default function ResetPasswordPage() {
           <form onSubmit={submit} className="space-y-4">
             <div className="space-y-1.5">
               <Label htmlFor="new-password">New password</Label>
-              <Input id="new-password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" autoComplete="new-password" autoFocus required />
+              <div className="relative">
+                <Input id="new-password" type={showPassword ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" autoComplete="new-password" autoFocus required className="pr-10" />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((s) => !s)}
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  aria-pressed={showPassword}
+                  tabIndex={-1}
+                  className="absolute inset-y-0 right-0 flex items-center px-3 text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="confirm-password">Confirm password</Label>
-              <Input id="confirm-password" type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder="••••••••" autoComplete="new-password" required />
+              <Input id="confirm-password" type={showPassword ? "text" : "password"} value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder="••••••••" autoComplete="new-password" required />
             </div>
             {error && <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
             <Button type="submit" className="w-full" disabled={loading}>
