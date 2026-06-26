@@ -12,6 +12,7 @@ import { QuotationDocument } from "@/components/quotation/quotation-document";
 import { ITEM_CATEGORIES, ITEM_MASTER } from "@/lib/quotation/item-master";
 import { computeQuote, lineAmount, type QuoteLine, type QuoteState } from "@/lib/quotation/compute";
 import { DEFAULT_TERMS } from "@/lib/quotation/company";
+import { saveQuotationAction, getQuotationPayloadAction } from "../actions";
 import { formatINR } from "@/lib/utils";
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -44,10 +45,19 @@ export default function NewQuotationPage() {
   const router = useRouter();
   const [s, setS] = React.useState<QuoteState>(emptyState);
   const [pick, setPick] = React.useState("");
+  const [saving, setSaving] = React.useState(false);
+  const [savedMsg, setSavedMsg] = React.useState<string | null>(null);
   const c = computeQuote(s);
 
-  // Generate the quote number client-side only, to avoid an SSR/client mismatch.
+  // Load an existing quote when opened with ?id=, else generate a number.
   React.useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("id");
+    if (id) {
+      getQuotationPayloadAction(id).then((payload) => {
+        if (payload) setS(payload);
+      });
+      return;
+    }
     setS((prev) => (prev.number ? prev : { ...prev, number: `KV-${Math.floor(Math.random() * 900) + 100}` }));
   }, []);
 
@@ -79,15 +89,17 @@ export default function NewQuotationPage() {
     }));
   }
 
-  function saveDraft() {
+  async function saveDraft() {
+    setSaving(true);
+    setSavedMsg(null);
     try {
-      const key = "sitehub:quotes";
-      const all = JSON.parse(localStorage.getItem(key) || "[]");
-      all.unshift({ ...s, savedAt: new Date().toISOString(), grandTotal: c.grandTotal });
-      localStorage.setItem(key, JSON.stringify(all));
-      alert("Quotation saved to this browser.");
-    } catch {
-      alert("Could not save.");
+      const res = await saveQuotationAction(s, c.grandTotal);
+      if (res.error) setSavedMsg(`Could not save: ${res.error}`);
+      else setSavedMsg("Saved to database ✓");
+    } catch (e) {
+      setSavedMsg(`Could not save: ${e instanceof Error ? e.message : "error"}`);
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -111,9 +123,14 @@ export default function NewQuotationPage() {
         <Link href="/quotations" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
           <ArrowLeft className="h-4 w-4" /> Quotations
         </Link>
-        <div className="flex flex-wrap gap-2">
-          <Button variant="outline" size="sm" onClick={saveDraft}>
-            <Save /> Save
+        <div className="flex flex-wrap items-center gap-2">
+          {savedMsg && (
+            <span className={`text-xs font-medium ${savedMsg.startsWith("Could not") ? "text-destructive" : "text-success"}`}>
+              {savedMsg}
+            </span>
+          )}
+          <Button variant="outline" size="sm" onClick={saveDraft} disabled={saving}>
+            <Save /> {saving ? "Saving…" : "Save"}
           </Button>
           <Button variant="outline" size="sm" onClick={() => window.print()}>
             <Printer /> Print / PDF

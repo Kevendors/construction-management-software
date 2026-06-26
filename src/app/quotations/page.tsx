@@ -61,9 +61,11 @@ export default async function QuotationsPage() {
                   </p>
                 </div>
                 <div className="flex gap-2">
-                  <Button size="sm" variant="outline">
-                    <Download /> PDF
-                  </Button>
+                  <Link href={`/quotations/new?id=${q.id}`}>
+                    <Button size="sm" variant="outline">
+                      <Download /> Open / PDF
+                    </Button>
+                  </Link>
                   {q.status === "accepted" && (
                     <Button size="sm">
                       <ArrowRightLeft /> Convert to Project
