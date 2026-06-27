@@ -24,7 +24,7 @@ export const KEYVENDORS = {
  * defaults and may need correcting.
  */
 export const KEYVENDORS_LINKS = {
-  blog: "https://www.keyvendors.com/blog",
+  blog: "https://www.keyvendors.com/blogs",
   youtube: "https://www.youtube.com/@keyvendors",
   review: "https://shorturl.at/bI9HW",
 };
