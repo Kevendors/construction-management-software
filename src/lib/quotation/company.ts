@@ -26,7 +26,7 @@ export const KEYVENDORS = {
 export const KEYVENDORS_LINKS = {
   blog: "https://www.keyvendors.com/blog",
   youtube: "https://www.youtube.com/@keyvendors",
-  review: "https://www.google.com/search?q=keyvendors+india+reviews",
+  review: "https://shorturl.at/bI9HW",
 };
 
 /** "We Also Provide These Services" list shown in the footer. */
