@@ -18,6 +18,17 @@ export const KEYVENDORS = {
   },
 };
 
+/**
+ * "Important Links" shown in the quotation header (clickable).
+ * TODO: confirm the exact URLs with the business — these are best-guess
+ * defaults and may need correcting.
+ */
+export const KEYVENDORS_LINKS = {
+  blog: "https://www.keyvendors.com/blog",
+  youtube: "https://www.youtube.com/@keyvendors",
+  review: "https://www.google.com/search?q=keyvendors+india+reviews",
+};
+
 /** "We Also Provide These Services" list shown in the footer. */
 export const OTHER_SERVICES = [
   "Interior Designing",

@@ -1,4 +1,4 @@
-import { KEYVENDORS, OTHER_SERVICES } from "@/lib/quotation/company";
+import { KEYVENDORS, KEYVENDORS_LINKS, OTHER_SERVICES } from "@/lib/quotation/company";
 import type { ComputedLine, ComputedQuote, QuoteState } from "@/lib/quotation/compute";
 
 const SALMON = "#e79b84";
@@ -82,9 +82,15 @@ export function QuotationDocument({ s, c }: { s: QuoteState; c: ComputedQuote })
             <Logo big />
           </div>
           <div className="divide-y divide-slate-300 border-b border-slate-300 text-center text-[11px]" style={{ color: "#1f7a3d" }}>
-            <p className="py-1">Keyvendors Blogs</p>
-            <p className="py-1">Keyvendors Youtube Channel</p>
-            <p className="py-1">Review</p>
+            <a href={KEYVENDORS_LINKS.blog} target="_blank" rel="noreferrer" className="block py-1 hover:underline">
+              Keyvendors Blogs
+            </a>
+            <a href={KEYVENDORS_LINKS.youtube} target="_blank" rel="noreferrer" className="block py-1 hover:underline">
+              Keyvendors Youtube Channel
+            </a>
+            <a href={KEYVENDORS_LINKS.review} target="_blank" rel="noreferrer" className="block py-1 hover:underline">
+              Review
+            </a>
           </div>
         </div>
       </div>
