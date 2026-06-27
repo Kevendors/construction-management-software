@@ -41,7 +41,7 @@ export function Sidebar({
           </span>
           <div className="leading-tight">
             <div className="text-base font-bold tracking-tight text-white">SiteHub</div>
-            <div className="text-[11px] text-sidebar-muted">Charu · Construction</div>
+            <div className="text-[11px] text-sidebar-muted">Construction</div>
           </div>
           <button
             onClick={onClose}
