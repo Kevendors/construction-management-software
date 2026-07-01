@@ -193,25 +193,18 @@ export default function NewQuotationPage() {
                     <Textarea value={l.description} onChange={(e) => updateLine(l.id, { description: e.target.value })} placeholder="Item / service description" className="min-h-[48px] flex-1" />
                     <Button size="icon" variant="ghost" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => removeLine(l.id)}><Trash2 className="h-3.5 w-3.5" /></Button>
                   </div>
-                  <div className="grid grid-cols-5 gap-2">
+                  <div className="grid grid-cols-4 gap-2">
                     <Field label="Unit" small>
                       <Select value={l.unit} onChange={(e) => updateLine(l.id, { unit: e.target.value as QuoteLine["unit"] })} className="h-8 text-xs">
                         {["SQFT", "SQM", "RFT", "RMT", "FEET", "CUM", "KG", "MT", "BAG", "NOS", "POINT", "LUMPSUM"].map((u) => <option key={u} value={u}>{u}</option>)}
                       </Select>
                     </Field>
                     <Field label="Qty" small><Input type="number" value={l.qty} onChange={(e) => updateLine(l.id, { qty: Number(e.target.value) })} className="h-8 text-xs" /></Field>
-                    <Field label="Sq.ft" small>
-                      <Input type="number" value={l.sqft} disabled={!l.usesSqft} onChange={(e) => updateLine(l.id, { sqft: Number(e.target.value) })} className="h-8 text-xs" />
-                    </Field>
                     <Field label="Rate ₹" small><Input type="number" value={l.rate} onChange={(e) => updateLine(l.id, { rate: Number(e.target.value) })} className="h-8 text-xs" /></Field>
                     <Field label="Amount" small>
                       <div className="flex h-8 items-center justify-end rounded-md bg-secondary px-2 text-xs font-medium tabular-nums">{formatINR(lineAmount(l))}</div>
                     </Field>
                   </div>
-                  <label className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <input type="checkbox" checked={l.usesSqft} onChange={(e) => updateLine(l.id, { usesSqft: e.target.checked, sqft: e.target.checked ? l.sqft || 100 : 1 })} />
-                    Multiply by Sq.ft area
-                  </label>
                 </div>
               ))}
             </CardContent>

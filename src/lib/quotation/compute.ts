@@ -60,10 +60,9 @@ export interface ComputedQuote {
   words: string;
 }
 
-/** Amount = Rate × Quantity × Sq.ft (Sq.ft applies only when relevant). */
+/** Amount = Quantity × Rate. */
 export function lineAmount(l: QuoteLine): number {
-  const area = l.usesSqft ? l.sqft || 0 : 1;
-  return (l.rate || 0) * (l.qty || 0) * area;
+  return (l.rate || 0) * (l.qty || 0);
 }
 
 export function computeQuote(s: QuoteState): ComputedQuote {

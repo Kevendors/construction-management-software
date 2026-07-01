@@ -82,13 +82,12 @@ export async function saveQuotationAction(
     .single();
   if (qErr) return { error: qErr.message };
 
-  // Line items — fold the Sq.ft factor into the stored quantity so
-  // qty × rate still equals the line amount.
+  // Line items — Amount = qty × rate.
   const items = state.lines.map((l) => ({
     org_id: orgId,
     quotation_id: quote.id,
     description: l.description,
-    qty: l.usesSqft ? (l.qty || 0) * (l.sqft || 0) : l.qty || 0,
+    qty: l.qty || 0,
     unit: l.unit,
     rate: l.rate || 0,
   }));

@@ -30,7 +30,7 @@ function Bar({ children }: { children: React.ReactNode }) {
 
 function displayQty(l: ComputedLine) {
   if (l.unit === "LUMPSUM") return "Lump sum";
-  const q = l.usesSqft ? (l.qty || 0) * (l.sqft || 0) : l.qty || 0;
+  const q = l.qty || 0;
   return q ? new Intl.NumberFormat("en-IN").format(q) : "";
 }
 
