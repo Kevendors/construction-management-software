@@ -121,7 +121,7 @@ export function QuotationDocument({ s, c }: { s: QuoteState; c: ComputedQuote })
             <th className="border border-slate-400 px-2 py-1 text-left">Description</th>
             <th className="border border-slate-400 px-1 py-1 w-12">Unit</th>
             <th className="border border-slate-400 px-1 py-1 w-16">Quantity</th>
-            <th className="border border-slate-400 px-1 py-1 w-20 text-right">Rate</th>
+            <th className="border border-slate-400 px-1 py-1 w-20 text-center">Rate</th>
             <th className="border border-slate-400 px-1 py-1 w-16">Specific</th>
             <th className="border border-slate-400 px-1 py-1 w-24 text-right">Amount</th>
           </tr>
@@ -135,7 +135,7 @@ export function QuotationDocument({ s, c }: { s: QuoteState; c: ComputedQuote })
               <td className="border border-slate-400 px-2 py-1">{l.description}</td>
               <td className="border border-slate-400 px-1 py-1 text-center">{l.unit}</td>
               <td className="border border-slate-400 px-1 py-1 text-center tabular-nums">{displayQty(l)}</td>
-              <td className="border border-slate-400 px-1 py-1 text-right tabular-nums">
+              <td className="border border-slate-400 px-1 py-1 text-center tabular-nums">
                 {lm === "rate" ? "Lumpsum" : l.rate ? inr(l.rate) : ""}
               </td>
               <td className="border border-slate-400 px-1 py-1 text-center">{l.specific}</td>
