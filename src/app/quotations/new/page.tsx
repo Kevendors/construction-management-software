@@ -276,7 +276,7 @@ export default function NewQuotationPage() {
               <input ref={sigRef} type="file" accept="image/*" className="hidden" onChange={handleSignature} />
               <div className="flex items-center gap-4">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={s.signatureUrl || DEFAULT_SIGNATURE} alt="Business signature" className="h-16 w-auto rounded border border-border bg-white object-contain px-2" />
+                <img src={s.signatureUrl || DEFAULT_SIGNATURE} alt="Business signature" className="h-24 w-auto rounded border border-border bg-white object-contain px-2" />
                 <div className="flex flex-col gap-2">
                   <span className="text-xs text-muted-foreground">
                     {s.signatureUrl ? "Custom signature" : "Default Keyvendors signature"}

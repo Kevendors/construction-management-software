@@ -192,7 +192,7 @@ export function QuotationDocument({ s, c }: { s: QuoteState; c: ComputedQuote })
             <div className="border-t border-slate-400 pt-1">Client&apos;s Signature</div>
             <div>
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={s.signatureUrl || DEFAULT_SIGNATURE} alt="Business signature" className="mx-auto mb-1 h-20 w-auto max-w-full object-contain" />
+              <img src={s.signatureUrl || DEFAULT_SIGNATURE} alt="Business signature" className="mx-auto mb-1 h-24 w-full max-w-[220px] object-contain" />
               <div className="border-t border-slate-400 pt-1">Business Signature</div>
             </div>
           </div>

@@ -24,7 +24,7 @@ export const KEYVENDORS = {
  * defaults and may need correcting.
  */
 /** Default business signature/stamp shown unless a quote overrides it. */
-export const DEFAULT_SIGNATURE = "/keyvendors-signature.png";
+export const DEFAULT_SIGNATURE = "/keyvendors-signature-transparent.png";
 
 export const KEYVENDORS_LINKS = {
   blog: "https://www.keyvendors.com/blogs",
