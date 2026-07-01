@@ -188,7 +188,6 @@ export default function NewQuotationPage() {
               {s.lines.length === 0 && <p className="py-4 text-center text-sm text-muted-foreground">No items yet — add from the master list.</p>}
               {s.lines.map((l, i) => {
                 const lm = getLumpsumMode(l);
-                const lump = lm !== "none";
                 return (
                 <div key={l.id} className="rounded-lg border border-border p-3">
                   <div className="mb-2 flex items-start gap-2">
@@ -198,11 +197,11 @@ export default function NewQuotationPage() {
                   </div>
                   <div className="grid grid-cols-5 gap-2">
                     <Field label="Unit" small>
-                      <Select value={l.unit} disabled={lump} onChange={(e) => updateLine(l.id, { unit: e.target.value as QuoteLine["unit"] })} className="h-8 text-xs">
+                      <Select value={l.unit} onChange={(e) => updateLine(l.id, { unit: e.target.value as QuoteLine["unit"] })} className="h-8 text-xs">
                         {["SQFT", "SQM", "RFT", "RMT", "FEET", "CUM", "KG", "MT", "BAG", "NOS", "POINT"].map((u) => <option key={u} value={u}>{u}</option>)}
                       </Select>
                     </Field>
-                    <Field label="Qty" small><Input type="number" value={l.qty} disabled={lump} onChange={(e) => updateLine(l.id, { qty: Number(e.target.value) })} className="h-8 text-xs" /></Field>
+                    <Field label="Qty" small><Input type="number" value={l.qty} onChange={(e) => updateLine(l.id, { qty: Number(e.target.value) })} className="h-8 text-xs" /></Field>
                     <Field label="Rate" small>
                       {lm === "rate" ? (
                         <div className="flex h-8 items-center rounded-md border border-input bg-secondary px-2 text-xs font-medium text-muted-foreground">Lumpsum</div>

@@ -1,5 +1,5 @@
 import { KEYVENDORS, KEYVENDORS_LINKS, OTHER_SERVICES } from "@/lib/quotation/company";
-import { getLumpsumMode, isLumpsum, type ComputedLine, type ComputedQuote, type QuoteState } from "@/lib/quotation/compute";
+import { getLumpsumMode, type ComputedLine, type ComputedQuote, type QuoteState } from "@/lib/quotation/compute";
 
 const SALMON = "#e79b84";
 const inr = (n: number) =>
@@ -29,7 +29,6 @@ function Bar({ children }: { children: React.ReactNode }) {
 }
 
 function displayQty(l: ComputedLine) {
-  if (isLumpsum(l)) return "";
   const q = l.qty || 0;
   return q ? new Intl.NumberFormat("en-IN").format(q) : "";
 }
@@ -134,7 +133,7 @@ export function QuotationDocument({ s, c }: { s: QuoteState; c: ComputedQuote })
             <tr key={l.id} className="align-top">
               <td className="border border-slate-400 px-1 py-1 text-center">{i + 1}</td>
               <td className="border border-slate-400 px-2 py-1">{l.description}</td>
-              <td className="border border-slate-400 px-1 py-1 text-center">{lm !== "none" ? "" : l.unit}</td>
+              <td className="border border-slate-400 px-1 py-1 text-center">{l.unit}</td>
               <td className="border border-slate-400 px-1 py-1 text-center tabular-nums">{displayQty(l)}</td>
               <td className="border border-slate-400 px-1 py-1 text-right tabular-nums">
                 {lm === "rate" ? "Lumpsum" : l.rate ? inr(l.rate) : ""}
