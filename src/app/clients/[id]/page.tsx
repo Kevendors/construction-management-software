@@ -16,6 +16,7 @@ import {
   getClientQuotations,
   getProjectsByClient,
 } from "@/lib/data/crm";
+import { ClientDetailActions } from "@/components/crm/client-detail-actions";
 import { lineTotalWithTax } from "@/lib/data/compute";
 import { projectStatusMeta, quotationStatusMeta } from "@/lib/labels";
 import { formatINR } from "@/lib/utils";
@@ -38,12 +39,15 @@ export default async function ClientPage({
 
   return (
     <div>
-      <Link
-        href="/clients"
-        className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-      >
-        <ArrowLeft className="h-4 w-4" /> Clients
-      </Link>
+      <div className="mb-4 flex items-center justify-between">
+        <Link
+          href="/clients"
+          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+        >
+          <ArrowLeft className="h-4 w-4" /> Clients
+        </Link>
+        <ClientDetailActions client={client} />
+      </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         {/* profile */}
