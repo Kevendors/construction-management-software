@@ -201,7 +201,7 @@ export default function NewQuotationPage() {
                     </Field>
                     <Field label="Qty" small><Input type="number" value={l.qty} onChange={(e) => updateLine(l.id, { qty: Number(e.target.value) })} className="h-8 text-xs" /></Field>
                     <Field label="Rate ₹" small><Input type="number" value={l.rate} onChange={(e) => updateLine(l.id, { rate: Number(e.target.value) })} className="h-8 text-xs" /></Field>
-                    <Field label="Specific" small><Input value={l.specific} onChange={(e) => updateLine(l.id, { specific: e.target.value })} placeholder="e.g. 2 coats" className="h-8 text-xs" /></Field>
+                    <Field label="Specific" small><Input value={l.specific} onChange={(e) => updateLine(l.id, { specific: e.target.value })} className="h-8 text-xs" /></Field>
                     <Field label="Amount" small>
                       <div className="flex h-8 items-center justify-end rounded-md bg-secondary px-2 text-xs font-medium tabular-nums">{formatINR(lineAmount(l))}</div>
                     </Field>
