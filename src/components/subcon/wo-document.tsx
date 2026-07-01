@@ -16,7 +16,7 @@ function Logo({ big }: { big?: boolean }) {
     <img
       src={big ? "/keyvendors-logo-square.png" : "/keyvendors-landscape.png"}
       alt="Keyvendors"
-      className={`object-contain ${big ? "h-24 w-28" : "h-auto w-full"}`}
+      className={`object-contain ${big ? "h-24 w-28" : "h-auto w-5/6"}`}
     />
   );
 }
