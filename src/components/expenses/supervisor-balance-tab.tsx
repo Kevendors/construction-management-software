@@ -3,22 +3,33 @@
 import { ArrowDownLeft, ArrowUpRight } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar } from "@/components/ui/avatar";
-import {
-  getProject,
-  getSupervisorEntries,
-  getUser,
-  supervisorBalances,
-} from "@/lib/mock/selectors";
+import { supervisorBalancesFrom } from "./compute";
+import type { ExpensesBoard } from "@/lib/data/expenses";
 import { cn, formatINR } from "@/lib/utils";
 
-export function SupervisorBalanceTab() {
-  const balances = supervisorBalances();
+export function SupervisorBalanceTab({ board }: { board: ExpensesBoard }) {
+  const { ledger, users, projects } = board;
+  const userById = new Map(users.map((u) => [u.id, u]));
+  const projectById = new Map(projects.map((p) => [p.id, p]));
+  const balances = supervisorBalancesFrom(ledger);
+
+  if (balances.length === 0) {
+    return (
+      <Card>
+        <CardContent className="py-12 text-center text-sm text-muted-foreground">
+          No supervisor imprest entries yet.
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <div className="grid gap-4 lg:grid-cols-2">
       {balances.map((b) => {
-        const sup = getUser(b.supervisorId);
-        const entries = getSupervisorEntries(b.supervisorId);
+        const sup = userById.get(b.supervisorId) ?? null;
+        const entries = ledger
+          .filter((e) => e.supervisorId === b.supervisorId)
+          .sort((a, z) => +new Date(z.date) - +new Date(a.date));
         return (
           <Card key={b.supervisorId}>
             <CardHeader className="flex-row items-center justify-between gap-3">
@@ -63,7 +74,7 @@ export function SupervisorBalanceTab() {
                       <div className="min-w-0 flex-1">
                         <p className="truncate">{e.note}</p>
                         <p className="text-xs text-muted-foreground">
-                          {getProject(e.projectId)?.code} ·{" "}
+                          {projectById.get(e.projectId)?.code} ·{" "}
                           {new Date(e.date).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}
                         </p>
                       </div>

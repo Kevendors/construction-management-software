@@ -6,16 +6,17 @@ import { StatCard } from "@/components/dashboard/stat-card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ExpensesApprovalTab } from "./expenses-approval-tab";
 import { SupervisorBalanceTab } from "./supervisor-balance-tab";
-import { expenses } from "@/lib/mock/data";
-import { supervisorBalances } from "@/lib/mock/selectors";
+import { supervisorBalancesFrom } from "./compute";
+import type { ExpensesBoard } from "@/lib/data/expenses";
 import { formatINR } from "@/lib/utils";
 
-export function ExpensesModule() {
+export function ExpensesModule({ board }: { board: ExpensesBoard }) {
+  const { expenses, ledger } = board;
   const pending = expenses.filter((e) => e.status === "pending");
   const approvedTotal = expenses
     .filter((e) => e.status === "approved")
     .reduce((s, e) => s + e.amount, 0);
-  const balances = supervisorBalances();
+  const balances = supervisorBalancesFrom(ledger);
   const netBalance = balances.reduce((s, b) => s + b.balance, 0);
 
   return (
@@ -38,10 +39,10 @@ export function ExpensesModule() {
           <TabsTrigger value="balance">Supervisor Balance</TabsTrigger>
         </TabsList>
         <TabsContent value="expenses">
-          <ExpensesApprovalTab />
+          <ExpensesApprovalTab board={board} />
         </TabsContent>
         <TabsContent value="balance">
-          <SupervisorBalanceTab />
+          <SupervisorBalanceTab board={board} />
         </TabsContent>
       </Tabs>
     </>
