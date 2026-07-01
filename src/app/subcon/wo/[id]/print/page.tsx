@@ -1,5 +1,7 @@
+import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
 import { notFound } from "next/navigation";
-import { DocumentShell } from "@/components/documents/document-shell";
+import { PrintButton } from "@/components/documents/print-button";
 import { WoDocument } from "@/components/subcon/wo-document";
 import { getWorkOrderView } from "@/lib/data/subcon";
 
@@ -17,8 +19,18 @@ export default async function WoPrintPage({
   if (!view) notFound();
 
   return (
-    <DocumentShell backHref="/subcon" backLabel="Subcontractor" docType="Work Order">
+    <div className="mx-auto max-w-[820px]">
+      <div className="mb-4 flex items-center justify-between print:hidden">
+        <Link
+          href="/subcon"
+          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+        >
+          <ArrowLeft className="h-4 w-4" /> Subcontractor
+        </Link>
+        <PrintButton />
+      </div>
+
       <WoDocument wo={view.wo} sc={view.subcontractor} project={view.project} />
-    </DocumentShell>
+    </div>
   );
 }
