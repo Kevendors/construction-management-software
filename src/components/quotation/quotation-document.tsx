@@ -29,7 +29,6 @@ function Bar({ children }: { children: React.ReactNode }) {
 }
 
 function displayQty(l: ComputedLine) {
-  if (isLumpsum(l)) return "";
   const q = l.qty || 0;
   return q ? new Intl.NumberFormat("en-IN").format(q) : "";
 }
