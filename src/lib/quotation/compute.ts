@@ -58,6 +58,8 @@ export interface QuoteState {
   // Notes / T&C
   notes: string;
   terms: string;
+  // Uploaded business signature (image data URL); empty = none
+  signatureUrl: string;
 }
 
 export interface ComputedLine extends QuoteLine {

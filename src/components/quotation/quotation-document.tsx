@@ -188,9 +188,15 @@ export function QuotationDocument({ s, c }: { s: QuoteState; c: ComputedQuote })
           <p>A/c No.: {KEYVENDORS.bank.account}</p>
         </div>
         <div className="flex flex-col justify-end px-3 py-2 text-center text-[10px]">
-          <div className="mt-6 grid grid-cols-2 gap-3">
+          <div className="mt-6 grid grid-cols-2 items-end gap-3">
             <div className="border-t border-slate-400 pt-1">Client&apos;s Signature</div>
-            <div className="border-t border-slate-400 pt-1">Business Signature</div>
+            <div>
+              {s.signatureUrl && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={s.signatureUrl} alt="Business signature" className="mx-auto mb-1 h-10 w-auto object-contain" />
+              )}
+              <div className="border-t border-slate-400 pt-1">Business Signature</div>
+            </div>
           </div>
         </div>
       </div>
