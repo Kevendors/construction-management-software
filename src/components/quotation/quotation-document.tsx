@@ -1,5 +1,5 @@
 import { KEYVENDORS, KEYVENDORS_LINKS, OTHER_SERVICES } from "@/lib/quotation/company";
-import { isLumpsum, type ComputedLine, type ComputedQuote, type QuoteState } from "@/lib/quotation/compute";
+import { getLumpsumMode, isLumpsum, type ComputedLine, type ComputedQuote, type QuoteState } from "@/lib/quotation/compute";
 
 const SALMON = "#e79b84";
 const inr = (n: number) =>
@@ -128,19 +128,24 @@ export function QuotationDocument({ s, c }: { s: QuoteState; c: ComputedQuote })
           </tr>
         </thead>
         <tbody>
-          {c.lines.map((l, i) => (
+          {c.lines.map((l, i) => {
+            const lm = getLumpsumMode(l);
+            return (
             <tr key={l.id} className="align-top">
               <td className="border border-slate-400 px-1 py-1 text-center">{i + 1}</td>
               <td className="border border-slate-400 px-2 py-1">{l.description}</td>
-              <td className="border border-slate-400 px-1 py-1 text-center">{isLumpsum(l) ? "" : l.unit}</td>
+              <td className="border border-slate-400 px-1 py-1 text-center">{lm !== "none" ? "" : l.unit}</td>
               <td className="border border-slate-400 px-1 py-1 text-center tabular-nums">{displayQty(l)}</td>
               <td className="border border-slate-400 px-1 py-1 text-right tabular-nums">
-                {isLumpsum(l) ? "Lumpsum" : l.rate ? inr(l.rate) : ""}
+                {lm === "rate" ? "Lumpsum" : l.rate ? inr(l.rate) : ""}
               </td>
               <td className="border border-slate-400 px-1 py-1 text-center">{l.specific}</td>
-              <td className="border border-slate-400 px-1 py-1 text-right tabular-nums">{inr(l.amount)}</td>
+              <td className="border border-slate-400 px-1 py-1 text-right tabular-nums">
+                {lm === "amount" ? "Lumpsum" : inr(l.amount)}
+              </td>
             </tr>
-          ))}
+            );
+          })}
           {c.lines.length === 0 && (
             <tr>
               <td colSpan={7} className="border border-slate-400 px-2 py-6 text-center text-slate-400">No items added yet.</td>

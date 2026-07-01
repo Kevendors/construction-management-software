@@ -10,7 +10,7 @@ import { Select, Textarea } from "@/components/ui/dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { QuotationDocument } from "@/components/quotation/quotation-document";
 import { ITEM_CATEGORIES, ITEM_MASTER } from "@/lib/quotation/item-master";
-import { computeQuote, lineAmount, type QuoteLine, type QuoteState } from "@/lib/quotation/compute";
+import { computeQuote, getLumpsumMode, lineAmount, type QuoteLine, type QuoteState } from "@/lib/quotation/compute";
 import { DEFAULT_TERMS } from "@/lib/quotation/company";
 import { saveQuotationAction, getQuotationPayloadAction } from "../actions";
 import { formatINR } from "@/lib/utils";
@@ -77,7 +77,7 @@ export default function NewQuotationPage() {
       ...prev,
       lines: [
         ...prev.lines,
-        { id: uid(), itemId: m.id, description: m.description, unit: m.unit, usesSqft: m.usesSqft, rate: 0, qty: 1, sqft: m.usesSqft ? 100 : 1, specific: "", lumpsum: m.unit === "LUMPSUM" },
+        { id: uid(), itemId: m.id, description: m.description, unit: m.unit, usesSqft: m.usesSqft, rate: 0, qty: 1, sqft: m.usesSqft ? 100 : 1, specific: "", lumpsumMode: m.unit === "LUMPSUM" ? "rate" : "none" },
       ],
     }));
     setPick("");
@@ -85,7 +85,7 @@ export default function NewQuotationPage() {
   function addCustom() {
     setS((prev) => ({
       ...prev,
-      lines: [...prev.lines, { id: uid(), itemId: null, description: "", unit: "SQFT", usesSqft: false, rate: 0, qty: 1, sqft: 1, specific: "", lumpsum: false }],
+      lines: [...prev.lines, { id: uid(), itemId: null, description: "", unit: "SQFT", usesSqft: false, rate: 0, qty: 1, sqft: 1, specific: "", lumpsumMode: "none" }],
     }));
   }
 
@@ -186,7 +186,10 @@ export default function NewQuotationPage() {
             </CardHeader>
             <CardContent className="space-y-3">
               {s.lines.length === 0 && <p className="py-4 text-center text-sm text-muted-foreground">No items yet — add from the master list.</p>}
-              {s.lines.map((l, i) => (
+              {s.lines.map((l, i) => {
+                const lm = getLumpsumMode(l);
+                const lump = lm !== "none";
+                return (
                 <div key={l.id} className="rounded-lg border border-border p-3">
                   <div className="mb-2 flex items-start gap-2">
                     <span className="mt-2 text-xs font-medium text-muted-foreground">{i + 1}.</span>
@@ -195,33 +198,42 @@ export default function NewQuotationPage() {
                   </div>
                   <div className="grid grid-cols-5 gap-2">
                     <Field label="Unit" small>
-                      <Select value={l.unit} disabled={l.lumpsum} onChange={(e) => updateLine(l.id, { unit: e.target.value as QuoteLine["unit"] })} className="h-8 text-xs">
+                      <Select value={l.unit} disabled={lump} onChange={(e) => updateLine(l.id, { unit: e.target.value as QuoteLine["unit"] })} className="h-8 text-xs">
                         {["SQFT", "SQM", "RFT", "RMT", "FEET", "CUM", "KG", "MT", "BAG", "NOS", "POINT"].map((u) => <option key={u} value={u}>{u}</option>)}
                       </Select>
                     </Field>
-                    <Field label="Qty" small><Input type="number" value={l.qty} disabled={l.lumpsum} onChange={(e) => updateLine(l.id, { qty: Number(e.target.value) })} className="h-8 text-xs" /></Field>
+                    <Field label="Qty" small><Input type="number" value={l.qty} disabled={lump} onChange={(e) => updateLine(l.id, { qty: Number(e.target.value) })} className="h-8 text-xs" /></Field>
                     <Field label="Rate" small>
-                      {l.lumpsum ? (
+                      {lm === "rate" ? (
                         <div className="flex h-8 items-center rounded-md border border-input bg-secondary px-2 text-xs font-medium text-muted-foreground">Lumpsum</div>
                       ) : (
-                        <Input type="number" value={l.rate} onChange={(e) => updateLine(l.id, { rate: Number(e.target.value) })} className="h-8 text-xs" />
+                        <Input type="number" value={l.rate} placeholder={lm === "amount" ? "0" : undefined} onChange={(e) => updateLine(l.id, { rate: Number(e.target.value) })} className="h-8 text-xs" />
                       )}
                     </Field>
                     <Field label="Specific" small><Input value={l.specific} onChange={(e) => updateLine(l.id, { specific: e.target.value })} className="h-8 text-xs" /></Field>
                     <Field label="Amount" small>
-                      {l.lumpsum ? (
+                      {lm === "amount" ? (
+                        <div className="flex h-8 items-center rounded-md border border-input bg-secondary px-2 text-xs font-medium text-muted-foreground">Lumpsum</div>
+                      ) : lm === "rate" ? (
                         <Input type="number" value={l.rate || ""} placeholder="0" onChange={(e) => updateLine(l.id, { rate: Number(e.target.value) })} className="h-8 text-right text-xs" />
                       ) : (
                         <div className="flex h-8 items-center justify-end rounded-md bg-secondary px-2 text-xs font-medium tabular-nums">{formatINR(lineAmount(l))}</div>
                       )}
                     </Field>
                   </div>
-                  <label className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <input type="checkbox" checked={l.lumpsum} onChange={(e) => updateLine(l.id, { lumpsum: e.target.checked })} />
-                    Lumpsum — enter the Amount directly (Qty &amp; Rate not used)
-                  </label>
+                  <div className="mt-2 flex flex-wrap gap-4 text-xs text-muted-foreground">
+                    <label className="flex items-center gap-1.5">
+                      <input type="checkbox" checked={lm === "rate"} disabled={lm === "amount"} onChange={(e) => updateLine(l.id, { lumpsumMode: e.target.checked ? "rate" : "none" })} />
+                      Lumpsum in Rate <span className="text-muted-foreground/70">(enter Amount)</span>
+                    </label>
+                    <label className="flex items-center gap-1.5">
+                      <input type="checkbox" checked={lm === "amount"} disabled={lm === "rate"} onChange={(e) => updateLine(l.id, { lumpsumMode: e.target.checked ? "amount" : "none" })} />
+                      Lumpsum in Amount <span className="text-muted-foreground/70">(enter Rate)</span>
+                    </label>
+                  </div>
                 </div>
-              ))}
+                );
+              })}
             </CardContent>
           </Card>
 

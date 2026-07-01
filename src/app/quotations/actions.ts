@@ -1,7 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
-import type { QuoteState } from "@/lib/quotation/compute";
+import { isLumpsum, type QuoteState } from "@/lib/quotation/compute";
 
 async function currentOrgId(
   supabase: Awaited<ReturnType<typeof createClient>>
@@ -87,7 +87,7 @@ export async function saveQuotationAction(
     org_id: orgId,
     quotation_id: quote.id,
     description: l.description,
-    qty: l.qty || 0,
+    qty: isLumpsum(l) ? 1 : l.qty || 0,
     unit: l.unit,
     rate: l.rate || 0,
   }));

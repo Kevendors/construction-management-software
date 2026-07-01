@@ -1,22 +1,34 @@
 import type { QuoteUnit } from "./item-master";
 import { amountInWords } from "./amount-in-words";
 
+/** Where the "Lumpsum" label is shown; the other field holds the figure. */
+export type LumpsumMode = "none" | "rate" | "amount";
+
 export interface QuoteLine {
   id: string;
   itemId: string | null;
   description: string;
   unit: QuoteUnit;
   usesSqft: boolean;
-  rate: number;
+  rate: number; // per-unit rate, or (in either lumpsum mode) the lump-sum figure
   qty: number;
   sqft: number; // area multiplier; 1 when not applicable
   specific: string; // free-text note shown in the "Specific" column
-  lumpsum: boolean; // bill as a single amount (Amount = Rate, Qty ignored)
+  lumpsumMode: LumpsumMode;
 }
 
-/** A line is lump-sum if flagged, or (legacy) if its unit is LUMPSUM. */
-export function isLumpsum(l: Pick<QuoteLine, "lumpsum" | "unit">): boolean {
-  return Boolean(l.lumpsum) || l.unit === "LUMPSUM";
+type LumpsumLike = { lumpsumMode?: LumpsumMode; lumpsum?: boolean; unit: QuoteUnit };
+
+/** Resolve a line's lumpsum mode, tolerating legacy payloads. */
+export function getLumpsumMode(l: LumpsumLike): LumpsumMode {
+  if (l.lumpsumMode && l.lumpsumMode !== "none") return l.lumpsumMode;
+  if (l.lumpsum || l.unit === "LUMPSUM") return "rate"; // legacy flag / unit
+  return "none";
+}
+
+/** True when the line is priced as a lump sum (either mode). */
+export function isLumpsum(l: LumpsumLike): boolean {
+  return getLumpsumMode(l) !== "none";
 }
 
 export type TaxMode = "intra" | "inter"; // intra = CGST+SGST, inter = IGST
