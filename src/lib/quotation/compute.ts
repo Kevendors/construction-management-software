@@ -11,6 +11,12 @@ export interface QuoteLine {
   qty: number;
   sqft: number; // area multiplier; 1 when not applicable
   specific: string; // free-text note shown in the "Specific" column
+  lumpsum: boolean; // bill as a single amount (Amount = Rate, Qty ignored)
+}
+
+/** A line is lump-sum if flagged, or (legacy) if its unit is LUMPSUM. */
+export function isLumpsum(l: Pick<QuoteLine, "lumpsum" | "unit">): boolean {
+  return Boolean(l.lumpsum) || l.unit === "LUMPSUM";
 }
 
 export type TaxMode = "intra" | "inter"; // intra = CGST+SGST, inter = IGST
@@ -61,8 +67,9 @@ export interface ComputedQuote {
   words: string;
 }
 
-/** Amount = Quantity × Rate. */
+/** Amount = Quantity × Rate, or just Rate for lump-sum lines. */
 export function lineAmount(l: QuoteLine): number {
+  if (isLumpsum(l)) return l.rate || 0;
   return (l.rate || 0) * (l.qty || 0);
 }
 
