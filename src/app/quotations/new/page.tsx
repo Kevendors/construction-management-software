@@ -199,7 +199,7 @@ export default function NewQuotationPage() {
                         {["SQFT", "SQM", "RFT", "RMT", "FEET", "CUM", "KG", "MT", "BAG", "NOS", "POINT"].map((u) => <option key={u} value={u}>{u}</option>)}
                       </Select>
                     </Field>
-                    <Field label="Qty" small><Input type="number" value={l.qty} disabled={l.lumpsum} onChange={(e) => updateLine(l.id, { qty: Number(e.target.value) })} className="h-8 text-xs" /></Field>
+                    <Field label="Qty" small><Input type="number" value={l.qty} onChange={(e) => updateLine(l.id, { qty: Number(e.target.value) })} className="h-8 text-xs" /></Field>
                     <Field label={l.lumpsum ? "Lumpsum ₹" : "Rate ₹"} small><Input type="number" value={l.rate} onChange={(e) => updateLine(l.id, { rate: Number(e.target.value) })} className="h-8 text-xs" /></Field>
                     <Field label="Specific" small><Input value={l.specific} onChange={(e) => updateLine(l.id, { specific: e.target.value })} className="h-8 text-xs" /></Field>
                     <Field label="Amount" small>
