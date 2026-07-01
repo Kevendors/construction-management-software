@@ -135,7 +135,7 @@ export function QuotationDocument({ s, c }: { s: QuoteState; c: ComputedQuote })
               <td className="border border-slate-400 px-1 py-1 text-center">{l.unit}</td>
               <td className="border border-slate-400 px-1 py-1 text-center tabular-nums">{displayQty(l)}</td>
               <td className="border border-slate-400 px-1 py-1 text-right tabular-nums">{l.rate ? inr(l.rate) : ""}</td>
-              <td className="border border-slate-400 px-1 py-1" />
+              <td className="border border-slate-400 px-1 py-1 text-center">{l.specific}</td>
               <td className="border border-slate-400 px-1 py-1 text-right tabular-nums">{inr(l.amount)}</td>
             </tr>
           ))}

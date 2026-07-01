@@ -10,6 +10,7 @@ export interface QuoteLine {
   rate: number;
   qty: number;
   sqft: number; // area multiplier; 1 when not applicable
+  specific: string; // free-text note shown in the "Specific" column
 }
 
 export type TaxMode = "intra" | "inter"; // intra = CGST+SGST, inter = IGST
