@@ -3,7 +3,10 @@ import "server-only";
 import type { Expense, Project, SupervisorLedgerEntry, User } from "@/lib/types";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createClient as createSupabase } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { mapProject, mapUser, type ProjectRow, type UserRow } from "./mappers";
+
+const BILL_BUCKET = "expense-bills";
 
 // mock fallback
 import {
@@ -15,14 +18,17 @@ import {
 
 interface ExpenseRow {
   id: string;
+  title: string | null;
   project_id: string | null;
   date: string;
   category: Expense["category"];
   cost_code: Expense["costCode"];
   amount: number;
+  payment_mode: string | null;
   note: string | null;
   status: Expense["status"];
   by_id: string | null;
+  bill_path: string | null;
 }
 
 interface LedgerRow {
@@ -37,14 +43,17 @@ interface LedgerRow {
 
 const mapExpense = (r: ExpenseRow): Expense => ({
   id: r.id,
+  title: r.title ?? "",
   projectId: r.project_id ?? "",
   date: r.date,
   category: r.category,
   costCode: r.cost_code,
   amount: Number(r.amount),
+  paymentMode: r.payment_mode ?? "",
   note: r.note ?? "",
   status: r.status,
   byId: r.by_id ?? "",
+  billPath: r.bill_path ?? "",
 });
 
 const mapLedger = (r: LedgerRow): SupervisorLedgerEntry => ({
@@ -76,8 +85,22 @@ export async function getExpensesBoard(): Promise<ExpensesBoard> {
     supabase.from("profiles").select("*"),
   ]);
   for (const r of [ex, lg, pr, us]) if (r.error) throw r.error;
+  const expenses = (ex.data as ExpenseRow[]).map(mapExpense);
+
+  // Mint short-lived signed URLs for any uploaded bills (private bucket).
+  const withBills = expenses.filter((e) => e.billPath);
+  if (withBills.length) {
+    const admin = createAdminClient();
+    const { data: signed } = await admin.storage
+      .from(BILL_BUCKET)
+      .createSignedUrls(withBills.map((e) => e.billPath as string), 60 * 60 * 24 * 7);
+    (signed ?? []).forEach((s, i) => {
+      if (s.signedUrl && !s.error) withBills[i].billUrl = s.signedUrl;
+    });
+  }
+
   return {
-    expenses: (ex.data as ExpenseRow[]).map(mapExpense),
+    expenses,
     ledger: (lg.data as LedgerRow[]).map(mapLedger),
     projects: (pr.data as ProjectRow[]).map(mapProject),
     users: (us.data as UserRow[]).map(mapUser),

@@ -185,14 +185,20 @@ export interface Transaction {
 
 export interface Expense {
   id: string;
+  title?: string;
   projectId: string;
   date: string;
   category: ExpenseCategory;
   costCode: CostCode;
   amount: number;
+  paymentMode?: string;
   note: string;
   status: ApprovalStatus;
   byId: string;
+  /** Storage path of the uploaded bill/receipt (empty if none). */
+  billPath?: string;
+  /** Signed URL for the bill, minted server-side on load. */
+  billUrl?: string;
 }
 
 export interface AttendanceDay {

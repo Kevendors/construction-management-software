@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ExpensesApprovalTab } from "./expenses-approval-tab";
+import { ExpensesReportsTab } from "./expenses-reports-tab";
 import { SupervisorBalanceTab } from "./supervisor-balance-tab";
 import { supervisorBalancesFrom } from "./compute";
 import type { ExpensesBoard } from "@/lib/data/expenses";
@@ -36,10 +37,14 @@ export function ExpensesModule({ board }: { board: ExpensesBoard }) {
       <Tabs defaultValue="expenses">
         <TabsList>
           <TabsTrigger value="expenses">Expenses</TabsTrigger>
+          <TabsTrigger value="reports">Reports</TabsTrigger>
           <TabsTrigger value="balance">Supervisor Balance</TabsTrigger>
         </TabsList>
         <TabsContent value="expenses">
           <ExpensesApprovalTab board={board} />
+        </TabsContent>
+        <TabsContent value="reports">
+          <ExpensesReportsTab board={board} />
         </TabsContent>
         <TabsContent value="balance">
           <SupervisorBalanceTab board={board} />
