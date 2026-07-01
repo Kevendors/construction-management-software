@@ -56,12 +56,12 @@ export function WoDocument({
       {/* Header: From (left) + Date/Important Links (right) */}
       <div className="grid grid-cols-[1.5fr_1fr]">
         {/* left */}
-        <div className="border-r border-slate-400">
+        <div className="flex flex-col border-r border-slate-400">
           <div className="flex h-24 items-center justify-center px-4 py-1">
             <Logo />
           </div>
           <Bar>From</Bar>
-          <div className="divide-y divide-slate-300 border-y border-slate-300">
+          <div className="flex flex-1 flex-col justify-center divide-y divide-slate-300 border-y border-slate-300">
             <p className="px-3 py-1">
               <span className="font-semibold">Company name : </span>
               <span className="font-semibold" style={{ color: "#1A5FA8" }}>{KEYVENDORS.name}</span>
@@ -74,7 +74,7 @@ export function WoDocument({
           </div>
         </div>
         {/* right */}
-        <div>
+        <div className="flex flex-col">
           <div className="flex h-24 flex-col justify-center px-3 text-[11px]">
             <p><span className="font-semibold">DATE</span> &nbsp; {fmtDate(wo.date)}</p>
             <p><span className="font-semibold">Work Order No:</span> &nbsp; {wo.number || "—"}</p>
@@ -84,7 +84,7 @@ export function WoDocument({
           <div className="flex flex-col items-center border-y border-slate-300 py-3">
             <Logo big />
           </div>
-          <div className="divide-y divide-slate-300 border-b border-slate-300 text-center text-[11px]" style={{ color: "#1f7a3d" }}>
+          <div className="flex flex-1 flex-col justify-center divide-y divide-slate-300 border-b border-slate-300 text-center text-[11px]" style={{ color: "#1f7a3d" }}>
             <a href={KEYVENDORS_LINKS.blog} target="_blank" rel="noreferrer" className="block py-1 hover:underline">
               Keyvendors Blogs
             </a>
