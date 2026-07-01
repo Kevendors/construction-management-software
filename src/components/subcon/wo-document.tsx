@@ -1,4 +1,4 @@
-import { KEYVENDORS, KEYVENDORS_LINKS } from "@/lib/quotation/company";
+import { DEFAULT_SIGNATURE, KEYVENDORS, KEYVENDORS_LINKS } from "@/lib/quotation/company";
 import { woTotals } from "@/lib/data/compute";
 import { amountInWords } from "@/lib/quotation/amount-in-words";
 import { tradeLabel } from "@/lib/labels";
@@ -179,9 +179,13 @@ export function WoDocument({
           <p>A/c No.: {KEYVENDORS.bank.account}</p>
         </div>
         <div className="flex flex-col justify-end px-3 py-2 text-center text-[10px]">
-          <div className="mt-6 grid grid-cols-2 gap-3">
+          <div className="mt-6 grid grid-cols-2 items-end gap-3">
             <div className="border-t border-slate-400 pt-1">Party Signature</div>
-            <div className="border-t border-slate-400 pt-1">Business Signature</div>
+            <div>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={DEFAULT_SIGNATURE} alt="Business signature" className="mx-auto mb-1 h-20 w-auto max-w-full object-contain" />
+              <div className="border-t border-slate-400 pt-1">Business Signature</div>
+            </div>
           </div>
         </div>
       </div>

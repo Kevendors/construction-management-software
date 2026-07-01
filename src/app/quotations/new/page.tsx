@@ -11,7 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { QuotationDocument } from "@/components/quotation/quotation-document";
 import { ITEM_CATEGORIES, ITEM_MASTER } from "@/lib/quotation/item-master";
 import { computeQuote, getLumpsumMode, lineAmount, type QuoteLine, type QuoteState } from "@/lib/quotation/compute";
-import { DEFAULT_TERMS } from "@/lib/quotation/company";
+import { DEFAULT_SIGNATURE, DEFAULT_TERMS } from "@/lib/quotation/company";
 import { saveQuotationAction, getQuotationPayloadAction } from "../actions";
 import { fileToResizedDataUrl } from "@/lib/image";
 import { formatINR } from "@/lib/utils";
@@ -274,25 +274,22 @@ export default function NewQuotationPage() {
             <CardHeader><CardTitle className="text-base">Business Signature</CardTitle></CardHeader>
             <CardContent>
               <input ref={sigRef} type="file" accept="image/*" className="hidden" onChange={handleSignature} />
-              {s.signatureUrl ? (
-                <div className="flex items-center gap-4">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={s.signatureUrl} alt="Business signature" className="h-16 w-auto rounded border border-border bg-white object-contain px-2" />
+              <div className="flex items-center gap-4">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={s.signatureUrl || DEFAULT_SIGNATURE} alt="Business signature" className="h-16 w-auto rounded border border-border bg-white object-contain px-2" />
+                <div className="flex flex-col gap-2">
+                  <span className="text-xs text-muted-foreground">
+                    {s.signatureUrl ? "Custom signature" : "Default Keyvendors signature"}
+                  </span>
                   <div className="flex gap-2">
                     <Button size="sm" variant="outline" onClick={() => sigRef.current?.click()}>Replace</Button>
-                    <Button size="sm" variant="outline" className="text-destructive" onClick={() => set("signatureUrl", "")}>Remove</Button>
+                    {s.signatureUrl && (
+                      <Button size="sm" variant="outline" className="text-destructive" onClick={() => set("signatureUrl", "")}>Use default</Button>
+                    )}
                   </div>
                 </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => sigRef.current?.click()}
-                  className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-input bg-card px-3 py-4 text-sm text-muted-foreground transition-colors hover:bg-secondary"
-                >
-                  <Plus className="h-4 w-4" /> Upload signature image
-                </button>
-              )}
-              <p className="mt-2 text-xs text-muted-foreground">Appears above the &ldquo;Business Signature&rdquo; line in the quotation.</p>
+              </div>
+              <p className="mt-2 text-xs text-muted-foreground">Appears above the &ldquo;Business Signature&rdquo; line by default in every quotation.</p>
             </CardContent>
           </Card>
         </div>

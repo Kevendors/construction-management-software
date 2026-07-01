@@ -23,6 +23,9 @@ export const KEYVENDORS = {
  * TODO: confirm the exact URLs with the business — these are best-guess
  * defaults and may need correcting.
  */
+/** Default business signature/stamp shown unless a quote overrides it. */
+export const DEFAULT_SIGNATURE = "/keyvendors-signature.png";
+
 export const KEYVENDORS_LINKS = {
   blog: "https://www.keyvendors.com/blogs",
   youtube: "https://www.youtube.com/@keyvendors",
