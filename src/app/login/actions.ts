@@ -44,7 +44,7 @@ export async function signUpAction(
     await admin
       .from("memberships")
       .upsert(
-        { org_id: org.id, user_id: userId, role: "admin" },
+        { org_id: org.id, user_id: userId, role: "super_admin" },
         { onConflict: "org_id,user_id" }
       );
   }

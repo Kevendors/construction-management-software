@@ -40,7 +40,7 @@ import type {
 /* ------------------------------------------------------------------ */
 
 export const users: User[] = [
-  { id: "u1", name: "Arjun Mehta", role: "admin", avatarColor: "#1e3a5f", initials: "AM" },
+  { id: "u1", name: "Arjun Mehta", role: "super_admin", avatarColor: "#1e3a5f", initials: "AM" },
   { id: "u2", name: "Priya Nair", role: "pm", avatarColor: "#b45309", initials: "PN" },
   { id: "u3", name: "Rohan Das", role: "architect", avatarColor: "#0369a1", initials: "RD" },
   { id: "u4", name: "Sana Kapoor", role: "engineer", avatarColor: "#15803d", initials: "SK" },

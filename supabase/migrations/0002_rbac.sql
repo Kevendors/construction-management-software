@@ -28,32 +28,32 @@ begin
   for g in
     select * from (values
       ('site',       array['projects','tasks','dprs','site_instructions','labour_attendance','project_files','drawings','drawing_versions','boqs','boq_items'],
-                     array['super_admin','admin','pm','supervisor','staff','engineer','architect'],
-                     array['super_admin','admin','pm','supervisor']),
+                     array['super_admin','pm','supervisor','staff','engineer','architect'],
+                     array['super_admin','pm','supervisor']),
       ('expenses',   array['expenses','supervisor_ledger'],
-                     array['super_admin','admin','pm','supervisor','accountant'],
-                     array['super_admin','admin','pm','supervisor','accountant']),
+                     array['super_admin','pm','supervisor','accountant'],
+                     array['super_admin','pm','supervisor','accountant']),
       ('crm',        array['clients','suppliers','subcontractors','labour_contractors'],
-                     array['super_admin','admin','pm','accountant'],
-                     array['super_admin','admin','pm']),
+                     array['super_admin','pm','accountant'],
+                     array['super_admin','pm']),
       ('commercial', array['quotations','quotation_items','sales_invoices','invoice_items','transactions'],
-                     array['super_admin','admin','pm','accountant'],
-                     array['super_admin','admin','accountant']),
+                     array['super_admin','pm','accountant'],
+                     array['super_admin','accountant']),
       ('material',   array['material_items','material_requests','material_request_lines','purchase_orders','po_items','goods_receipts','goods_receipt_lines','purchase_bookings','material_usage'],
-                     array['super_admin','admin','pm','supervisor'],
-                     array['super_admin','admin','pm']),
+                     array['super_admin','pm','supervisor'],
+                     array['super_admin','pm']),
       ('subcon',     array['subcon_work_orders','wo_items','subcon_progress','material_issues','ra_bills'],
-                     array['super_admin','admin','pm','subcontractor'],
-                     array['super_admin','admin','pm']),
+                     array['super_admin','pm','subcontractor'],
+                     array['super_admin','pm']),
       ('payroll',    array['employees','salary_slips','advances'],
-                     array['super_admin','admin','hr','accountant'],
-                     array['super_admin','admin','hr']),
+                     array['super_admin','hr','accountant'],
+                     array['super_admin','hr']),
       ('equipment',  array['equipment'],
-                     array['super_admin','admin','pm','supervisor'],
-                     array['super_admin','admin','pm']),
+                     array['super_admin','pm','supervisor'],
+                     array['super_admin','pm']),
       ('notif',      array['notifications'],
-                     array['super_admin','admin','pm','supervisor','accountant','hr','staff'],
-                     array['super_admin','admin','pm','supervisor','accountant','hr','staff'])
+                     array['super_admin','pm','supervisor','accountant','hr','staff'],
+                     array['super_admin','pm','supervisor','accountant','hr','staff'])
     ) as v(grp, tables, rroles, wroles)
   loop
     foreach tbl in array g.tables loop
@@ -87,8 +87,8 @@ drop policy if exists mem_write on memberships;
 create policy mem_read on memberships for select to authenticated
   using (public.is_org_member(org_id));
 create policy mem_write on memberships for all to authenticated
-  using (public.has_role(org_id, array['super_admin','admin']))
-  with check (public.has_role(org_id, array['super_admin','admin']));
+  using (public.has_role(org_id, array['super_admin']))
+  with check (public.has_role(org_id, array['super_admin']));
 
 -- ----------------------------------------------------------------------------
 -- ROLLBACK (if needed): restore the open per-member policy on every org table

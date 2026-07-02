@@ -28,7 +28,6 @@ const ALL: ModuleKey[] = [
  */
 export const ROLE_MODULES: Record<Role, ModuleKey[]> = {
   super_admin: ALL,
-  admin: ALL,
   pm: ["dashboard", "analytics", "projects", "design", "clients", "quotations", "invoices", "material", "subcon", "expenses", "equipment"],
   supervisor: ["projects", "expenses"], // site-only: projects (Updates/DPRs/Attendance live in the project) + petty expenses
   accountant: ["dashboard", "analytics", "clients", "quotations", "invoices", "expenses"],
@@ -49,5 +48,5 @@ export function canAccess(role: Role | null | undefined, module: ModuleKey): boo
 
 /** Roles that can manage users/roles (the Team page + account creation). */
 export function isAdminRole(role: Role | null | undefined): boolean {
-  return role === "super_admin" || role === "admin";
+  return role === "super_admin";
 }

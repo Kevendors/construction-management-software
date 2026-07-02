@@ -65,7 +65,6 @@ export const categoryLabel: Record<string, string> = {
 
 export const roleLabel: Record<string, string> = {
   super_admin: "Super Admin",
-  admin: "Admin",
   pm: "Project Manager",
   supervisor: "Supervisor",
   accountant: "Accountant / Finance",
