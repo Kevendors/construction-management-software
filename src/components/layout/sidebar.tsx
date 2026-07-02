@@ -4,6 +4,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { HardHat, X } from "lucide-react";
 import { navSections } from "@/lib/nav";
+import { canAccess } from "@/lib/auth/permissions";
+import { useRole } from "./role-provider";
 import { cn } from "@/lib/utils";
 
 export function Sidebar({
@@ -14,9 +16,17 @@ export function Sidebar({
   onClose: () => void;
 }) {
   const pathname = usePathname();
+  const { role, loading } = useRole();
 
   const isActive = (href: string) =>
     href === "/" ? pathname === "/" : pathname.startsWith(href);
+
+  // Show only the modules this role may access (empty sections drop out).
+  const sections = loading
+    ? []
+    : navSections
+        .map((s) => ({ ...s, items: s.items.filter((i) => canAccess(role, i.module)) }))
+        .filter((s) => s.items.length > 0);
 
   return (
     <div data-app-chrome>
@@ -53,7 +63,7 @@ export function Sidebar({
         </div>
 
         <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-4">
-          {navSections.map((section) => (
+          {sections.map((section) => (
             <div key={section.title}>
               <div className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-sidebar-muted">
                 {section.title}

@@ -64,12 +64,17 @@ export const categoryLabel: Record<string, string> = {
 };
 
 export const roleLabel: Record<string, string> = {
+  super_admin: "Super Admin",
   admin: "Admin",
   pm: "Project Manager",
+  supervisor: "Supervisor",
+  accountant: "Accountant / Finance",
+  hr: "HR",
+  staff: "Employee / Staff",
   architect: "Architect",
   engineer: "Site Engineer",
-  accountant: "Accountant",
   subcontractor: "Subcontractor",
+  viewer: "Client / Viewer",
   client: "Client",
 };
 

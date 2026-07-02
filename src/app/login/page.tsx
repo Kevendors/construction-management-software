@@ -6,15 +6,20 @@ import { Eye, EyeOff, HardHat, Loader2, MailCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 import { createClient } from "@/lib/supabase/client";
-import { signUpAction } from "./actions";
 
-type Mode = "signin" | "signup" | "forgot";
+type Mode = "signin" | "forgot";
+
+/** Phone → login-alias email; real emails pass through unchanged. */
+function resolveEmail(identifier: string): string {
+  const id = identifier.trim();
+  if (id.includes("@")) return id;
+  return `${id.replace(/\D/g, "")}@sitehub.phone`;
+}
 
 export default function LoginPage() {
   const router = useRouter();
   const [mode, setMode] = React.useState<Mode>("signin");
-  const [name, setName] = React.useState("");
-  const [email, setEmail] = React.useState("");
+  const [identifier, setIdentifier] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
   const [sent, setSent] = React.useState(false);
@@ -35,7 +40,12 @@ export default function LoginPage() {
       const supabase = createClient();
 
       if (mode === "forgot") {
-        const { error: resetErr } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+        const id = identifier.trim();
+        if (!id.includes("@")) {
+          setError("Password reset needs an email. For phone-only accounts, ask your admin to reset it.");
+          return;
+        }
+        const { error: resetErr } = await supabase.auth.resetPasswordForEmail(id, {
           redirectTo: `${window.location.origin}/reset-password`,
         });
         if (resetErr) setError(resetErr.message);
@@ -43,20 +53,12 @@ export default function LoginPage() {
         return;
       }
 
-      if (mode === "signup") {
-        const res = await signUpAction(email.trim(), password, name.trim());
-        if (res.error) {
-          setError(res.error);
-          return;
-        }
-      }
-
       const { error: signInError } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
+        email: resolveEmail(identifier),
         password,
       });
       if (signInError) {
-        setError(signInError.message);
+        setError("Incorrect phone/email or password.");
         return;
       }
       router.push("/");
@@ -68,8 +70,7 @@ export default function LoginPage() {
     }
   }
 
-  const title =
-    mode === "signin" ? "Sign in to your workspace" : mode === "signup" ? "Create your account" : "Reset your password";
+  const title = mode === "signin" ? "Sign in to your workspace" : "Reset your password";
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-secondary/40 p-4">
@@ -88,8 +89,8 @@ export default function LoginPage() {
               <MailCheck className="h-6 w-6" />
             </span>
             <p className="text-sm text-muted-foreground">
-              If an account exists for <span className="font-medium text-foreground">{email}</span>, we&apos;ve
-              sent a password-reset link. Check your inbox (and spam) and follow the link to set a new password.
+              If an account exists for <span className="font-medium text-foreground">{identifier}</span>, we&apos;ve
+              sent a password-reset link. Check your inbox (and spam).
             </p>
             <Button variant="outline" className="w-full" onClick={() => switchMode("signin")}>
               Back to sign in
@@ -97,23 +98,17 @@ export default function LoginPage() {
           </div>
         ) : (
           <form onSubmit={submit} className="space-y-4">
-            {mode === "signup" && (
-              <div className="space-y-1.5">
-                <Label htmlFor="name">Full name</Label>
-                <Input id="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Arjun Mehta" autoFocus />
-              </div>
-            )}
             <div className="space-y-1.5">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="identifier">{mode === "forgot" ? "Email" : "Phone number or email"}</Label>
               <Input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@company.com"
-                autoComplete="email"
+                id="identifier"
+                type="text"
+                value={identifier}
+                onChange={(e) => setIdentifier(e.target.value)}
+                placeholder={mode === "forgot" ? "you@company.com" : "9XXXXXXXXX or you@company.com"}
+                autoComplete="username"
                 required
-                autoFocus={mode !== "signup"}
+                autoFocus
               />
             </div>
 
@@ -127,7 +122,7 @@ export default function LoginPage() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••"
-                    autoComplete={mode === "signin" ? "current-password" : "new-password"}
+                    autoComplete="current-password"
                     required
                     className="pr-10"
                   />
@@ -142,17 +137,15 @@ export default function LoginPage() {
                     {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
                 </div>
-                {mode === "signin" && (
-                  <div className="flex justify-end pt-0.5">
-                    <button
-                      type="button"
-                      onClick={() => switchMode("forgot")}
-                      className="text-xs font-medium text-primary hover:underline"
-                    >
-                      Forgot password?
-                    </button>
-                  </div>
-                )}
+                <div className="flex justify-end pt-0.5">
+                  <button
+                    type="button"
+                    onClick={() => switchMode("forgot")}
+                    className="text-xs font-medium text-primary hover:underline"
+                  >
+                    Forgot password?
+                  </button>
+                </div>
               </div>
             )}
 
@@ -162,35 +155,22 @@ export default function LoginPage() {
 
             <Button type="submit" className="w-full" disabled={loading}>
               {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-              {mode === "signin" ? "Sign in" : mode === "signup" ? "Create account" : "Send reset link"}
+              {mode === "signin" ? "Sign in" : "Send reset link"}
             </Button>
           </form>
         )}
 
-        {!(mode === "forgot" && sent) && (
+        {mode === "forgot" && !sent && (
           <p className="mt-5 text-center text-sm text-muted-foreground">
-            {mode === "forgot" ? (
-              <>
-                Remembered it?{" "}
-                <button type="button" onClick={() => switchMode("signin")} className="font-medium text-primary hover:underline">
-                  Sign in
-                </button>
-              </>
-            ) : mode === "signin" ? (
-              <>
-                No account yet?{" "}
-                <button type="button" onClick={() => switchMode("signup")} className="font-medium text-primary hover:underline">
-                  Create Account
-                </button>
-              </>
-            ) : (
-              <>
-                Already have an account?{" "}
-                <button type="button" onClick={() => switchMode("signin")} className="font-medium text-primary hover:underline">
-                  Sign in
-                </button>
-              </>
-            )}
+            Remembered it?{" "}
+            <button type="button" onClick={() => switchMode("signin")} className="font-medium text-primary hover:underline">
+              Sign in
+            </button>
+          </p>
+        )}
+        {mode === "signin" && (
+          <p className="mt-5 text-center text-xs text-muted-foreground">
+            Accounts are created by your administrator.
           </p>
         )}
       </div>

@@ -3,17 +3,9 @@
 import * as React from "react";
 import { LogOut, ChevronDown } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
-import { createClient } from "@/lib/supabase/client";
 import { signOutAction } from "@/app/login/actions";
-import { currentUser } from "@/lib/mock/data";
 import { roleLabel } from "@/lib/labels";
-
-interface Account {
-  name: string;
-  sub: string;
-  initials: string;
-  color: string;
-}
+import { useRole } from "./role-provider";
 
 function initialsFrom(name: string) {
   const p = name.trim().split(/\s+/);
@@ -24,30 +16,8 @@ const supaConfigured = !!process.env.NEXT_PUBLIC_SUPABASE_URL;
 
 export function AccountMenu() {
   const [open, setOpen] = React.useState(false);
-  const [acct, setAcct] = React.useState<Account | null>(
-    supaConfigured
-      ? null
-      : {
-          name: currentUser.name,
-          sub: roleLabel[currentUser.role],
-          initials: currentUser.initials,
-          color: currentUser.avatarColor,
-        }
-  );
+  const { name, email, role, loading } = useRole();
   const ref = React.useRef<HTMLDivElement>(null);
-
-  React.useEffect(() => {
-    if (!supaConfigured) return;
-    createClient()
-      .auth.getUser()
-      .then(({ data }) => {
-        const u = data.user;
-        if (!u) return;
-        const name =
-          (u.user_metadata?.name as string | undefined) || u.email?.split("@")[0] || "User";
-        setAcct({ name, sub: u.email ?? "", initials: initialsFrom(name), color: "#1e3a5f" });
-      });
-  }, []);
 
   React.useEffect(() => {
     function onDown(e: MouseEvent) {
@@ -57,7 +27,10 @@ export function AccountMenu() {
     return () => document.removeEventListener("mousedown", onDown);
   }, []);
 
-  if (!acct) return <div className="h-9 w-28" aria-hidden />;
+  if (loading || !name) return <div className="h-9 w-28" aria-hidden />;
+
+  const sub = (role && roleLabel[role]) || email;
+  const initials = initialsFrom(name);
 
   return (
     <div ref={ref} className="relative">
@@ -66,19 +39,20 @@ export function AccountMenu() {
         onClick={() => setOpen((o) => !o)}
         className="flex items-center gap-2.5 rounded-full py-1 pl-1 pr-3 hover:bg-secondary"
       >
-        <Avatar initials={acct.initials} color={acct.color} />
+        <Avatar initials={initials} color="#1e3a5f" />
         <div className="hidden text-left leading-tight sm:block">
-          <div className="text-sm font-medium">{acct.name}</div>
-          <div className="max-w-[160px] truncate text-[11px] text-muted-foreground">{acct.sub}</div>
+          <div className="text-sm font-medium">{name}</div>
+          <div className="max-w-[160px] truncate text-[11px] text-muted-foreground">{sub}</div>
         </div>
         {supaConfigured && <ChevronDown className="hidden h-4 w-4 text-muted-foreground sm:block" />}
       </button>
 
       {open && supaConfigured && (
-        <div className="absolute right-0 top-full z-30 mt-2 w-48 rounded-lg border border-border bg-card p-1 shadow-lg">
-          <div className="border-b border-border px-3 py-2 sm:hidden">
-            <p className="text-sm font-medium">{acct.name}</p>
-            <p className="truncate text-xs text-muted-foreground">{acct.sub}</p>
+        <div className="absolute right-0 top-full z-30 mt-2 w-52 rounded-lg border border-border bg-card p-1 shadow-lg">
+          <div className="border-b border-border px-3 py-2">
+            <p className="text-sm font-medium">{name}</p>
+            <p className="truncate text-xs text-muted-foreground">{email}</p>
+            {role && <p className="mt-0.5 text-[11px] font-medium text-primary">{roleLabel[role] ?? role}</p>}
           </div>
           <form action={signOutAction}>
             <button

@@ -2,12 +2,17 @@
 // (see PLAN.md §C.3) but are the shape the UI renders against the mock layer.
 
 export type Role =
+  | "super_admin"
   | "admin"
   | "pm"
+  | "supervisor"
+  | "accountant"
+  | "hr"
+  | "staff"
   | "architect"
   | "engineer"
-  | "accountant"
   | "subcontractor"
+  | "viewer"
   | "client";
 
 export type ProjectStatus = "planning" | "ongoing" | "on_hold" | "completed";
