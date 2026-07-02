@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Skill(claude-in-chrome)",
+      "mcp__claude-in-chrome__tabs_context_mcp",
+      "WebFetch(domain:construction-management-software.vercel.app)",
+      "Bash(gh repo:*)",
+      "Bash(gh auth:*)",
+      "Bash(where gh:*)",
+      "Bash(git --version 2>&1)"
+    ]
+  }
+}
