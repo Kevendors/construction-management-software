@@ -36,7 +36,7 @@ export interface TeamMember {
 }
 
 /** Roles an admin can assign (in menu order). */
-const ASSIGNABLE: Role[] = ["super_admin", "admin", "pm", "supervisor", "accountant", "hr", "staff", "viewer"];
+const ASSIGNABLE: Role[] = ["super_admin", "admin", "pm", "supervisor"];
 
 function initials(name: string) {
   return name.split(" ").map((n) => n[0]).slice(0, 2).join("").toUpperCase();
