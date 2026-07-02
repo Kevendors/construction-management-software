@@ -28,12 +28,24 @@ export default async function TeamPage() {
   }
 
   const admin = createAdminClient();
-  const { data: memberships } = await admin
+
+  // Tolerate the pre-Migration-A schema (no is_active column) so the page never
+  // crashes; show a banner prompting the migration instead.
+  let migrationPending = false;
+  let memberships: { user_id: string; role: Role; is_active?: boolean }[] = [];
+  const withActive = await admin
     .from("memberships")
     .select("user_id, role, is_active")
     .eq("org_id", ctx.orgId);
+  if (withActive.error) {
+    migrationPending = true;
+    const basic = await admin.from("memberships").select("user_id, role").eq("org_id", ctx.orgId);
+    memberships = (basic.data ?? []) as { user_id: string; role: Role }[];
+  } else {
+    memberships = (withActive.data ?? []) as { user_id: string; role: Role; is_active: boolean }[];
+  }
 
-  const rows = (memberships ?? []) as { user_id: string; role: Role; is_active: boolean }[];
+  const rows = memberships;
   const ids = rows.map((m) => m.user_id);
 
   const { data: profiles } = await admin
@@ -62,5 +74,5 @@ export default async function TeamPage() {
 
   members.sort((a, b) => a.name.localeCompare(b.name));
 
-  return <TeamBoard members={members} currentUserId={ctx.userId} />;
+  return <TeamBoard members={members} currentUserId={ctx.userId} migrationPending={migrationPending} />;
 }

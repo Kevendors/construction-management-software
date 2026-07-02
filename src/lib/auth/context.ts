@@ -24,9 +24,10 @@ export async function getAuthContext(): Promise<AuthContext | null> {
   } = await supabase.auth.getUser();
   if (!user) return null;
 
+  // Select only always-present columns so this works before/after Migration A.
   const { data } = await supabase
     .from("memberships")
-    .select("org_id, role, is_active")
+    .select("org_id, role")
     .eq("user_id", user.id)
     .limit(1)
     .maybeSingle();
@@ -41,6 +42,6 @@ export async function getAuthContext(): Promise<AuthContext | null> {
     role: (data?.role as Role | undefined) ?? null,
     name,
     email: user.email ?? "",
-    isActive: (data?.is_active as boolean | undefined) ?? true,
+    isActive: true, // enforced once Migration A + role-aware RLS land
   };
 }

@@ -102,7 +102,15 @@ function NewMemberDialog({ open, onClose }: { open: boolean; onClose: () => void
   );
 }
 
-export function TeamBoard({ members, currentUserId }: { members: TeamMember[]; currentUserId: string }) {
+export function TeamBoard({
+  members,
+  currentUserId,
+  migrationPending,
+}: {
+  members: TeamMember[];
+  currentUserId: string;
+  migrationPending?: boolean;
+}) {
   const router = useRouter();
   const [open, setOpen] = React.useState(false);
   const [busy, setBusy] = React.useState<string | null>(null);
@@ -134,6 +142,14 @@ export function TeamBoard({ members, currentUserId }: { members: TeamMember[]; c
           </Button>
         }
       />
+
+      {migrationPending && (
+        <div className="mb-4 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <span className="font-medium">Setup step required:</span> run the one-time database migration
+          (role values + <code>memberships.is_active</code>) so creating members with new roles and
+          activate/deactivate work. Until then those actions will show an error.
+        </div>
+      )}
 
       <Card>
         <CardContent className="pt-0">
