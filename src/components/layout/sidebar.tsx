@@ -97,7 +97,7 @@ export function Sidebar({
         </nav>
 
         <div className="border-t border-sidebar-border px-5 py-3 text-[11px] text-sidebar-muted">
-          v0.2 · Phase 2 · mock data
+          v0.3 · live
         </div>
       </aside>
     </div>
