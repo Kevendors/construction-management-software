@@ -9,6 +9,7 @@ import { TasksTab } from "./tasks-tab";
 import { UpdatesTab } from "./updates-tab";
 import { FilesTab } from "./files-tab";
 import { CommercialTab } from "./commercial-tab";
+import { AlertsTab, useProjectAlerts } from "./alerts-tab";
 import { DrawingList } from "@/components/design/drawing-list";
 import { getProjectDrawings } from "@/lib/mock/selectors";
 import {
@@ -36,6 +37,8 @@ function ProjectDetailInner({ projectId }: { projectId: string }) {
   const project = useProject(projectId);
   const clients = useClients();
   const pm = useUser(project?.pmId ?? null);
+  const alerts = useProjectAlerts(projectId);
+  const highCount = alerts.filter((a) => a.severity === "high").length;
 
   if (loading && !project) {
     return (
@@ -118,6 +121,18 @@ function ProjectDetailInner({ projectId }: { projectId: string }) {
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="tasks">Tasks</TabsTrigger>
           <TabsTrigger value="updates">Updates</TabsTrigger>
+          <TabsTrigger value="alerts">
+            Alerts
+            {alerts.length > 0 && (
+              <span
+                className={`ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-semibold text-white ${
+                  highCount > 0 ? "bg-destructive" : "bg-amber-500"
+                }`}
+              >
+                {alerts.length}
+              </span>
+            )}
+          </TabsTrigger>
           <TabsTrigger value="design" disabled className="opacity-40 cursor-not-allowed" title="Coming soon">
             Design
           </TabsTrigger>
@@ -137,6 +152,9 @@ function ProjectDetailInner({ projectId }: { projectId: string }) {
         </TabsContent>
         <TabsContent value="updates">
           <UpdatesTab projectId={projectId} />
+        </TabsContent>
+        <TabsContent value="alerts">
+          <AlertsTab projectId={projectId} />
         </TabsContent>
         <TabsContent value="design">
           <DrawingList drawings={drawings} />
