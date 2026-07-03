@@ -87,14 +87,20 @@ export function lineAmount(l: QuoteLine): number {
   return (l.rate || 0) * (l.qty || 0);
 }
 
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
 export function computeQuote(s: QuoteState): ComputedQuote {
-  const lines: ComputedLine[] = s.lines.map((l) => ({ ...l, amount: lineAmount(l) }));
-  const subtotal = lines.reduce((sum, l) => sum + l.amount, 0);
-  const discount = s.discount || 0;
-  const additionalCharges = s.additionalCharges || 0;
-  const finalAmount = Math.max(0, subtotal - discount + additionalCharges);
-  const payableGst = (finalAmount * (s.gstRate || 0)) / 100;
+  const lines: ComputedLine[] = s.lines.map((l) => ({ ...l, amount: round2(lineAmount(l)) }));
+  const subtotal = round2(lines.reduce((sum, l) => sum + l.amount, 0));
+  const additionalCharges = round2(s.additionalCharges || 0);
+  const discount = round2(Math.min(s.discount || 0, subtotal + additionalCharges));
+  // GST is charged on the full taxable supply value (before discount), matching
+  // the invoice convention; the discount is deducted separately from the payable.
+  const taxableBase = round2(subtotal + additionalCharges);
+  const payableGst = round2((taxableBase * (s.gstRate || 0)) / 100);
   const isIntra = s.taxMode === "intra";
+  const finalAmount = round2(Math.max(0, subtotal - discount + additionalCharges));
+  const grandTotal = round2(finalAmount + payableGst);
   return {
     lines,
     subtotal,
@@ -102,11 +108,11 @@ export function computeQuote(s: QuoteState): ComputedQuote {
     additionalCharges,
     finalAmount,
     gstRate: s.gstRate || 0,
-    cgst: isIntra ? payableGst / 2 : 0,
-    sgst: isIntra ? payableGst / 2 : 0,
-    igst: isIntra ? 0 : payableGst,
+    cgst: round2(isIntra ? payableGst / 2 : 0),
+    sgst: round2(isIntra ? payableGst / 2 : 0),
+    igst: round2(isIntra ? 0 : payableGst),
     payableGst,
-    grandTotal: finalAmount + payableGst,
-    words: amountInWords(finalAmount + payableGst),
+    grandTotal,
+    words: grandTotal > 0 ? amountInWords(grandTotal) : "Zero",
   };
 }
