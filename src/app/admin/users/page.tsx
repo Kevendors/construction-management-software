@@ -110,11 +110,14 @@ export default function UserManagementPage() {
     saveUsers(next);
   }
 
-  function removeUser(userId: string) {
-    if (!confirm("Remove this user?")) return;
-    const next = users.filter((u) => u.id !== userId);
+  const [deleteTarget, setDeleteTarget] = React.useState<string | null>(null);
+
+  function confirmRemoveUser() {
+    if (!deleteTarget) return;
+    const next = users.filter((u) => u.id !== deleteTarget);
     setUsers(next);
     saveUsers(next);
+    setDeleteTarget(null);
   }
 
   return (
@@ -165,7 +168,7 @@ export default function UserManagementPage() {
                     </Select>
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button size="sm" variant="ghost" onClick={() => removeUser(u.id)} disabled={u.id === "u1"}>
+                    <Button size="sm" variant="ghost" onClick={() => setDeleteTarget(u.id)} disabled={u.id === "u1"}>
                       <Trash2 className="h-3.5 w-3.5 text-destructive" />
                     </Button>
                   </TableCell>
@@ -175,6 +178,13 @@ export default function UserManagementPage() {
           </Table>
         </CardContent>
       </Card>
+
+      <Dialog open={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="Remove User" description="Are you sure you want to remove this user?">
+        <div className="flex justify-end gap-2 pt-2">
+          <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>
+          <Button variant="destructive" onClick={confirmRemoveUser}>Remove</Button>
+        </div>
+      </Dialog>
 
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} title="Add User" description="Create a new user account.">
         <form onSubmit={addUser} className="space-y-4">

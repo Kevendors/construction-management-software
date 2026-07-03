@@ -70,7 +70,7 @@ export default function NewInvoicePage() {
         }
       } catch { /* ignore */ }
     }
-    setS((prev) => (prev.number ? prev : { ...prev, number: `INV-${new Date().getFullYear()}-${Math.floor(Math.random() * 900) + 100}` }));
+    setS((prev) => (prev.number ? prev : { ...prev, number: `INV-${new Date().getFullYear()}-${Date.now().toString(36).slice(-5).toUpperCase()}` }));
   }, []);
 
   function set<K extends keyof InvoiceState>(k: K, v: InvoiceState[K]) {
@@ -141,7 +141,7 @@ export default function NewInvoicePage() {
               <Field label="Email"><Input value={s.email} onChange={(e) => set("email", e.target.value)} /></Field>
               <Field label="Address" full><Input value={s.address} onChange={(e) => set("address", e.target.value)} /></Field>
               <Field label="Site Location"><Input value={s.siteLocation} onChange={(e) => set("siteLocation", e.target.value)} /></Field>
-              <Field label="Client GSTIN"><Input value={s.clientGstin} onChange={(e) => set("clientGstin", e.target.value)} /></Field>
+              <Field label="Client GSTIN"><Input value={s.clientGstin} onChange={(e) => set("clientGstin", e.target.value.toUpperCase())} placeholder="22AAAAA0000A1Z5" maxLength={15} pattern="[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]" /></Field>
             </CardContent>
           </Card>
 
@@ -151,7 +151,7 @@ export default function NewInvoicePage() {
               <Field label="Project Name" full><Input value={s.projectName} onChange={(e) => set("projectName", e.target.value)} placeholder="e.g. Interior Renovation - Block A" /></Field>
               <Field label="Invoice Number"><Input value={s.number} onChange={(e) => set("number", e.target.value)} /></Field>
               <Field label="Date"><Input type="date" value={s.date} onChange={(e) => set("date", e.target.value)} /></Field>
-              <Field label="Due Date"><Input type="date" value={s.dueDate} onChange={(e) => set("dueDate", e.target.value)} /></Field>
+              <Field label="Due Date"><Input type="date" value={s.dueDate} min={s.date} onChange={(e) => set("dueDate", e.target.value)} /></Field>
             </CardContent>
           </Card>
 

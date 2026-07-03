@@ -53,6 +53,7 @@ function ProjectDetailInner({ projectId }: { projectId: string }) {
   const pm = getUser(project.pmId);
   const meta = projectStatusMeta[project.status];
   const drawings = getProjectDrawings(projectId);
+  const alertCount = useProjectAlertCount(projectId);
 
   return (
     <div>
@@ -97,7 +98,7 @@ function ProjectDetailInner({ projectId }: { projectId: string }) {
           <TabsTrigger value="tasks">Tasks</TabsTrigger>
           <TabsTrigger value="updates">Updates</TabsTrigger>
           <TabsTrigger value="alerts">
-            Alerts
+            Alerts{alertCount > 0 && <Badge variant="destructive" className="ml-1.5 h-5 min-w-5 px-1 text-[10px]">{alertCount}</Badge>}
           </TabsTrigger>
           <TabsTrigger value="design" disabled className="opacity-40 cursor-not-allowed" title="Coming soon">
             Design

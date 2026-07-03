@@ -62,7 +62,7 @@ export function EmployeeDialog({ open, onClose, onSave, initial }: EmployeeDialo
       joinDate,
       phone: phone.trim(),
       initials: getInitials(name.trim()),
-      avatarColor: COLORS[Math.floor(Math.random() * COLORS.length)],
+      avatarColor: initial?.avatarColor ?? COLORS[Math.floor(Math.random() * COLORS.length)],
     });
     onClose();
   }

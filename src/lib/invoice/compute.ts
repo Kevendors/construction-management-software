@@ -57,27 +57,31 @@ export function invoiceLineAmount(l: InvoiceLine): number {
   return (l.rate || 0) * (l.qty || 0);
 }
 
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
 export function computeInvoice(s: InvoiceState): ComputedInvoice {
   const lines: ComputedInvoiceLine[] = s.lines.map((l) => ({
     ...l,
-    amount: invoiceLineAmount(l),
+    amount: round2(invoiceLineAmount(l)),
   }));
-  const subtotal = lines.reduce((sum, l) => sum + l.amount, 0);
-  const discount = s.discount || 0;
-  const finalAmount = Math.max(0, subtotal - discount);
-  const payableGst = (finalAmount * (s.gstRate || 0)) / 100;
+  const subtotal = round2(lines.reduce((sum, l) => sum + l.amount, 0));
+  const discount = round2(Math.min(s.discount || 0, subtotal));
+  // GST is computed on the full subtotal per Indian GST law; discount is applied separately
+  const payableGst = round2((subtotal * (s.gstRate || 0)) / 100);
   const isIntra = s.taxMode === "intra";
+  const finalAmount = round2(subtotal - discount);
+  const grandTotal = round2(finalAmount + payableGst);
   return {
     lines,
     subtotal,
     discount,
     finalAmount,
     gstRate: s.gstRate || 0,
-    cgst: isIntra ? payableGst / 2 : 0,
-    sgst: isIntra ? payableGst / 2 : 0,
-    igst: isIntra ? 0 : payableGst,
+    cgst: round2(isIntra ? payableGst / 2 : 0),
+    sgst: round2(isIntra ? payableGst / 2 : 0),
+    igst: round2(isIntra ? 0 : payableGst),
     payableGst,
-    grandTotal: finalAmount + payableGst,
-    words: amountInWords(finalAmount + payableGst),
+    grandTotal,
+    words: grandTotal > 0 ? amountInWords(grandTotal) : "Zero",
   };
 }

@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { Dialog } from "@/components/ui/dialog";
 import {
   Table,
   TableBody,
@@ -54,10 +55,12 @@ export function EmployeesTab({ month }: { month: string }) {
     }
   }
 
-  function handleDelete(id: string) {
-    if (confirm("Delete this employee?")) {
-      deleteEmployee(id);
-    }
+  const [deleteTarget, setDeleteTarget] = React.useState<string | null>(null);
+
+  function confirmDelete() {
+    if (!deleteTarget) return;
+    deleteEmployee(deleteTarget);
+    setDeleteTarget(null);
   }
 
   return (
@@ -111,7 +114,7 @@ export function EmployeesTab({ month }: { month: string }) {
                       <Button size="sm" variant="ghost" onClick={() => handleEdit(emp)}>
                         <Pencil className="h-3.5 w-3.5" />
                       </Button>
-                      <Button size="sm" variant="ghost" onClick={() => handleDelete(emp.id)}>
+                      <Button size="sm" variant="ghost" onClick={() => setDeleteTarget(emp.id)}>
                         <Trash2 className="h-3.5 w-3.5 text-destructive" />
                       </Button>
                     </div>
@@ -186,10 +189,24 @@ export function EmployeesTab({ month }: { month: string }) {
                   </TableRow>
                 );
               })}
+              {slips.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={7} className="py-6 text-center text-sm text-muted-foreground">
+                    No salary slips for this month.
+                  </TableCell>
+                </TableRow>
+              )}
             </TableBody>
           </Table>
         </CardContent>
       </Card>
+
+      <Dialog open={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="Delete Employee" description="Are you sure you want to delete this employee?">
+        <div className="flex justify-end gap-2 pt-2">
+          <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>
+          <Button variant="destructive" onClick={confirmDelete}>Delete</Button>
+        </div>
+      </Dialog>
 
       <EmployeeDialog
         open={dialogOpen}

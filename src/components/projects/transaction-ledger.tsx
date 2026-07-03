@@ -101,7 +101,7 @@ export function TransactionLedger({ projectId }: { projectId: string }) {
                   {t.direction === "in" ? "+" : "−"}{formatINR(t.amount)}
                 </TableCell>
                 <TableCell className={`text-right tabular-nums ${t.balance >= 0 ? "" : "text-destructive"}`}>
-                  {formatINR(Math.abs(t.balance))}
+                  {t.balance < 0 ? "−" : ""}{formatINR(Math.abs(t.balance))}
                 </TableCell>
               </TableRow>
             ))}

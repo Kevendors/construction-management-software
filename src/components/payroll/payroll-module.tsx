@@ -17,9 +17,14 @@ import {
 } from "@/lib/mock/selectors";
 import { formatINR } from "@/lib/utils";
 
+const currentDate = () => new Date().toISOString().slice(0, 10);
+const currentMonth = () => new Date().toISOString().slice(0, 7);
+
 export function PayrollModule() {
-  const presentToday = labourPresentOn("2026-06-18");
-  const payroll = monthlyPayroll("2026-05");
+  const today = currentDate();
+  const month = currentMonth();
+  const presentToday = labourPresentOn(today);
+  const payroll = monthlyPayroll(month);
   const advances = totalAdvancesOutstanding();
 
   return (
@@ -31,8 +36,8 @@ export function PayrollModule() {
 
       <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard label="Staff on Payroll" value={String(employees.length)} icon={Users} accent="primary" />
-        <StatCard label="Labour Present" value={String(presentToday)} icon={CalendarCheck} accent="success" hint="latest shift" />
-        <StatCard label="Payroll (May)" value={formatINR(payroll, { compact: true })} icon={Wallet} accent="info" />
+        <StatCard label="Labour Present" value={String(presentToday)} icon={CalendarCheck} accent="success" hint="today" />
+        <StatCard label={`Payroll (${new Date(month + "-01").toLocaleDateString("en-IN", { month: "short" })})`} value={formatINR(payroll, { compact: true })} icon={Wallet} accent="info" />
         <StatCard label="Advances Outstanding" value={formatINR(advances, { compact: true })} icon={HandCoins} accent="destructive" />
       </div>
 
@@ -47,7 +52,7 @@ export function PayrollModule() {
           <AttendanceTab />
         </TabsContent>
         <TabsContent value="payroll">
-          <EmployeesTab month="2026-05" />
+          <EmployeesTab month={month} />
         </TabsContent>
         <TabsContent value="contractors">
           <ContractorsTab />

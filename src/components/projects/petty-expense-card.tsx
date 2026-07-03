@@ -11,9 +11,11 @@ export function PettyExpenseCard({ projectId }: { projectId: string }) {
   const expenses = useProjectExpenses(projectId);
   const txns = useProjectTransactions(projectId);
 
-  // Derive petty expense data from out-direction transactions as well
+  // Derive petty expense data from out-direction transactions + direct expenses
   const outTxns = txns.filter((t) => t.direction === "out");
-  const totalExpense = outTxns.reduce((s, t) => s + t.amount, 0);
+  const txnTotal = outTxns.reduce((s, t) => s + t.amount, 0);
+  const expTotal = expenses.reduce((s, e) => s + e.amount, 0);
+  const totalExpense = txnTotal + expTotal;
   const pendingCount = expenses.filter((e) => e.status === "pending").length;
   const recentExpenses = expenses.slice(0, 3);
 
