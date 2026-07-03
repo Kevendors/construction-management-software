@@ -66,23 +66,44 @@ const mapLedger = (r: LedgerRow): SupervisorLedgerEntry => ({
   note: r.note ?? "",
 });
 
+export interface ExpenseCategoryOption {
+  slug: string;
+  label: string;
+}
+
+const DEFAULT_CATEGORIES: ExpenseCategoryOption[] = [
+  { slug: "material", label: "Material" },
+  { slug: "salary", label: "Salary" },
+  { slug: "site", label: "Site" },
+  { slug: "subcon", label: "Subcon" },
+  { slug: "other", label: "Other" },
+];
+
 export interface ExpensesBoard {
   expenses: Expense[];
   ledger: SupervisorLedgerEntry[];
   projects: Project[];
   users: User[];
+  categories: ExpenseCategoryOption[];
 }
 
 export async function getExpensesBoard(): Promise<ExpensesBoard> {
   if (!isSupabaseConfigured()) {
-    return { expenses: mockExpenses, ledger: mockLedger, projects: mockProjects, users: mockUsers };
+    return {
+      expenses: mockExpenses,
+      ledger: mockLedger,
+      projects: mockProjects,
+      users: mockUsers,
+      categories: DEFAULT_CATEGORIES,
+    };
   }
   const supabase = await createSupabase();
-  const [ex, lg, pr, us] = await Promise.all([
+  const [ex, lg, pr, us, cat] = await Promise.all([
     supabase.from("expenses").select("*").order("date", { ascending: false }),
     supabase.from("supervisor_ledger").select("*").order("date", { ascending: false }),
     supabase.from("projects").select("*"),
     supabase.from("profiles").select("*"),
+    supabase.from("expense_categories").select("slug,label").order("label"),
   ]);
   for (const r of [ex, lg, pr, us]) if (r.error) throw r.error;
   const expenses = (ex.data as ExpenseRow[]).map(mapExpense);
@@ -99,10 +120,14 @@ export async function getExpensesBoard(): Promise<ExpensesBoard> {
     });
   }
 
+  const categories =
+    cat.error || !cat.data?.length ? DEFAULT_CATEGORIES : (cat.data as ExpenseCategoryOption[]);
+
   return {
     expenses,
     ledger: (lg.data as LedgerRow[]).map(mapLedger),
     projects: (pr.data as ProjectRow[]).map(mapProject),
     users: (us.data as UserRow[]).map(mapUser),
+    categories,
   };
 }

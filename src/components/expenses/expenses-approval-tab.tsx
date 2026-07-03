@@ -17,14 +17,14 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { logExpense, setExpenseStatus } from "@/app/expenses/actions";
+import { logExpense, setExpenseStatus, addExpenseCategoryAction } from "@/app/expenses/actions";
 import { fileToResizedDataUrl } from "@/lib/image";
-import type { ExpensesBoard } from "@/lib/data/expenses";
+import type { ExpensesBoard, ExpenseCategoryOption } from "@/lib/data/expenses";
 import { approvalMeta, categoryLabel } from "@/lib/labels";
 import { formatINR } from "@/lib/utils";
-import type { ApprovalStatus, ExpenseCategory } from "@/lib/types";
+import type { ApprovalStatus } from "@/lib/types";
 
-const CATEGORIES: ExpenseCategory[] = ["material", "salary", "site", "subcon", "other"];
+const ADD_NEW = "__add_new__";
 const PAYMENT_MODES = ["Cash", "UPI", "Bank Transfer", "Card", "Cheque"];
 const STATUSES: ApprovalStatus[] = ["pending", "approved", "rejected"];
 const today = () => new Date().toISOString().slice(0, 10);
@@ -53,7 +53,11 @@ function LogExpenseDialog({
   const [title, setTitle] = React.useState("");
   const [projectId, setProjectId] = React.useState("");
   const [byId, setById] = React.useState("");
-  const [category, setCategory] = React.useState<ExpenseCategory>("material");
+  const [cats, setCats] = React.useState<ExpenseCategoryOption[]>(board.categories);
+  const [category, setCategory] = React.useState<string>(board.categories[0]?.slug ?? "other");
+  const [addingCat, setAddingCat] = React.useState(false);
+  const [newCat, setNewCat] = React.useState("");
+  const [savingCat, setSavingCat] = React.useState(false);
   const [amount, setAmount] = React.useState("");
   const [paymentMode, setPaymentMode] = React.useState("Cash");
   const [date, setDate] = React.useState(today());
@@ -79,6 +83,31 @@ function LogExpenseDialog({
     } catch {
       setError("Could not read that file.");
     }
+  }
+
+  function onCategoryChange(value: string) {
+    if (value === ADD_NEW) {
+      setAddingCat(true);
+      setNewCat("");
+      return;
+    }
+    setCategory(value);
+  }
+
+  async function addCategory() {
+    const label = newCat.trim();
+    if (!label) return setAddingCat(false);
+    setSavingCat(true);
+    setError(null);
+    const res = await addExpenseCategoryAction(label);
+    setSavingCat(false);
+    if (res.error) return setError(res.error);
+    if (res.slug && res.label) {
+      setCats((prev) => (prev.some((c) => c.slug === res.slug) ? prev : [...prev, { slug: res.slug!, label: res.label! }]));
+      setCategory(res.slug);
+    }
+    setAddingCat(false);
+    setNewCat("");
   }
 
   async function submit(e: React.FormEvent) {
@@ -142,9 +171,30 @@ function LogExpenseDialog({
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="x-cat">Category</Label>
-            <Select id="x-cat" value={category} onChange={(e) => setCategory(e.target.value as ExpenseCategory)}>
-              {CATEGORIES.map((c) => <option key={c} value={c}>{categoryLabel[c]}</option>)}
-            </Select>
+            {addingCat ? (
+              <div className="flex gap-1.5">
+                <Input
+                  autoFocus
+                  value={newCat}
+                  onChange={(e) => setNewCat(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") { e.preventDefault(); addCategory(); }
+                    if (e.key === "Escape") setAddingCat(false);
+                  }}
+                  placeholder="New category name"
+                  className="h-9"
+                />
+                <Button type="button" size="sm" onClick={addCategory} disabled={savingCat}>
+                  {savingCat ? "…" : "Add"}
+                </Button>
+                <Button type="button" size="sm" variant="outline" onClick={() => setAddingCat(false)}>✕</Button>
+              </div>
+            ) : (
+              <Select id="x-cat" value={category} onChange={(e) => onCategoryChange(e.target.value)}>
+                {cats.map((c) => <option key={c.slug} value={c.slug}>{c.label}</option>)}
+                <option value={ADD_NEW}>+ Add category…</option>
+              </Select>
+            )}
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="x-pay">Payment Mode</Label>
@@ -189,6 +239,8 @@ export function ExpensesApprovalTab({ board }: { board: ExpensesBoard }) {
   const { expenses, projects, users } = board;
   const userById = new Map(users.map((u) => [u.id, u]));
   const projectById = new Map(projects.map((p) => [p.id, p]));
+  const catLabelOf = (slug: string) =>
+    board.categories.find((c) => c.slug === slug)?.label ?? categoryLabel[slug] ?? slug;
   const [open, setOpen] = React.useState(false);
   const [busyId, setBusyId] = React.useState<string | null>(null);
   const [projectFilter, setProjectFilter] = React.useState("all");
@@ -266,7 +318,7 @@ export function ExpensesApprovalTab({ board }: { board: ExpensesBoard }) {
                       </div>
                     )}
                   </TableCell>
-                  <TableCell><Badge variant="outline">{categoryLabel[e.category]}</Badge></TableCell>
+                  <TableCell><Badge variant="outline">{catLabelOf(e.category)}</Badge></TableCell>
                   <TableCell className="text-xs text-muted-foreground">{e.paymentMode || "—"}</TableCell>
                   <TableCell className="text-right font-semibold tabular-nums">{formatINR(e.amount)}</TableCell>
                   <TableCell>
