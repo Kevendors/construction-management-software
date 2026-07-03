@@ -46,6 +46,42 @@ export function canAccess(role: Role | null | undefined, module: ModuleKey): boo
   return (ROLE_MODULES[role] ?? []).includes(module);
 }
 
+/** Canonical route for each module (used for redirects). */
+export const MODULE_ROUTES: Record<ModuleKey, string> = {
+  dashboard: "/",
+  analytics: "/analytics",
+  projects: "/projects",
+  design: "/design",
+  clients: "/clients",
+  quotations: "/quotations",
+  invoices: "/invoices",
+  material: "/material",
+  subcon: "/subcon",
+  payroll: "/payroll",
+  expenses: "/expenses",
+  equipment: "/equipment",
+  team: "/team",
+};
+
+/** Which module a pathname belongs to (null = unguarded route). */
+export function pathModule(pathname: string): ModuleKey | null {
+  if (pathname === "/") return "dashboard";
+  const prefixes: [string, ModuleKey][] = [
+    ["/analytics", "analytics"], ["/projects", "projects"], ["/design", "design"],
+    ["/clients", "clients"], ["/quotations", "quotations"], ["/invoices", "invoices"],
+    ["/material", "material"], ["/subcon", "subcon"], ["/payroll", "payroll"],
+    ["/expenses", "expenses"], ["/equipment", "equipment"], ["/team", "team"],
+  ];
+  for (const [p, m] of prefixes) if (pathname === p || pathname.startsWith(p + "/")) return m;
+  return null;
+}
+
+/** The landing route for a role — first module it can access (fallback "/"). */
+export function landingPath(role: Role | null | undefined): string {
+  const first = role ? (ROLE_MODULES[role] ?? [])[0] : undefined;
+  return first ? MODULE_ROUTES[first] : "/";
+}
+
 /** Roles that can manage users/roles (the Team page + account creation). */
 export function isAdminRole(role: Role | null | undefined): boolean {
   return role === "super_admin";
