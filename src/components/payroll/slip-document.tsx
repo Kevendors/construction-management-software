@@ -1,10 +1,10 @@
-import { getEmployee, slipTotals } from "@/lib/mock/selectors";
+import { slipTotals } from "@/lib/payroll/compute";
 import { departmentLabel } from "@/lib/labels";
 import { formatINR } from "@/lib/utils";
-import type { SalarySlip } from "@/lib/types";
+import type { Employee, SalarySlip } from "@/lib/types";
 
-export function SlipDocument({ slip }: { slip: SalarySlip }) {
-  const emp = getEmployee(slip.employeeId);
+export function SlipDocument({ slip, employee }: { slip: SalarySlip; employee: Employee | null }) {
+  const emp = employee;
   const t = slipTotals(slip);
   const monthLabel = new Date(`${slip.month}-01`).toLocaleDateString("en-IN", {
     month: "long",
@@ -48,12 +48,13 @@ export function SlipDocument({ slip }: { slip: SalarySlip }) {
               <tr>
                 <td className="pr-3 text-slate-400">Date of Joining</td>
                 <td>
-                  {emp &&
-                    new Date(emp.joinDate).toLocaleDateString("en-IN", {
-                      day: "2-digit",
-                      month: "short",
-                      year: "numeric",
-                    })}
+                  {emp && emp.joinDate
+                    ? new Date(emp.joinDate).toLocaleDateString("en-IN", {
+                        day: "2-digit",
+                        month: "short",
+                        year: "numeric",
+                      })
+                    : "—"}
                 </td>
               </tr>
             </tbody>

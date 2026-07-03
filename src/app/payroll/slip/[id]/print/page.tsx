@@ -1,11 +1,7 @@
 import { notFound } from "next/navigation";
-import { salarySlips } from "@/lib/mock/data";
 import { DocumentShell } from "@/components/documents/document-shell";
 import { SlipDocument } from "@/components/payroll/slip-document";
-
-export function generateStaticParams() {
-  return salarySlips.map((s) => ({ id: s.id }));
-}
+import { getPayrollBoard } from "@/lib/data/payroll";
 
 export default async function SlipPrintPage({
   params,
@@ -13,12 +9,14 @@ export default async function SlipPrintPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const slip = salarySlips.find((s) => s.id === id);
+  const board = await getPayrollBoard();
+  const slip = board.slips.find((s) => s.id === id);
   if (!slip) notFound();
+  const employee = board.employees.find((e) => e.id === slip.employeeId) ?? null;
 
   return (
     <DocumentShell backHref="/payroll" backLabel="Payroll & Attendance" docType="Salary Slip">
-      <SlipDocument slip={slip} />
+      <SlipDocument slip={slip} employee={employee} />
     </DocumentShell>
   );
 }
