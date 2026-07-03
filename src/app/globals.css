@@ -194,7 +194,9 @@ svg.recharts-surface:focus,
   /* Force the quotation's salmon section bars / banners (and their white text)
      to print even when the browser's "Background graphics" option is off. */
   #quote-doc,
-  #quote-doc * {
+  #quote-doc *,
+  #invoice-doc,
+  #invoice-doc * {
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Plus, IndianRupee, CheckCircle2, AlertCircle } from "lucide-react";
+import { Plus, IndianRupee, CheckCircle2, AlertCircle, FileText } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -33,9 +33,11 @@ export default async function InvoicesPage() {
         title="Sales Invoices"
         description="Client billing — raised vs received"
         action={
-          <Button>
-            <Plus /> New Invoice
-          </Button>
+          <Link href="/invoices/new">
+            <Button>
+              <Plus /> New Invoice
+            </Button>
+          </Link>
         }
       />
 
@@ -57,6 +59,7 @@ export default async function InvoicesPage() {
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Total</TableHead>
                 <TableHead className="text-right">Received</TableHead>
+                <TableHead className="text-right">Doc</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -85,6 +88,14 @@ export default async function InvoicesPage() {
                     </TableCell>
                     <TableCell className="text-right tabular-nums">{formatINR(total)}</TableCell>
                     <TableCell className="text-right tabular-nums">{formatINR(inv.received)}</TableCell>
+                    <TableCell className="text-right">
+                      <Link
+                        href={`/invoices/new?id=${inv.id}`}
+                        className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
+                      >
+                        <FileText className="h-4 w-4" /> Open
+                      </Link>
+                    </TableCell>
                   </TableRow>
                 );
               })}
