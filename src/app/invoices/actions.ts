@@ -2,6 +2,8 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { computeInvoice, type InvoiceState } from "@/lib/invoice/compute";
+import { logActivity } from "@/lib/activity/log";
+import { formatINR } from "@/lib/utils";
 
 async function currentOrgId(supabase: Awaited<ReturnType<typeof createClient>>): Promise<string | null> {
   const {
@@ -117,6 +119,12 @@ export async function saveInvoiceAction(
     if (iErr) return { error: iErr.message };
   }
 
+  await logActivity({
+    action: existingId ? "updated" : "created",
+    entityType: "invoice",
+    entityId: invoiceId,
+    summary: `${existingId ? "Updated" : "Created"} invoice ${state.number || ""} (${formatINR(c.grandTotal)})`.trim(),
+  });
   return { id: invoiceId };
 }
 

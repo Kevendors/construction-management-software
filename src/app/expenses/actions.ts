@@ -2,6 +2,8 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { logActivity } from "@/lib/activity/log";
+import { formatINR } from "@/lib/utils";
 import type { ApprovalStatus } from "@/lib/types";
 
 const BILL_BUCKET = "expense-bills";
@@ -90,6 +92,13 @@ export async function logExpense(input: LogExpenseInput): Promise<ActionResult> 
       }
     }
   }
+
+  await logActivity({
+    action: "created",
+    entityType: "expense",
+    entityId: expenseId,
+    summary: `Logged expense ${input.title ? `"${input.title}" ` : ""}of ${formatINR(input.amount)}`,
+  });
   return { id: expenseId };
 }
 

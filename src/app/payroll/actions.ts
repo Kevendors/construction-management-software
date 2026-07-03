@@ -1,6 +1,8 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { logActivity } from "@/lib/activity/log";
+import { formatINR } from "@/lib/utils";
 import type {
   AdvanceParty,
   Department,
@@ -66,6 +68,12 @@ export async function addEmployeeAction(input: AddEmployeeInput): Promise<Action
     .select("id")
     .single();
   if (error) return { error: error.message };
+  await logActivity({
+    action: "created",
+    entityType: "employee",
+    entityId: data.id as string,
+    summary: `Added employee ${input.name.trim()}`,
+  });
   return { id: data.id as string };
 }
 
@@ -98,6 +106,12 @@ export async function addContractorAction(input: AddContractorInput): Promise<Ac
     .select("id")
     .single();
   if (error) return { error: error.message };
+  await logActivity({
+    action: "created",
+    entityType: "contractor",
+    entityId: data.id as string,
+    summary: `Added labour contractor ${input.company.trim() || input.name.trim()}`,
+  });
   return { id: data.id as string };
 }
 
@@ -132,6 +146,12 @@ export async function markAttendanceAction(input: MarkAttendanceInput): Promise<
     .select("id")
     .single();
   if (error) return { error: error.message };
+  await logActivity({
+    action: "created",
+    entityType: "attendance",
+    entityId: data.id as string,
+    summary: `Marked attendance — ${input.present} present on ${input.date}`,
+  });
   return { id: data.id as string };
 }
 
@@ -169,6 +189,12 @@ export async function recordAdvanceAction(input: RecordAdvanceInput): Promise<Ac
     .select("id")
     .single();
   if (error) return { error: error.message };
+  await logActivity({
+    action: "created",
+    entityType: "advance",
+    entityId: data.id as string,
+    summary: `Recorded ${input.partyType} advance of ${formatINR(input.amount)}`,
+  });
   return { id: data.id as string };
 }
 
@@ -232,6 +258,12 @@ export async function generateSlipAction(
     .select("id")
     .single();
   if (error) return { error: error.message };
+  await logActivity({
+    action: "created",
+    entityType: "salary_slip",
+    entityId: data.id as string,
+    summary: `Generated salary slip for ${month}`,
+  });
   return { id: data.id as string };
 }
 

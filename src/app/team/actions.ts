@@ -3,6 +3,8 @@
 import { getAuthContext } from "@/lib/auth/context";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isAdminRole } from "@/lib/auth/permissions";
+import { logActivity } from "@/lib/activity/log";
+import { roleLabel } from "@/lib/labels";
 import type { Role } from "@/lib/types";
 
 export interface ActionResult {
@@ -61,6 +63,12 @@ export async function createMemberAction(input: NewMemberInput): Promise<ActionR
       { onConflict: "org_id,user_id" }
     );
   if (mErr) return { error: mErr.message };
+  await logActivity({
+    action: "created",
+    entityType: "member",
+    entityId: userId,
+    summary: `Created ${roleLabel[input.role] ?? input.role} account for ${input.name.trim()}`,
+  });
   return { id: userId };
 }
 
@@ -76,6 +84,12 @@ export async function setMemberRoleAction(userId: string, role: Role): Promise<A
     .eq("org_id", ctx.orgId)
     .eq("user_id", userId);
   if (error) return { error: error.message };
+  await logActivity({
+    action: "updated",
+    entityType: "member",
+    entityId: userId,
+    summary: `Changed role to ${roleLabel[role] ?? role}`,
+  });
   return { id: userId };
 }
 

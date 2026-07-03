@@ -14,11 +14,12 @@ export type ModuleKey =
   | "payroll"
   | "expenses"
   | "equipment"
-  | "team";
+  | "team"
+  | "activity";
 
 const ALL: ModuleKey[] = [
   "dashboard", "analytics", "projects", "design", "clients", "quotations",
-  "invoices", "material", "subcon", "payroll", "expenses", "equipment", "team",
+  "invoices", "material", "subcon", "payroll", "expenses", "equipment", "team", "activity",
 ];
 
 /**
@@ -28,7 +29,7 @@ const ALL: ModuleKey[] = [
  */
 export const ROLE_MODULES: Record<Role, ModuleKey[]> = {
   super_admin: ALL,
-  pm: ["dashboard", "analytics", "projects", "design", "clients", "quotations", "invoices", "material", "subcon", "expenses", "equipment"],
+  pm: ["dashboard", "analytics", "projects", "design", "clients", "quotations", "invoices", "material", "subcon", "expenses", "equipment", "activity"],
   supervisor: ["projects", "expenses"], // site-only: projects (Updates/DPRs/Attendance live in the project) + petty expenses
   accountant: ["dashboard", "analytics", "clients", "quotations", "invoices", "expenses"],
   hr: ["dashboard", "payroll", "team"],
@@ -61,6 +62,7 @@ export const MODULE_ROUTES: Record<ModuleKey, string> = {
   expenses: "/expenses",
   equipment: "/equipment",
   team: "/team",
+  activity: "/activity",
 };
 
 /** Which module a pathname belongs to (null = unguarded route). */
@@ -71,6 +73,7 @@ export function pathModule(pathname: string): ModuleKey | null {
     ["/clients", "clients"], ["/quotations", "quotations"], ["/invoices", "invoices"],
     ["/material", "material"], ["/subcon", "subcon"], ["/payroll", "payroll"],
     ["/expenses", "expenses"], ["/equipment", "equipment"], ["/team", "team"],
+    ["/activity", "activity"],
   ];
   for (const [p, m] of prefixes) if (pathname === p || pathname.startsWith(p + "/")) return m;
   return null;

@@ -12,6 +12,7 @@ import {
   Receipt,
   Wrench,
   ShieldCheck,
+  History,
   type LucideIcon,
 } from "lucide-react";
 import type { ModuleKey } from "@/lib/auth/permissions";
@@ -66,6 +67,7 @@ export const navSections: NavSection[] = [
     title: "Administration",
     items: [
       { label: "Team & Roles", href: "/team", icon: ShieldCheck, module: "team" },
+      { label: "Activity Log", href: "/activity", icon: History, module: "activity" },
     ],
   },
 ];
