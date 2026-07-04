@@ -139,9 +139,7 @@ function ProjectDetailInner({ projectId }: { projectId: string }) {
           <TabsTrigger value="commercial" disabled className="opacity-40 cursor-not-allowed" title="Coming soon">
             Commercial
           </TabsTrigger>
-          <TabsTrigger value="files" disabled className="opacity-40 cursor-not-allowed" title="Coming soon">
-            Files
-          </TabsTrigger>
+          <TabsTrigger value="files">Files</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview">
