@@ -10,6 +10,7 @@ import { UpdatesTab } from "./updates-tab";
 import { FilesTab } from "./files-tab";
 import { CommercialTab } from "./commercial-tab";
 import { AlertsTab, useProjectAlerts } from "./alerts-tab";
+import { HistoryTab } from "./history-tab";
 import { DrawingList } from "@/components/design/drawing-list";
 import { getProjectDrawings } from "@/lib/mock/selectors";
 import {
@@ -133,6 +134,7 @@ function ProjectDetailInner({ projectId }: { projectId: string }) {
               </span>
             )}
           </TabsTrigger>
+          <TabsTrigger value="history">History</TabsTrigger>
           <TabsTrigger value="design" disabled className="opacity-40 cursor-not-allowed" title="Coming soon">
             Design
           </TabsTrigger>
@@ -153,6 +155,9 @@ function ProjectDetailInner({ projectId }: { projectId: string }) {
         </TabsContent>
         <TabsContent value="alerts">
           <AlertsTab projectId={projectId} />
+        </TabsContent>
+        <TabsContent value="history">
+          <HistoryTab projectId={projectId} />
         </TabsContent>
         <TabsContent value="design">
           <DrawingList drawings={drawings} />
