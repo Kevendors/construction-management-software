@@ -12,6 +12,7 @@ import { Progress } from "@/components/ui/progress";
 import { Input, Label } from "@/components/ui/input";
 import { Dialog, Select } from "@/components/ui/dialog";
 import { useClients, useStore, useUsers } from "@/lib/store/project-store";
+import { useRole } from "@/components/layout/role-provider";
 import { projectStatusMeta } from "@/lib/labels";
 import { formatINR } from "@/lib/utils";
 import type { Client, Project, ProjectStatus, TaskStatus } from "@/lib/types";
@@ -26,6 +27,8 @@ export interface OverviewItem {
 function ProjectCard({ item }: { item: OverviewItem }) {
   const { project: p, client, margin, counts } = item;
   const meta = projectStatusMeta[p.status];
+  const { role } = useRole();
+  const canSeeValue = role === "super_admin";
   return (
     <Link href={`/projects/${p.id}`} className="group">
       <Card className="h-full transition-shadow hover:shadow-md">
@@ -48,22 +51,24 @@ function ProjectCard({ item }: { item: OverviewItem }) {
             <Progress value={p.percentComplete} indicatorClassName="bg-accent" />
           </div>
 
-          <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
-            <div>
-              <dt className="text-xs text-muted-foreground">Value</dt>
-              <dd className="font-semibold tabular-nums">{formatINR(p.value, { compact: true })}</dd>
-            </div>
-            <div>
-              <dt className="text-xs text-muted-foreground">Margin</dt>
-              <dd
-                className={`font-semibold tabular-nums ${
-                  margin >= 0 ? "text-success" : "text-destructive"
-                }`}
-              >
-                {formatINR(margin, { compact: true })}
-              </dd>
-            </div>
-          </dl>
+          {canSeeValue && (
+            <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
+              <div>
+                <dt className="text-xs text-muted-foreground">Value</dt>
+                <dd className="font-semibold tabular-nums">{formatINR(p.value, { compact: true })}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-muted-foreground">Margin</dt>
+                <dd
+                  className={`font-semibold tabular-nums ${
+                    margin >= 0 ? "text-success" : "text-destructive"
+                  }`}
+                >
+                  {formatINR(margin, { compact: true })}
+                </dd>
+              </div>
+            </dl>
+          )}
 
           <div className="mt-4 flex flex-wrap gap-1.5">
             {counts.ongoing > 0 && <Badge variant="info">{counts.ongoing} ongoing</Badge>}
@@ -254,6 +259,8 @@ function NewProjectDialog({
 
 export function ProjectsBoard({ initial }: { initial: OverviewItem[] }) {
   const { addedProjects, tasks, transactions, clients } = useStore();
+  const { role } = useRole();
+  const canCreate = role === "super_admin" || role === "pm";
   const [open, setOpen] = React.useState(false);
   const [prefill, setPrefill] = React.useState<ProjectPrefill | null>(null);
 
@@ -319,9 +326,11 @@ export function ProjectsBoard({ initial }: { initial: OverviewItem[] }) {
         title="Projects"
         description="All construction & design projects"
         action={
-          <Button onClick={() => setOpen(true)}>
-            <Plus /> New Project
-          </Button>
+          canCreate ? (
+            <Button onClick={() => setOpen(true)}>
+              <Plus /> New Project
+            </Button>
+          ) : undefined
         }
       />
 

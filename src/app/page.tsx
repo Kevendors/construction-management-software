@@ -17,11 +17,24 @@ import { TrendChart, MarginTrendChart } from "@/components/charts/trend-charts";
 import { BudgetVsActualChart, ProjectMarginChart } from "@/components/charts/bar-charts";
 import { CashFlowChart } from "@/components/charts/cashflow-chart";
 import { getCompanyDashboard } from "@/lib/data/dashboard";
+import { getAuthContext } from "@/lib/auth/context";
 import { projectStatusMeta } from "@/lib/labels";
 import { formatINR } from "@/lib/utils";
 
 export default async function CompanyDashboardPage() {
   const { totals, trend, margins, budget, flow, portfolio } = await getCompanyDashboard();
+  const ctx = await getAuthContext();
+  // Project value & margin are visible to Super Admin only. For anyone else,
+  // strip those figures from the payload (not just the display).
+  const canSeeValue = ctx?.role === "super_admin";
+  const safeTotals = canSeeValue ? totals : { ...totals, value: 0, margin: 0 };
+  const safePortfolio = canSeeValue
+    ? portfolio
+    : portfolio.map((row) => ({
+        ...row,
+        project: { ...row.project, value: 0 },
+        pnl: { ...row.pnl, projectValue: 0, margin: 0, marginPct: 0, boqValue: 0 },
+      }));
 
   return (
     <>
@@ -31,7 +44,7 @@ export default async function CompanyDashboardPage() {
       />
 
       {/* KPI cards (chart 12) — click any card to drill into a per-project breakdown */}
-      <DashboardKpis totals={totals} portfolio={portfolio} />
+      <DashboardKpis totals={safeTotals} portfolio={safePortfolio} canSeeValue={canSeeValue} />
 
       {/* trends */}
       <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -71,25 +84,27 @@ export default async function CompanyDashboardPage() {
         </CardContent>
       </Card>
 
-      {/* budget vs actual + margins */}
-      <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Budget (BOQ) vs Actual Spend</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <BudgetVsActualChart data={budget} />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Per-Project Margin</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ProjectMarginChart data={margins} />
-          </CardContent>
-        </Card>
-      </div>
+      {/* budget vs actual + margins — value-derived, Super Admin only */}
+      {canSeeValue && (
+        <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Budget (BOQ) vs Actual Spend</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <BudgetVsActualChart data={budget} />
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Per-Project Margin</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ProjectMarginChart data={margins} />
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* portfolio table */}
       <Card className="mt-4">
@@ -110,12 +125,12 @@ export default async function CompanyDashboardPage() {
                 <TableHead>Client</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="w-48">Progress</TableHead>
-                <TableHead className="text-right">Value</TableHead>
-                <TableHead className="text-right">Margin</TableHead>
+                {canSeeValue && <TableHead className="text-right">Value</TableHead>}
+                {canSeeValue && <TableHead className="text-right">Margin</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
-              {portfolio.map(({ project: p, pnl, client }) => {
+              {safePortfolio.map(({ project: p, pnl, client }) => {
                 const meta = projectStatusMeta[p.status];
                 return (
                   <TableRow key={p.id}>
@@ -139,14 +154,18 @@ export default async function CompanyDashboardPage() {
                         </span>
                       </div>
                     </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {formatINR(p.value, { compact: true })}
-                    </TableCell>
-                    <TableCell className="text-right font-medium tabular-nums">
-                      <span className={pnl.margin >= 0 ? "text-success" : "text-destructive"}>
-                        {formatINR(pnl.margin, { compact: true })}
-                      </span>
-                    </TableCell>
+                    {canSeeValue && (
+                      <TableCell className="text-right tabular-nums">
+                        {formatINR(p.value, { compact: true })}
+                      </TableCell>
+                    )}
+                    {canSeeValue && (
+                      <TableCell className="text-right font-medium tabular-nums">
+                        <span className={pnl.margin >= 0 ? "text-success" : "text-destructive"}>
+                          {formatINR(pnl.margin, { compact: true })}
+                        </span>
+                      </TableCell>
+                    )}
                   </TableRow>
                 );
               })}

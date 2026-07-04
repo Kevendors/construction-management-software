@@ -11,6 +11,7 @@ import { FilesTab } from "./files-tab";
 import { CommercialTab } from "./commercial-tab";
 import { AlertsTab, useProjectAlerts } from "./alerts-tab";
 import { HistoryTab } from "./history-tab";
+import { useRole } from "@/components/layout/role-provider";
 import { DrawingList } from "@/components/design/drawing-list";
 import { getProjectDrawings } from "@/lib/mock/selectors";
 import {
@@ -40,6 +41,8 @@ function ProjectDetailInner({ projectId }: { projectId: string }) {
   const pm = useUser(project?.pmId ?? null);
   const alerts = useProjectAlerts(projectId);
   const highCount = alerts.filter((a) => a.severity === "high").length;
+  const { role } = useRole();
+  const canSeeValue = role === "super_admin";
 
   if (loading && !project) {
     return (
@@ -111,7 +114,7 @@ function ProjectDetailInner({ projectId }: { projectId: string }) {
             {pm && <span>PM: {pm.name}</span>}
           </div>
         </div>
-        <div className="shrink-0 text-left sm:text-right">
+        <div className={`shrink-0 text-left sm:text-right ${canSeeValue ? "" : "hidden"}`}>
           <p className="text-xs text-muted-foreground">Project Value</p>
           <p className="text-2xl font-bold tabular-nums">{formatINR(project.value, { compact: true })}</p>
         </div>

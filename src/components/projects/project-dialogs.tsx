@@ -4,14 +4,11 @@ import * as React from "react";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 import { Dialog, Select, Textarea } from "@/components/ui/dialog";
-import { useProjectInvoices, useStore } from "@/lib/store/project-store";
-import { categoryLabel, costCodeLabel } from "@/lib/labels";
+import { useProjectInvoices, useStore, useExpenseCategories, useCostCodes, type CodeOption } from "@/lib/store/project-store";
+import { addExpenseCategoryAction, addCostCodeAction } from "@/app/expenses/actions";
+import { categoryLabel } from "@/lib/labels";
 import { lineTotalWithTax } from "@/lib/mock/selectors";
 import { formatINR, todayISO } from "@/lib/utils";
-import type { CostCode, ExpenseCategory } from "@/lib/types";
-
-const CATEGORIES: ExpenseCategory[] = ["material", "salary", "site", "subcon", "other"];
-const COST_CODES: CostCode[] = ["material", "machinery", "diesel", "labour", "other"];
 
 const today = () => new Date().toISOString().slice(0, 10);
 const addDays = (d: string, n: number) =>
@@ -27,9 +24,11 @@ export function AddExpenseDialog({
   onClose: () => void;
 }) {
   const { addTransaction } = useStore();
+  const categories = useExpenseCategories();
+  const costCodes = useCostCodes();
   const [amount, setAmount] = React.useState("");
-  const [category, setCategory] = React.useState<ExpenseCategory>("material");
-  const [costCode, setCostCode] = React.useState<CostCode>("material");
+  const [category, setCategory] = React.useState<string>("material");
+  const [costCode, setCostCode] = React.useState<string>("material");
   const [date, setDate] = React.useState(today());
   const [note, setNote] = React.useState("");
 
@@ -45,7 +44,7 @@ export function AddExpenseDialog({
       amount: amt,
       costCode,
       category,
-      note: note.trim() || categoryLabel[category],
+      note: note.trim() || categoryLabel[category] || category,
     });
     setAmount("");
     setNote("");
@@ -68,19 +67,11 @@ export function AddExpenseDialog({
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
             <Label htmlFor="e-cat">Category</Label>
-            <Select id="e-cat" value={category} onChange={(e) => setCategory(e.target.value as ExpenseCategory)}>
-              {CATEGORIES.map((c) => (
-                <option key={c} value={c}>{categoryLabel[c]}</option>
-              ))}
-            </Select>
+            <DynamicCodeSelect id="e-cat" kind="category" value={category} options={categories} onChange={setCategory} onAdd={addExpenseCategoryAction} />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="e-code">Cost Code</Label>
-            <Select id="e-code" value={costCode} onChange={(e) => setCostCode(e.target.value as CostCode)}>
-              {COST_CODES.map((c) => (
-                <option key={c} value={c}>{costCodeLabel[c]}</option>
-              ))}
-            </Select>
+            <DynamicCodeSelect id="e-code" kind="cost code" value={costCode} options={costCodes} onChange={setCostCode} onAdd={addCostCodeAction} />
           </div>
         </div>
         <div className="space-y-1.5">
@@ -297,5 +288,77 @@ export function AddAttendanceDialog({
         </div>
       </form>
     </Dialog>
+  );
+}
+
+/** A <Select> of org-defined options with an inline "+ Add …" flow that any
+ *  member can use to create a new value (category / cost code). */
+function DynamicCodeSelect({
+  id,
+  kind,
+  value,
+  options,
+  onChange,
+  onAdd,
+}: {
+  id: string;
+  kind: string;
+  value: string;
+  options: CodeOption[];
+  onChange: (slug: string) => void;
+  onAdd: (label: string) => Promise<{ slug?: string; label?: string; error?: string }>;
+}) {
+  const [opts, setOpts] = React.useState<CodeOption[]>(options);
+  const [adding, setAdding] = React.useState(false);
+  const [text, setText] = React.useState("");
+  const [saving, setSaving] = React.useState(false);
+  React.useEffect(() => setOpts(options), [options]);
+
+  async function add() {
+    const label = text.trim();
+    if (!label) return setAdding(false);
+    setSaving(true);
+    const res = await onAdd(label);
+    setSaving(false);
+    if (res.slug && res.label) {
+      setOpts((prev) => (prev.some((o) => o.slug === res.slug) ? prev : [...prev, { slug: res.slug!, label: res.label! }]));
+      onChange(res.slug);
+    }
+    setAdding(false);
+    setText("");
+  }
+
+  if (adding) {
+    return (
+      <div className="flex gap-1.5">
+        <Input
+          autoFocus
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") { e.preventDefault(); add(); }
+            if (e.key === "Escape") setAdding(false);
+          }}
+          placeholder={`New ${kind}`}
+          className="h-9"
+        />
+        <Button type="button" size="sm" onClick={add} disabled={saving}>{saving ? "…" : "Add"}</Button>
+        <Button type="button" size="sm" variant="outline" onClick={() => setAdding(false)}>✕</Button>
+      </div>
+    );
+  }
+
+  return (
+    <Select
+      id={id}
+      value={value}
+      onChange={(e) => {
+        if (e.target.value === "__add__") { setAdding(true); setText(""); return; }
+        onChange(e.target.value);
+      }}
+    >
+      {opts.map((o) => <option key={o.slug} value={o.slug}>{o.label}</option>)}
+      <option value="__add__">+ Add {kind}…</option>
+    </Select>
   );
 }

@@ -1,7 +1,6 @@
 import type {
   AdvanceStatus,
   ApprovalStatus,
-  CostCode,
   Department,
   EquipmentKind,
   EquipmentStatus,
@@ -47,7 +46,9 @@ export const approvalMeta: Record<ApprovalStatus, { label: string; variant: Vari
   rejected: { label: "Rejected", variant: "destructive" },
 };
 
-export const costCodeLabel: Record<CostCode, string> = {
+// Record<string> so dynamic (org-defined) cost codes can be looked up too,
+// falling back to the raw slug when unknown.
+export const costCodeLabel: Record<string, string> = {
   material: "Material",
   machinery: "Machinery",
   diesel: "Diesel",

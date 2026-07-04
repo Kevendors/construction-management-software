@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { getAuthContext } from "@/lib/auth/context";
 
 const BUCKET = "project-files";
 const SIGNED_TTL = 60 * 60 * 24 * 7; // 1 week
@@ -150,6 +151,10 @@ export async function listProjectFilesAction(projectId: string): Promise<Project
 
 /** Delete a project file (row + object). */
 export async function deleteProjectFileAction(id: string): Promise<{ ok?: boolean; error?: string }> {
+  const ctx = await getAuthContext();
+  if (!ctx || (ctx.role !== "super_admin" && ctx.role !== "pm"))
+    return { error: "Only a Super Admin or Project Manager can delete files." };
+
   const supabase = await createClient();
   const { orgId } = await currentContext(supabase);
   if (!orgId) return { error: "You must be signed in." };

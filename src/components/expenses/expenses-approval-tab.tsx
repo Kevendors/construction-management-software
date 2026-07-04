@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Check, X, FileText, UploadCloud, FileUp } from "lucide-react";
+import { Plus, Check, X, FileText, UploadCloud, FileUp, Trash2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -17,9 +17,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { logExpense, setExpenseStatus, addExpenseCategoryAction } from "@/app/expenses/actions";
+import { logExpense, setExpenseStatus, addExpenseCategoryAction, deleteExpenseAction } from "@/app/expenses/actions";
 import { fileToResizedDataUrl } from "@/lib/image";
 import type { ExpensesBoard, ExpenseCategoryOption } from "@/lib/data/expenses";
+import { useRole } from "@/components/layout/role-provider";
 import { approvalMeta, categoryLabel } from "@/lib/labels";
 import { formatINR } from "@/lib/utils";
 import type { ApprovalStatus } from "@/lib/types";
@@ -318,6 +319,8 @@ export function ExpensesApprovalTab({ board }: { board: ExpensesBoard }) {
   const projectById = new Map(projects.map((p) => [p.id, p]));
   const catLabelOf = (slug: string) =>
     board.categories.find((c) => c.slug === slug)?.label ?? categoryLabel[slug] ?? slug;
+  const { role } = useRole();
+  const isSuper = role === "super_admin";
   const [open, setOpen] = React.useState(false);
   const [busyId, setBusyId] = React.useState<string | null>(null);
   const [projectFilter, setProjectFilter] = React.useState("all");
@@ -332,6 +335,14 @@ export function ExpensesApprovalTab({ board }: { board: ExpensesBoard }) {
   async function decide(id: string, status: "approved" | "rejected") {
     setBusyId(id);
     const res = await setExpenseStatus(id, status);
+    setBusyId(null);
+    if (!res.error) router.refresh();
+  }
+
+  async function remove(id: string) {
+    if (!confirm("Permanently delete this expense? This cannot be undone.")) return;
+    setBusyId(id);
+    const res = await deleteExpenseAction(id);
     setBusyId(null);
     if (!res.error) router.refresh();
   }
@@ -409,13 +420,20 @@ export function ExpensesApprovalTab({ board }: { board: ExpensesBoard }) {
                   </TableCell>
                   <TableCell><Badge variant={meta.variant}>{meta.label}</Badge></TableCell>
                   <TableCell className="text-right">
-                    {e.status === "pending" ? (
+                    {isSuper ? (
                       <div className="flex justify-end gap-1">
-                        <Button size="sm" variant="outline" disabled={busyId === e.id} onClick={() => decide(e.id, "approved")}>
-                          <Check /> Approve
-                        </Button>
-                        <Button size="sm" variant="ghost" disabled={busyId === e.id} onClick={() => decide(e.id, "rejected")}>
-                          <X /> Reject
+                        {e.status === "pending" && (
+                          <>
+                            <Button size="sm" variant="outline" disabled={busyId === e.id} onClick={() => decide(e.id, "approved")}>
+                              <Check /> Approve
+                            </Button>
+                            <Button size="sm" variant="ghost" disabled={busyId === e.id} onClick={() => decide(e.id, "rejected")}>
+                              <X /> Reject
+                            </Button>
+                          </>
+                        )}
+                        <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:text-destructive" disabled={busyId === e.id} onClick={() => remove(e.id)} title="Delete expense">
+                          <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
                     ) : (

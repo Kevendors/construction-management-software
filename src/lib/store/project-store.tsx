@@ -133,7 +133,29 @@ interface StoreData {
   expenses: Expense[];
   invoices: SalesInvoice[];
   attendance: LabourAttendance[];
+  expenseCategories: CodeOption[];
+  costCodes: CodeOption[];
 }
+
+export interface CodeOption {
+  slug: string;
+  label: string;
+}
+
+const DEFAULT_EXPENSE_CATEGORIES: CodeOption[] = [
+  { slug: "material", label: "Material" },
+  { slug: "salary", label: "Salary" },
+  { slug: "site", label: "Site" },
+  { slug: "subcon", label: "Subcon" },
+  { slug: "other", label: "Other" },
+];
+const DEFAULT_COST_CODES: CodeOption[] = [
+  { slug: "material", label: "Material" },
+  { slug: "machinery", label: "Machinery" },
+  { slug: "diesel", label: "Diesel" },
+  { slug: "labour", label: "Labour" },
+  { slug: "other", label: "Other" },
+];
 
 const EMPTY: StoreData = {
   loading: true,
@@ -151,6 +173,8 @@ const EMPTY: StoreData = {
   expenses: [],
   invoices: [],
   attendance: [],
+  expenseCategories: DEFAULT_EXPENSE_CATEGORIES,
+  costCodes: DEFAULT_COST_CODES,
 };
 
 interface StoreValue extends StoreData {
@@ -192,6 +216,8 @@ function mockData(): StoreData {
     expenses: seedExpenses,
     invoices: seedInvoices,
     attendance: seedAttendance,
+    expenseCategories: DEFAULT_EXPENSE_CATEGORIES,
+    costCodes: DEFAULT_COST_CODES,
   };
 }
 
@@ -226,8 +252,10 @@ export function ProjectStoreProvider({ children }: { children: React.ReactNode }
         .maybeSingle();
       const orgId = (membership?.org_id as string | undefined) ?? null;
 
-      const [proj, cli, prof, tsk, dpr, ins, txn, inv, att, exp] = await Promise.all([
-        supabase.from("projects").select("*"),
+      const [proj, cli, prof, tsk, dpr, ins, txn, inv, att, exp, cat, cc] = await Promise.all([
+        // Value privacy is enforced server-side: this RPC returns value=0 for
+        // non-super-admins, so the real figure never reaches their client.
+        supabase.rpc("list_org_projects"),
         supabase.from("clients").select("*"),
         supabase.from("profiles").select("*"),
         supabase.from("tasks").select("*"),
@@ -237,6 +265,8 @@ export function ProjectStoreProvider({ children }: { children: React.ReactNode }
         supabase.from("sales_invoices").select("*, invoice_items(*)"),
         supabase.from("labour_attendance").select("*"),
         supabase.from("expenses").select("*"),
+        supabase.from("expense_categories").select("slug,label").order("label"),
+        supabase.from("cost_codes").select("slug,label").order("label"),
       ]);
 
       if (cancelled) return;
@@ -269,6 +299,8 @@ export function ProjectStoreProvider({ children }: { children: React.ReactNode }
         expenses: ((exp.data as ExpenseRow[] | null) ?? []).map(mapExpense),
         invoices: ((inv.data as InvoiceRow[] | null) ?? []).map(mapInvoice),
         attendance: ((att.data as AttendanceRow[] | null) ?? []).map(mapAttendance),
+        expenseCategories: (cat.data as CodeOption[] | null)?.length ? (cat.data as CodeOption[]) : DEFAULT_EXPENSE_CATEGORIES,
+        costCodes: (cc.data as CodeOption[] | null)?.length ? (cc.data as CodeOption[]) : DEFAULT_COST_CODES,
       });
     }
     load().catch((e) => {
@@ -691,6 +723,14 @@ export function useProjectExpenses(projectId: string) {
   return expenses
     .filter((e) => e.projectId === projectId)
     .sort((a, b) => +new Date(b.date) - +new Date(a.date));
+}
+
+export function useExpenseCategories() {
+  return useStore().expenseCategories;
+}
+
+export function useCostCodes() {
+  return useStore().costCodes;
 }
 
 export function useProjectInvoices(projectId: string) {

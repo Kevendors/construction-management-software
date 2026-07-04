@@ -182,8 +182,9 @@ export interface Transaction {
   date: string;
   direction: TxnDirection;
   amount: number;
-  costCode: CostCode;
-  category: ExpenseCategory;
+  // Category & cost code are dynamic (org master lists), so plain strings.
+  costCode: CostCode | string;
+  category: ExpenseCategory | string;
   note: string;
 }
 

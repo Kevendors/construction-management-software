@@ -5,6 +5,7 @@ import { FileImage, FileText, FileBox, File as FileIcon, UploadCloud, Download, 
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useProjectDprs } from "@/lib/store/project-store";
+import { useRole } from "@/components/layout/role-provider";
 import { fileToResizedDataUrl } from "@/lib/image";
 import {
   listProjectFilesAction,
@@ -28,6 +29,8 @@ async function fileToDataUrl(file: File): Promise<string> {
 
 export function FilesTab({ projectId }: { projectId: string }) {
   const dprs = useProjectDprs(projectId);
+  const { role } = useRole();
+  const canDelete = role === "super_admin" || role === "pm";
   const [files, setFiles] = React.useState<ProjectFileView[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [busy, setBusy] = React.useState(false);
@@ -125,9 +128,11 @@ export function FilesTab({ projectId }: { projectId: string }) {
                         <Download className="h-4 w-4" />
                       </a>
                     )}
-                    <button type="button" onClick={() => remove(f.id)} className="shrink-0 rounded-md p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive" title="Delete">
-                      <Trash2 className="h-4 w-4" />
-                    </button>
+                    {canDelete && (
+                      <button type="button" onClick={() => remove(f.id)} className="shrink-0 rounded-md p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive" title="Delete">
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    )}
                   </li>
                 );
               })}

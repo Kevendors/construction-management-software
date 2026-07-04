@@ -45,28 +45,34 @@ const METRICS: Record<MetricKey, MetricDef> = {
 export function DashboardKpis({
   totals,
   portfolio,
+  canSeeValue = true,
 }: {
   totals: CompanyDashboard["totals"];
   portfolio: PortfolioRow[];
+  canSeeValue?: boolean;
 }) {
   const [open, setOpen] = React.useState<MetricKey | null>(null);
   const marginPct = totals.value > 0 ? ((totals.margin / totals.value) * 100).toFixed(1) : "0.0";
 
   return (
     <>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <button type="button" onClick={() => setOpen("value")} className="text-left transition hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-xl">
-          <StatCard label="Portfolio Value" value={formatINR(totals.value, { compact: true })} icon={IndianRupee} accent="primary" hint={`${portfolio.length} projects`} />
-        </button>
+      <div className={`grid grid-cols-1 gap-4 sm:grid-cols-2 ${canSeeValue ? "xl:grid-cols-4" : "xl:grid-cols-2"}`}>
+        {canSeeValue && (
+          <button type="button" onClick={() => setOpen("value")} className="text-left transition hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-xl">
+            <StatCard label="Portfolio Value" value={formatINR(totals.value, { compact: true })} icon={IndianRupee} accent="primary" hint={`${portfolio.length} projects`} />
+          </button>
+        )}
         <button type="button" onClick={() => setOpen("invoiced")} className="text-left transition hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-xl">
           <StatCard label="Total Invoiced" value={formatINR(totals.invoiced, { compact: true })} icon={Receipt} accent="info" delta={{ value: `${formatINR(totals.received, { compact: true })} received`, positive: true }} />
         </button>
         <button type="button" onClick={() => setOpen("expense")} className="text-left transition hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-xl">
           <StatCard label="Total Expense" value={formatINR(totals.expense, { compact: true })} icon={Wallet} accent="destructive" />
         </button>
-        <button type="button" onClick={() => setOpen("margin")} className="text-left transition hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-xl">
-          <StatCard label="Gross Margin" value={formatINR(totals.margin, { compact: true })} icon={TrendingUp} accent="success" hint={`${marginPct}% of value`} />
-        </button>
+        {canSeeValue && (
+          <button type="button" onClick={() => setOpen("margin")} className="text-left transition hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-xl">
+            <StatCard label="Gross Margin" value={formatINR(totals.margin, { compact: true })} icon={TrendingUp} accent="success" hint={`${marginPct}% of value`} />
+          </button>
+        )}
       </div>
 
       {open && (

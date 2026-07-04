@@ -36,8 +36,9 @@ import {
   useProjectTransactions,
 } from "@/lib/store/project-store";
 import { taskStatusMeta, approvalMeta } from "@/lib/labels";
+import { useRole } from "@/components/layout/role-provider";
 import { formatINR } from "@/lib/utils";
-import type { CostCode, ExpenseCategory, ProgressUnit, TaskStatus } from "@/lib/types";
+import type { ProgressUnit, TaskStatus } from "@/lib/types";
 
 function progressText(value: number, target: number, unit: ProgressUnit) {
   if (unit === "percent" || unit === "lumpsum") return `${Math.round(taskProgressPercentRaw(value, target))}%`;
@@ -49,6 +50,9 @@ function taskProgressPercentRaw(value: number, target: number) {
 
 export function OverviewTab({ projectId }: { projectId: string }) {
   const project = useProject(projectId);
+  const { role } = useRole();
+  const isSupervisor = role === "supervisor";
+  const canSeeValue = role === "super_admin";
 
   // Everything reads from the live store so all charts update on any edit.
   const allTasks = useProjectTasks(projectId);
@@ -76,8 +80,8 @@ export function OverviewTab({ projectId }: { projectId: string }) {
     : 0;
 
   const out = txns.filter((t) => t.direction === "out");
-  const catMap = new Map<ExpenseCategory, number>();
-  const codeMap = new Map<CostCode, number>();
+  const catMap = new Map<string, number>();
+  const codeMap = new Map<string, number>();
   for (const t of out) {
     catMap.set(t.category, (catMap.get(t.category) ?? 0) + t.amount);
     codeMap.set(t.costCode, (codeMap.get(t.costCode) ?? 0) + t.amount);
@@ -112,12 +116,16 @@ export function OverviewTab({ projectId }: { projectId: string }) {
         <Button size="sm" variant="outline" onClick={() => setExpenseOpen(true)}>
           <Wallet /> Add Expense
         </Button>
-        <Button size="sm" variant="outline" onClick={() => setInvoiceOpen(true)}>
-          <Receipt /> Add Invoice
-        </Button>
-        <Button size="sm" variant="outline" onClick={() => setPaymentOpen(true)}>
-          <IndianRupee /> Record Payment
-        </Button>
+        {!isSupervisor && (
+          <>
+            <Button size="sm" variant="outline" onClick={() => setInvoiceOpen(true)}>
+              <Receipt /> Add Invoice
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => setPaymentOpen(true)}>
+              <IndianRupee /> Record Payment
+            </Button>
+          </>
+        )}
         <Button size="sm" variant="outline" onClick={() => setAttendanceOpen(true)}>
           <Users /> Add Attendance
         </Button>
@@ -158,37 +166,39 @@ export function OverviewTab({ projectId }: { projectId: string }) {
           </CardContent>
         </Card>
 
-        <Card
-          role="button"
-          tabIndex={0}
-          onClick={() => setDetail("invoices")}
-          onKeyDown={(e) => { if (e.key === "Enter") setDetail("invoices"); }}
-          className="cursor-pointer transition hover:border-primary/40 hover:shadow-sm"
-        >
-          <CardHeader>
-            <CardTitle className="text-base">Sales Invoices</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <p className="text-xs text-muted-foreground">Total raised</p>
-              <p className="text-2xl font-bold">{formatINR(invoicedTotal, { compact: true })}</p>
-            </div>
-            <div className="space-y-1.5">
-              <div className="flex justify-between text-xs">
-                <span className="text-muted-foreground">Received</span>
-                <span className="font-medium text-success">
-                  {formatINR(receivedTotal, { compact: true })}
-                </span>
+        {!isSupervisor && (
+          <Card
+            role="button"
+            tabIndex={0}
+            onClick={() => setDetail("invoices")}
+            onKeyDown={(e) => { if (e.key === "Enter") setDetail("invoices"); }}
+            className="cursor-pointer transition hover:border-primary/40 hover:shadow-sm"
+          >
+            <CardHeader>
+              <CardTitle className="text-base">Sales Invoices</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div>
+                <p className="text-xs text-muted-foreground">Total raised</p>
+                <p className="text-2xl font-bold">{formatINR(invoicedTotal, { compact: true })}</p>
               </div>
-              <Progress value={receivedPct} indicatorClassName="bg-success" />
-              <div className="flex justify-between text-xs">
-                <span className="text-muted-foreground">Pending</span>
-                <span className="font-medium">{formatINR(pendingTotal, { compact: true })}</span>
+              <div className="space-y-1.5">
+                <div className="flex justify-between text-xs">
+                  <span className="text-muted-foreground">Received</span>
+                  <span className="font-medium text-success">
+                    {formatINR(receivedTotal, { compact: true })}
+                  </span>
+                </div>
+                <Progress value={receivedPct} indicatorClassName="bg-success" />
+                <div className="flex justify-between text-xs">
+                  <span className="text-muted-foreground">Pending</span>
+                  <span className="font-medium">{formatINR(pendingTotal, { compact: true })}</span>
+                </div>
+                <p className="text-xs text-muted-foreground">{receivedPct.toFixed(0)}% collected</p>
               </div>
-              <p className="text-xs text-muted-foreground">{receivedPct.toFixed(0)}% collected</p>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       {/* petty expenses logged against this project */}
@@ -252,14 +262,16 @@ export function OverviewTab({ projectId }: { projectId: string }) {
 
       {/* financial health + expense category */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Financial Health</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <FinancialHealthChart data={financialHealth} />
-          </CardContent>
-        </Card>
+        {canSeeValue && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Financial Health</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <FinancialHealthChart data={financialHealth} />
+            </CardContent>
+          </Card>
+        )}
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Total Expense by Category</CardTitle>

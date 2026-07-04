@@ -3,26 +3,28 @@
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import { costCodeLabel } from "@/lib/labels";
 import { formatINR } from "@/lib/utils";
-import type { CostCode } from "@/lib/types";
 import { tooltipStyle } from "./task-status-donut";
 
-const COLORS: Record<CostCode, string> = {
+// Cost codes are dynamic (org-defined); map known ones to a colour and cycle
+// through the palette for any custom ones.
+const COLORS: Record<string, string> = {
   material: "var(--chart-1)",
   machinery: "var(--chart-3)",
   diesel: "var(--chart-2)",
   labour: "var(--chart-4)",
   other: "var(--chart-5)",
 };
+const PALETTE = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)", "var(--chart-5)"];
 
 export function CostCodePie({
   data,
 }: {
-  data: { costCode: CostCode; amount: number }[];
+  data: { costCode: string; amount: number }[];
 }) {
-  const rows = data.map((d) => ({
+  const rows = data.map((d, i) => ({
     ...d,
-    label: costCodeLabel[d.costCode],
-    color: COLORS[d.costCode],
+    label: costCodeLabel[d.costCode] ?? d.costCode,
+    color: COLORS[d.costCode] ?? PALETTE[i % PALETTE.length],
   }));
   return (
     <div className="flex flex-col items-center gap-4 sm:flex-row">

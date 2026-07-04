@@ -34,7 +34,6 @@ import {
 } from "@/lib/mock/data";
 import type {
   Boq,
-  CostCode,
   LineItem,
   MaterialItem,
   Project,
@@ -166,7 +165,7 @@ export const expenseByCategory = (projectId: string) => {
 
 export const expenseByCostCode = (projectId: string) => {
   const out = getProjectTransactions(projectId).filter((t) => t.direction === "out");
-  const map = new Map<CostCode, number>();
+  const map = new Map<string, number>();
   for (const t of out) map.set(t.costCode, (map.get(t.costCode) ?? 0) + t.amount);
   return Array.from(map, ([costCode, amount]) => ({ costCode, amount }));
 };

@@ -7,18 +7,21 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ExpensesApprovalTab } from "./expenses-approval-tab";
 import { ExpensesReportsTab } from "./expenses-reports-tab";
 import { SupervisorBalanceTab } from "./supervisor-balance-tab";
-import { supervisorBalancesFrom } from "./compute";
+import { computeSupervisorBalances } from "./compute";
 import type { ExpensesBoard } from "@/lib/data/expenses";
+import { useRole } from "@/components/layout/role-provider";
 import { formatINR } from "@/lib/utils";
 
 export function ExpensesModule({ board }: { board: ExpensesBoard }) {
   const { expenses, ledger } = board;
+  const { role } = useRole();
+  const isSupervisor = role === "supervisor";
   const pending = expenses.filter((e) => e.status === "pending");
   const approvedTotal = expenses
     .filter((e) => e.status === "approved")
     .reduce((s, e) => s + e.amount, 0);
-  const balances = supervisorBalancesFrom(ledger);
-  const netBalance = balances.reduce((s, b) => s + b.balance, 0);
+  const balances = computeSupervisorBalances(ledger, expenses);
+  const netBalance = balances.reduce((s, b) => s + b.remaining, 0);
 
   return (
     <>
@@ -37,15 +40,17 @@ export function ExpensesModule({ board }: { board: ExpensesBoard }) {
       <Tabs defaultValue="expenses">
         <TabsList>
           <TabsTrigger value="expenses">Expenses</TabsTrigger>
-          <TabsTrigger value="reports">Reports</TabsTrigger>
+          {!isSupervisor && <TabsTrigger value="reports">Reports</TabsTrigger>}
           <TabsTrigger value="balance">Supervisor Balance</TabsTrigger>
         </TabsList>
         <TabsContent value="expenses">
           <ExpensesApprovalTab board={board} />
         </TabsContent>
-        <TabsContent value="reports">
-          <ExpensesReportsTab board={board} />
-        </TabsContent>
+        {!isSupervisor && (
+          <TabsContent value="reports">
+            <ExpensesReportsTab board={board} />
+          </TabsContent>
+        )}
         <TabsContent value="balance">
           <SupervisorBalanceTab board={board} />
         </TabsContent>
