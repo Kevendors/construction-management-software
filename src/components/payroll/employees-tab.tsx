@@ -22,11 +22,14 @@ import { PayrollBreakdownChart } from "@/components/charts/payroll-chart";
 import type { PayrollBoard } from "@/lib/payroll/compute";
 import { payrollByDepartment, slipTotals } from "@/lib/payroll/compute";
 import { addEmployeeAction, generateSlipAction } from "@/app/payroll/actions";
-import { departmentLabel, salarySlipStatusMeta } from "@/lib/labels";
+import { departmentLabel, salarySlipStatusMeta, roleLabel } from "@/lib/labels";
+import { useRole } from "@/components/layout/role-provider";
+import { isAdminRole } from "@/lib/auth/permissions";
 import { formatINR } from "@/lib/utils";
-import type { Department } from "@/lib/types";
+import type { Department, Role } from "@/lib/types";
 
 const DEPARTMENTS: Department[] = ["engineering", "design", "site", "accounts", "admin"];
+const ACCOUNT_ROLES: Role[] = ["supervisor", "pm", "super_admin"];
 
 export function EmployeesTab({
   board,
@@ -155,12 +158,21 @@ function AddEmployeeDialog({ open, onClose }: { open: boolean; onClose: () => vo
   const [monthlyCtc, setMonthlyCtc] = React.useState("");
   const [joinDate, setJoinDate] = React.useState(new Date().toISOString().slice(0, 10));
   const [phone, setPhone] = React.useState("");
+  const { role } = useRole();
+  const canCreateAccount = isAdminRole(role);
+  const [createAccount, setCreateAccount] = React.useState(false);
+  const [accountPassword, setAccountPassword] = React.useState("");
+  const [accountRole, setAccountRole] = React.useState<Role>("supervisor");
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) return setError("Name is required.");
+    if (createAccount) {
+      if (phone.replace(/\D/g, "").length < 6) return setError("A valid phone number is required for the login.");
+      if (accountPassword.length < 6) return setError("Account password must be at least 6 characters.");
+    }
     setSaving(true);
     setError(null);
     const res = await addEmployeeAction({
@@ -170,11 +182,15 @@ function AddEmployeeDialog({ open, onClose }: { open: boolean; onClose: () => vo
       monthlyCtc: Number(monthlyCtc) || 0,
       joinDate,
       phone: phone.trim(),
+      createAccount: createAccount && canCreateAccount,
+      accountPassword: createAccount ? accountPassword : undefined,
+      accountRole: createAccount ? accountRole : undefined,
     });
     setSaving(false);
     if (res.error) return setError(res.error);
     onClose();
     setName(""); setDesignation(""); setMonthlyCtc(""); setPhone("");
+    setCreateAccount(false); setAccountPassword("");
     router.refresh();
   }
 
@@ -205,10 +221,44 @@ function AddEmployeeDialog({ open, onClose }: { open: boolean; onClose: () => vo
             <Input id="e-join" type="date" value={joinDate} onChange={(e) => setJoinDate(e.target.value)} />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="e-phone">Phone</Label>
+            <Label htmlFor="e-phone">Phone{createAccount ? " *" : ""}</Label>
             <Input id="e-phone" value={phone} onChange={(e) => setPhone(e.target.value)} />
           </div>
         </div>
+
+        {canCreateAccount && (
+          <div className="rounded-lg border border-border p-3">
+            <label className="flex cursor-pointer items-center gap-2">
+              <input
+                type="checkbox"
+                checked={createAccount}
+                onChange={(e) => setCreateAccount(e.target.checked)}
+                className="h-4 w-4 rounded border-input"
+              />
+              <span className="text-sm font-medium">Create a login account for this employee</span>
+            </label>
+            {createAccount && (
+              <>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  They&apos;ll sign in with their <span className="font-medium">phone number</span> and this password.
+                </p>
+                <div className="mt-3 grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="e-pass">Password *</Label>
+                    <Input id="e-pass" type="password" value={accountPassword} onChange={(e) => setAccountPassword(e.target.value)} placeholder="Min 6 characters" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="e-role">Role</Label>
+                    <Select id="e-role" value={accountRole} onChange={(e) => setAccountRole(e.target.value as Role)}>
+                      {ACCOUNT_ROLES.map((r) => <option key={r} value={r}>{roleLabel[r] ?? r}</option>)}
+                    </Select>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
         {error && <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
         <div className="flex justify-end gap-2 pt-2">
           <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>

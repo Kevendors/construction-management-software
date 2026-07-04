@@ -1,11 +1,15 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { getAuthContext } from "@/lib/auth/context";
+import { isAdminRole } from "@/lib/auth/permissions";
 import { logActivity } from "@/lib/activity/log";
 import { formatINR } from "@/lib/utils";
 import type {
   AdvanceParty,
   Department,
+  Role,
   SalarySlip,
   Shift,
   Trade,
@@ -44,7 +48,13 @@ export interface AddEmployeeInput {
   monthlyCtc: number;
   joinDate: string;
   phone: string;
+  /** Optionally create a phone+password login for this employee (admin only). */
+  createAccount?: boolean;
+  accountPassword?: string;
+  accountRole?: Role;
 }
+
+const phoneDigits = (phone: string) => phone.replace(/\D/g, "");
 
 export async function addEmployeeAction(input: AddEmployeeInput): Promise<ActionResult> {
   const supabase = await createClient();
@@ -52,10 +62,44 @@ export async function addEmployeeAction(input: AddEmployeeInput): Promise<Action
   if (!orgId) return { error: "You must be signed in." };
   if (!input.name.trim()) return { error: "Name is required." };
 
+  // Optionally provision a login account and link it to the employee row.
+  let profileId: string | null = null;
+  if (input.createAccount) {
+    const ctx = await getAuthContext();
+    if (!ctx || !isAdminRole(ctx.role)) return { error: "Only an admin can create login accounts." };
+    const digits = phoneDigits(input.phone);
+    if (digits.length < 6) return { error: "A valid phone number is required to create a login." };
+    if (!input.accountPassword || input.accountPassword.length < 6)
+      return { error: "Account password must be at least 6 characters." };
+
+    const admin = createAdminClient();
+    const { data: created, error: acctErr } = await admin.auth.admin.createUser({
+      email: `${digits}@sitehub.phone`,
+      password: input.accountPassword,
+      email_confirm: true,
+      user_metadata: { name: input.name.trim(), phone: input.phone.trim() },
+    });
+    if (acctErr) return { error: acctErr.message };
+    profileId = created.user?.id ?? null;
+    if (!profileId) return { error: "Could not create the account." };
+
+    await admin
+      .from("profiles")
+      .upsert({ id: profileId, name: input.name.trim(), initials: initialsOf(input.name) }, { onConflict: "id" });
+    const { error: mErr } = await admin
+      .from("memberships")
+      .upsert(
+        { org_id: orgId, user_id: profileId, role: input.accountRole ?? "supervisor", is_active: true },
+        { onConflict: "org_id,user_id" }
+      );
+    if (mErr) return { error: mErr.message };
+  }
+
   const { data, error } = await supabase
     .from("employees")
     .insert({
       org_id: orgId,
+      profile_id: profileId,
       name: input.name.trim(),
       designation: input.designation.trim() || null,
       department: input.department,
@@ -72,7 +116,7 @@ export async function addEmployeeAction(input: AddEmployeeInput): Promise<Action
     action: "created",
     entityType: "employee",
     entityId: data.id as string,
-    summary: `Added employee ${input.name.trim()}`,
+    summary: `Added employee ${input.name.trim()}${profileId ? " (with login account)" : ""}`,
   });
   return { id: data.id as string };
 }
