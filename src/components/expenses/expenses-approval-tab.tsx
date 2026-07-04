@@ -136,6 +136,7 @@ function LogExpenseDialog({
     if (!byId) return setError("Employee / person is required.");
     const amt = Number(amount);
     if (!amt) return setError("Amount is required.");
+    if (date > today()) return setError("Expense date can't be in the future.");
     setSaving(true);
     setError(null);
     const res = await logExpense({
@@ -224,7 +225,7 @@ function LogExpenseDialog({
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
             <Label htmlFor="x-date">Date</Label>
-            <Input id="x-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+            <Input id="x-date" type="date" value={date} max={today()} onChange={(e) => setDate(e.target.value)} />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="x-status">Status</Label>
