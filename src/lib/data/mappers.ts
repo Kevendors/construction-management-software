@@ -8,6 +8,7 @@ import type {
   Drawing,
   DrawingVersion,
   Equipment,
+  Expense,
   LineItem,
   MaterialIssue,
   MaterialItem,
@@ -121,6 +122,21 @@ export interface TransactionRow {
   cost_code: Transaction["costCode"];
   category: Transaction["category"];
   note: string | null;
+}
+
+export interface ExpenseRow {
+  id: string;
+  title: string | null;
+  project_id: string | null;
+  date: string;
+  category: Expense["category"];
+  cost_code: Expense["costCode"];
+  amount: number;
+  payment_mode: string | null;
+  note: string | null;
+  status: Expense["status"];
+  by_id: string | null;
+  bill_path: string | null;
 }
 
 /* ---------- mappers ---------- */
@@ -551,4 +567,19 @@ export const mapTransaction = (r: TransactionRow): Transaction => ({
   costCode: r.cost_code,
   category: r.category,
   note: r.note ?? "",
+});
+
+export const mapExpense = (r: ExpenseRow): Expense => ({
+  id: r.id,
+  title: r.title ?? "",
+  projectId: r.project_id ?? "",
+  date: r.date,
+  category: r.category,
+  costCode: r.cost_code,
+  amount: Number(r.amount),
+  paymentMode: r.payment_mode ?? "",
+  note: r.note ?? "",
+  status: r.status,
+  byId: r.by_id ?? "",
+  billPath: r.bill_path ?? "",
 });

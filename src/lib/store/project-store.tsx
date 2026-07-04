@@ -6,12 +6,14 @@ import { createClient } from "@/lib/supabase/client";
 import { getDprPhotoUrls, uploadDprPhotos } from "@/app/projects/dpr-actions";
 import {
   mapClient,
+  mapExpense,
   mapInvoice,
   mapProject,
   mapTask,
   mapTransaction,
   mapUser,
   type ClientRow,
+  type ExpenseRow,
   type InvoiceRow,
   type ProjectRow,
   type TaskRow,
@@ -22,6 +24,7 @@ import { lineTotalWithTax, getProject as getMockProject } from "@/lib/mock/selec
 import {
   clients as seedClients,
   dprs as seedDprs,
+  expenses as seedExpenses,
   labourAttendance as seedAttendance,
   projects as seedProjects,
   salesInvoices as seedInvoices,
@@ -33,6 +36,7 @@ import {
 import type {
   Client,
   Dpr,
+  Expense,
   LabourAttendance,
   Project,
   SalesInvoice,
@@ -126,6 +130,7 @@ interface StoreData {
   dprs: Dpr[];
   instructions: SiteInstruction[];
   transactions: Transaction[];
+  expenses: Expense[];
   invoices: SalesInvoice[];
   attendance: LabourAttendance[];
 }
@@ -143,6 +148,7 @@ const EMPTY: StoreData = {
   dprs: [],
   instructions: [],
   transactions: [],
+  expenses: [],
   invoices: [],
   attendance: [],
 };
@@ -183,6 +189,7 @@ function mockData(): StoreData {
     dprs: seedDprs,
     instructions: seedInstructions,
     transactions: seedTxns,
+    expenses: seedExpenses,
     invoices: seedInvoices,
     attendance: seedAttendance,
   };
@@ -219,7 +226,7 @@ export function ProjectStoreProvider({ children }: { children: React.ReactNode }
         .maybeSingle();
       const orgId = (membership?.org_id as string | undefined) ?? null;
 
-      const [proj, cli, prof, tsk, dpr, ins, txn, inv, att] = await Promise.all([
+      const [proj, cli, prof, tsk, dpr, ins, txn, inv, att, exp] = await Promise.all([
         supabase.from("projects").select("*"),
         supabase.from("clients").select("*"),
         supabase.from("profiles").select("*"),
@@ -229,6 +236,7 @@ export function ProjectStoreProvider({ children }: { children: React.ReactNode }
         supabase.from("transactions").select("*"),
         supabase.from("sales_invoices").select("*, invoice_items(*)"),
         supabase.from("labour_attendance").select("*"),
+        supabase.from("expenses").select("*"),
       ]);
 
       if (cancelled) return;
@@ -258,6 +266,7 @@ export function ProjectStoreProvider({ children }: { children: React.ReactNode }
         dprs: dprList,
         instructions: ((ins.data as InstructionRow[] | null) ?? []).map(mapInstruction),
         transactions: ((txn.data as TransactionRow[] | null) ?? []).map(mapTransaction),
+        expenses: ((exp.data as ExpenseRow[] | null) ?? []).map(mapExpense),
         invoices: ((inv.data as InvoiceRow[] | null) ?? []).map(mapInvoice),
         attendance: ((att.data as AttendanceRow[] | null) ?? []).map(mapAttendance),
       });
@@ -675,6 +684,13 @@ export function useProjectInstructions(projectId: string) {
 export function useProjectTransactions(projectId: string) {
   const { transactions } = useStore();
   return transactions.filter((t) => t.projectId === projectId);
+}
+
+export function useProjectExpenses(projectId: string) {
+  const { expenses } = useStore();
+  return expenses
+    .filter((e) => e.projectId === projectId)
+    .sort((a, b) => +new Date(b.date) - +new Date(a.date));
 }
 
 export function useProjectInvoices(projectId: string) {

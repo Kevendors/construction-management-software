@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { Plus, Receipt, IndianRupee, Wallet, Users } from "lucide-react";
+import Link from "next/link";
+import { Plus, Receipt, IndianRupee, Wallet, Users, ArrowRight } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -28,11 +29,12 @@ import { boqValue, lineTotalWithTax, taskProgressPercent } from "@/lib/mock/sele
 import {
   useProject,
   useProjectAttendance,
+  useProjectExpenses,
   useProjectInvoices,
   useProjectTasks,
   useProjectTransactions,
 } from "@/lib/store/project-store";
-import { taskStatusMeta } from "@/lib/labels";
+import { taskStatusMeta, approvalMeta } from "@/lib/labels";
 import { formatINR } from "@/lib/utils";
 import type { CostCode, ExpenseCategory, ProgressUnit, TaskStatus } from "@/lib/types";
 
@@ -52,6 +54,7 @@ export function OverviewTab({ projectId }: { projectId: string }) {
   const txns = useProjectTransactions(projectId);
   const invoices = useProjectInvoices(projectId);
   const attendance = useProjectAttendance(projectId);
+  const pettyExpenses = useProjectExpenses(projectId);
 
   const [expenseOpen, setExpenseOpen] = React.useState(false);
   const [invoiceOpen, setInvoiceOpen] = React.useState(false);
@@ -86,6 +89,11 @@ export function OverviewTab({ projectId }: { projectId: string }) {
   const receivedPct = invoicedTotal > 0 ? (receivedTotal / invoicedTotal) * 100 : 0;
 
   const totalExpense = out.reduce((s, t) => s + t.amount, 0);
+
+  // Petty expenses logged against this project (separate from ledger transactions).
+  const pettyTotal = pettyExpenses.reduce((s, e) => s + e.amount, 0);
+  const pettyApproved = pettyExpenses.filter((e) => e.status === "approved").reduce((s, e) => s + e.amount, 0);
+  const pettyPending = pettyExpenses.filter((e) => e.status === "pending").reduce((s, e) => s + e.amount, 0);
   const financialHealth = [
     { label: "Value", value: project?.value ?? 0 },
     { label: "Expense", value: totalExpense },
@@ -162,6 +170,65 @@ export function OverviewTab({ projectId }: { projectId: string }) {
           </CardContent>
         </Card>
       </div>
+
+      {/* petty expenses logged against this project */}
+      <Card>
+        <CardHeader className="flex-row items-center justify-between">
+          <CardTitle className="text-base">Petty Expenses</CardTitle>
+          <Link
+            href="/expenses"
+            className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
+          >
+            Open module <ArrowRight className="h-4 w-4" />
+          </Link>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-3 gap-3">
+            <div className="rounded-lg border border-border p-3">
+              <p className="text-xs text-muted-foreground">Total ({pettyExpenses.length})</p>
+              <p className="mt-1 text-lg font-bold tabular-nums">{formatINR(pettyTotal)}</p>
+            </div>
+            <div className="rounded-lg border border-border p-3">
+              <p className="text-xs text-muted-foreground">Approved</p>
+              <p className="mt-1 text-lg font-bold tabular-nums text-success">{formatINR(pettyApproved)}</p>
+            </div>
+            <div className="rounded-lg border border-border p-3">
+              <p className="text-xs text-muted-foreground">Pending</p>
+              <p className="mt-1 text-lg font-bold tabular-nums text-amber-500">{formatINR(pettyPending)}</p>
+            </div>
+          </div>
+          {pettyExpenses.length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">
+              No petty expenses logged for this project yet.
+            </p>
+          ) : (
+            <Table className="mt-3">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Title</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Amount</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {pettyExpenses.slice(0, 5).map((e) => (
+                  <TableRow key={e.id}>
+                    <TableCell className="tabular-nums text-muted-foreground">
+                      {new Date(e.date).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}
+                    </TableCell>
+                    <TableCell className="font-medium">{e.title || e.note || "—"}</TableCell>
+                    <TableCell>
+                      <Badge variant={approvalMeta[e.status].variant}>{approvalMeta[e.status].label}</Badge>
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">{formatINR(e.amount)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
 
       {/* financial health + expense category */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
