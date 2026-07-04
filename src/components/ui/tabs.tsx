@@ -45,7 +45,9 @@ export function TabsList({ className, ...props }: React.HTMLAttributes<HTMLDivEl
     <div
       role="tablist"
       className={cn(
-        "inline-flex h-10 items-center gap-1 overflow-x-auto rounded-lg bg-secondary p-1 text-muted-foreground",
+        // max-w-full bounds the bar to its container so it scrolls internally
+        // on narrow screens instead of overflowing the viewport.
+        "inline-flex h-10 max-w-full items-center gap-1 overflow-x-auto rounded-lg bg-secondary p-1 text-muted-foreground [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
         className
       )}
       {...props}
@@ -68,7 +70,7 @@ export function TabsTrigger({ value, className, ...props }: TabsTriggerProps) {
       data-state={active ? "active" : "inactive"}
       onClick={() => setValue(value)}
       className={cn(
-        "inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        "inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         active
           ? "bg-card text-foreground shadow-sm"
           : "hover:text-foreground",

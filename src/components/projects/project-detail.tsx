@@ -111,7 +111,7 @@ function ProjectDetailInner({ projectId }: { projectId: string }) {
             {pm && <span>PM: {pm.name}</span>}
           </div>
         </div>
-        <div className="text-right">
+        <div className="shrink-0 text-left sm:text-right">
           <p className="text-xs text-muted-foreground">Project Value</p>
           <p className="text-2xl font-bold tabular-nums">{formatINR(project.value, { compact: true })}</p>
         </div>
