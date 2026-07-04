@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Check, X, FileText } from "lucide-react";
+import { Plus, Check, X, FileText, UploadCloud, FileUp } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -64,7 +64,10 @@ function LogExpenseDialog({
   const [status, setStatus] = React.useState<ApprovalStatus>("pending");
   const [note, setNote] = React.useState("");
   const [billName, setBillName] = React.useState("");
+  const [billSize, setBillSize] = React.useState(0);
   const [billDataUrl, setBillDataUrl] = React.useState("");
+  const billInputRef = React.useRef<HTMLInputElement>(null);
+  const [dragging, setDragging] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
@@ -74,15 +77,31 @@ function LogExpenseDialog({
     setById((v) => v || users[0]?.id || "");
   }, [open, projects, users]);
 
-  async function onBill(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  async function handleFile(file: File) {
+    if (!file.type.startsWith("image/") && file.type !== "application/pdf") {
+      setError("Please choose an image or PDF file.");
+      return;
+    }
+    setError(null);
     setBillName(file.name);
+    setBillSize(file.size);
     try {
       setBillDataUrl(await fileToDataUrl(file));
     } catch {
       setError("Could not read that file.");
     }
+  }
+
+  function onBill(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (file) handleFile(file);
+  }
+
+  function clearBill() {
+    setBillName("");
+    setBillSize(0);
+    setBillDataUrl("");
+    if (billInputRef.current) billInputRef.current.value = "";
   }
 
   function onCategoryChange(value: string) {
@@ -137,8 +156,7 @@ function LogExpenseDialog({
     setTitle("");
     setAmount("");
     setNote("");
-    setBillName("");
-    setBillDataUrl("");
+    clearBill();
     setStatus("pending");
     router.refresh();
   }
@@ -221,8 +239,66 @@ function LogExpenseDialog({
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="x-bill">Bill / Receipt (image or PDF)</Label>
-          <Input id="x-bill" type="file" accept="image/*,application/pdf" onChange={onBill} />
-          {billName && <p className="text-xs text-muted-foreground">Attached: {billName}</p>}
+          <input
+            ref={billInputRef}
+            id="x-bill"
+            type="file"
+            accept="image/*,application/pdf"
+            onChange={onBill}
+            className="sr-only"
+          />
+          {billName ? (
+            <div className="flex items-center gap-3 rounded-lg border border-border bg-secondary/40 px-3 py-2.5">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+                <FileText className="h-5 w-5" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium">{billName}</p>
+                {billSize > 0 && (
+                  <p className="text-xs text-muted-foreground">{(billSize / 1024).toFixed(0)} KB</p>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => billInputRef.current?.click()}
+                className="shrink-0 text-xs font-medium text-primary hover:underline"
+              >
+                Replace
+              </button>
+              <button
+                type="button"
+                onClick={clearBill}
+                aria-label="Remove attachment"
+                className="shrink-0 rounded-md p-1 text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => billInputRef.current?.click()}
+              onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+              onDragLeave={() => setDragging(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setDragging(false);
+                const file = e.dataTransfer.files?.[0];
+                if (file) handleFile(file);
+              }}
+              className={`flex w-full flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed px-4 py-5 text-center transition ${
+                dragging ? "border-primary bg-primary/5" : "border-border bg-secondary/20 hover:border-primary/50 hover:bg-secondary/40"
+              }`}
+            >
+              <UploadCloud className={`h-6 w-6 ${dragging ? "text-primary" : "text-muted-foreground"}`} />
+              <span className="text-sm font-medium text-foreground">
+                Click to upload <span className="font-normal text-muted-foreground">or drag &amp; drop</span>
+              </span>
+              <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                <FileUp className="h-3 w-3" /> Image or PDF, up to ~10 MB
+              </span>
+            </button>
+          )}
         </div>
         {error && <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
         <div className="flex justify-end gap-2 pt-2">
