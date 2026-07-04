@@ -25,6 +25,7 @@ import {
   AddInvoiceDialog,
   RecordPaymentDialog,
 } from "./project-dialogs";
+import { Dialog } from "@/components/ui/dialog";
 import { boqValue, lineTotalWithTax, taskProgressPercent } from "@/lib/mock/selectors";
 import {
   useProject,
@@ -60,6 +61,7 @@ export function OverviewTab({ projectId }: { projectId: string }) {
   const [invoiceOpen, setInvoiceOpen] = React.useState(false);
   const [paymentOpen, setPaymentOpen] = React.useState(false);
   const [attendanceOpen, setAttendanceOpen] = React.useState(false);
+  const [detail, setDetail] = React.useState<null | "completion" | "tasks" | "invoices">(null);
 
   const tasks = allTasks.filter((t) => t.parentId === null);
   const counts = allTasks.reduce(
@@ -121,21 +123,33 @@ export function OverviewTab({ projectId }: { projectId: string }) {
         </Button>
       </div>
 
-      {/* top row: gauge + task donut + invoices KPI */}
+      {/* top row: gauge + task donut + invoices KPI — click any card to drill in */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <Card>
+        <Card
+          role="button"
+          tabIndex={0}
+          onClick={() => setDetail("completion")}
+          onKeyDown={(e) => { if (e.key === "Enter") setDetail("completion"); }}
+          className="cursor-pointer transition hover:border-primary/40 hover:shadow-sm"
+        >
           <CardHeader>
             <CardTitle className="text-base">Project Completion</CardTitle>
           </CardHeader>
           <CardContent>
             <CompletionGauge value={completion} />
             <p className="mt-2 text-center text-xs text-muted-foreground">
-              Auto-calculated from task progress
+              Auto-calculated from task progress · click for details
             </p>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card
+          role="button"
+          tabIndex={0}
+          onClick={() => setDetail("tasks")}
+          onKeyDown={(e) => { if (e.key === "Enter") setDetail("tasks"); }}
+          className="cursor-pointer transition hover:border-primary/40 hover:shadow-sm"
+        >
           <CardHeader>
             <CardTitle className="text-base">Task Status</CardTitle>
           </CardHeader>
@@ -144,7 +158,13 @@ export function OverviewTab({ projectId }: { projectId: string }) {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card
+          role="button"
+          tabIndex={0}
+          onClick={() => setDetail("invoices")}
+          onKeyDown={(e) => { if (e.key === "Enter") setDetail("invoices"); }}
+          className="cursor-pointer transition hover:border-primary/40 hover:shadow-sm"
+        >
           <CardHeader>
             <CardTitle className="text-base">Sales Invoices</CardTitle>
           </CardHeader>
@@ -358,6 +378,93 @@ export function OverviewTab({ projectId }: { projectId: string }) {
       />
       <RecordPaymentDialog projectId={projectId} open={paymentOpen} onClose={() => setPaymentOpen(false)} />
       <AddAttendanceDialog projectId={projectId} open={attendanceOpen} onClose={() => setAttendanceOpen(false)} />
+
+      {/* card drill-downs */}
+      <Dialog
+        open={detail === "completion" || detail === "tasks"}
+        onClose={() => setDetail(null)}
+        title={detail === "completion" ? "Project Completion" : "Task Status"}
+        description={
+          detail === "completion"
+            ? `${completion}% complete · progress by task`
+            : `${allTasks.length} tasks — ${counts.completed} completed, ${counts.ongoing} ongoing, ${counts.delayed} delayed`
+        }
+        className="max-w-2xl"
+      >
+        <div className="max-h-[60vh] overflow-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Task</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="w-40 text-right">Progress</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {tasks.map((t) => {
+                const meta = taskStatusMeta[t.status];
+                const pct = taskProgressPercent(t);
+                return (
+                  <TableRow key={t.id}>
+                    <TableCell className="font-medium">{t.name}</TableCell>
+                    <TableCell><Badge variant={meta.variant}>{meta.label}</Badge></TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <Progress value={pct} className="flex-1" indicatorClassName={t.status === "delayed" ? "bg-destructive" : undefined} />
+                        <span className="w-9 shrink-0 text-right text-xs tabular-nums text-muted-foreground">{Math.round(pct)}%</span>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+              {tasks.length === 0 && (
+                <TableRow><TableCell colSpan={3} className="py-6 text-center text-sm text-muted-foreground">No tasks yet.</TableCell></TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      </Dialog>
+
+      <Dialog
+        open={detail === "invoices"}
+        onClose={() => setDetail(null)}
+        title="Sales Invoices"
+        description={`${invoices.length} invoice(s) · ${formatINR(receivedTotal)} of ${formatINR(invoicedTotal)} received`}
+        className="max-w-2xl"
+      >
+        <div className="max-h-[60vh] overflow-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Invoice</TableHead>
+                <TableHead>Date</TableHead>
+                <TableHead className="text-right">Total</TableHead>
+                <TableHead className="text-right">Received</TableHead>
+                <TableHead className="text-right">Pending</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {invoices.map((inv) => {
+                const total = lineTotalWithTax(inv.items, inv.taxRate);
+                return (
+                  <TableRow key={inv.id}>
+                    <TableCell className="font-medium">{inv.number}</TableCell>
+                    <TableCell className="tabular-nums text-muted-foreground">
+                      {new Date(inv.date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">{formatINR(total)}</TableCell>
+                    <TableCell className="text-right tabular-nums text-success">{formatINR(inv.received)}</TableCell>
+                    <TableCell className="text-right tabular-nums">{formatINR(Math.max(0, total - inv.received))}</TableCell>
+                  </TableRow>
+                );
+              })}
+              {invoices.length === 0 && (
+                <TableRow><TableCell colSpan={5} className="py-6 text-center text-sm text-muted-foreground">No invoices raised for this project.</TableCell></TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      </Dialog>
     </div>
   );
 }
