@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { CloudSun, Users, Image as ImageIcon, Plus, AlertTriangle, Upload, X } from "lucide-react";
+import { CloudSun, Users, Image as ImageIcon, Plus, AlertTriangle, Upload, X, MessageSquare, Send } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -15,6 +15,11 @@ import {
   useStore,
   useUsers,
 } from "@/lib/store/project-store";
+import {
+  addDprCommentAction,
+  listProjectCommentsAction,
+  type DprComment,
+} from "@/app/projects/comment-actions";
 import type { SiteInstruction } from "@/lib/types";
 
 const MAX_PHOTOS = 8;
@@ -275,6 +280,23 @@ export function UpdatesTab({ projectId }: { projectId: string }) {
   const [dprOpen, setDprOpen] = React.useState(false);
   const [siOpen, setSiOpen] = React.useState(false);
 
+  // Replies across this project's DPRs, grouped by DPR id.
+  const [commentsByDpr, setCommentsByDpr] = React.useState<Record<string, DprComment[]>>({});
+  React.useEffect(() => {
+    let cancelled = false;
+    listProjectCommentsAction(projectId).then((rows) => {
+      if (cancelled) return;
+      const grouped: Record<string, DprComment[]> = {};
+      for (const c of rows) (grouped[c.dprId] ??= []).push(c);
+      setCommentsByDpr(grouped);
+    });
+    return () => { cancelled = true; };
+  }, [projectId]);
+
+  function onNewComment(c: DprComment) {
+    setCommentsByDpr((prev) => ({ ...prev, [c.dprId]: [...(prev[c.dprId] ?? []), c] }));
+  }
+
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
       {/* DPR feed */}
@@ -332,6 +354,12 @@ export function UpdatesTab({ projectId }: { projectId: string }) {
                       <ImageIcon className="h-3.5 w-3.5" /> {d.photoUrls?.length ?? d.photos} photos
                     </span>
                   </div>
+                  <DprThread
+                    dprId={d.id}
+                    projectId={projectId}
+                    comments={commentsByDpr[d.id] ?? []}
+                    onNewComment={onNewComment}
+                  />
                 </div>
               );
             })}
@@ -377,6 +405,79 @@ export function UpdatesTab({ projectId }: { projectId: string }) {
 
       <NewDprDialog projectId={projectId} open={dprOpen} onClose={() => setDprOpen(false)} />
       <NewInstructionDialog projectId={projectId} open={siOpen} onClose={() => setSiOpen(false)} />
+    </div>
+  );
+}
+
+function initials(name: string | null) {
+  if (!name) return "?";
+  return name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase()).join("");
+}
+
+function DprThread({
+  dprId,
+  projectId,
+  comments,
+  onNewComment,
+}: {
+  dprId: string;
+  projectId: string;
+  comments: DprComment[];
+  onNewComment: (c: DprComment) => void;
+}) {
+  const [body, setBody] = React.useState("");
+  const [sending, setSending] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!body.trim()) return;
+    setSending(true);
+    setError(null);
+    const res = await addDprCommentAction(dprId, projectId, body);
+    setSending(false);
+    if (res.error) return setError(res.error);
+    if (res.comment) {
+      onNewComment(res.comment);
+      setBody("");
+    }
+  }
+
+  return (
+    <div className="mt-3 border-t border-border/60 pt-3">
+      {comments.length > 0 && (
+        <ul className="mb-2 space-y-2">
+          {comments.map((c) => (
+            <li key={c.id} className="flex items-start gap-2">
+              <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-semibold text-primary">
+                {initials(c.authorName)}
+              </span>
+              <div className="min-w-0 flex-1 rounded-lg bg-secondary/50 px-3 py-1.5">
+                <p className="text-xs">
+                  <span className="font-medium">{c.authorName ?? "Someone"}</span>
+                  <span className="ml-1.5 text-muted-foreground">
+                    {new Date(c.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}
+                  </span>
+                </p>
+                <p className="text-sm">{c.body}</p>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+      <form onSubmit={submit} className="flex items-center gap-2">
+        <MessageSquare className="h-4 w-4 shrink-0 text-muted-foreground" />
+        <Input
+          value={body}
+          onChange={(e) => setBody(e.target.value)}
+          placeholder="Write a reply…"
+          className="h-8 flex-1 text-sm"
+        />
+        <Button type="submit" size="icon" variant="outline" className="h-8 w-8 shrink-0" disabled={sending || !body.trim()}>
+          <Send className="h-3.5 w-3.5" />
+        </Button>
+      </form>
+      {error && <p className="mt-1 text-xs text-destructive">{error}</p>}
     </div>
   );
 }
