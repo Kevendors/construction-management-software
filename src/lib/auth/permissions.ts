@@ -15,11 +15,12 @@ export type ModuleKey =
   | "expenses"
   | "equipment"
   | "team"
-  | "activity";
+  | "activity"
+  | "transactions";
 
 const ALL: ModuleKey[] = [
   "dashboard", "analytics", "projects", "design", "clients", "quotations",
-  "invoices", "material", "subcon", "payroll", "expenses", "equipment", "team", "activity",
+  "invoices", "material", "subcon", "payroll", "expenses", "equipment", "team", "activity", "transactions",
 ];
 
 /**
@@ -29,9 +30,9 @@ const ALL: ModuleKey[] = [
  */
 export const ROLE_MODULES: Record<Role, ModuleKey[]> = {
   super_admin: ALL,
-  pm: ["dashboard", "analytics", "projects", "design", "clients", "quotations", "invoices", "material", "subcon", "expenses", "equipment", "activity"],
+  pm: ["dashboard", "analytics", "projects", "design", "clients", "quotations", "invoices", "material", "subcon", "expenses", "equipment", "activity", "transactions"],
   supervisor: ["projects", "expenses"], // site-only: projects (Updates/DPRs/Attendance live in the project) + petty expenses
-  accountant: ["dashboard", "analytics", "clients", "quotations", "invoices", "expenses"],
+  accountant: ["dashboard", "analytics", "clients", "quotations", "invoices", "expenses", "transactions"],
   hr: ["dashboard", "payroll", "team"],
   staff: ["projects", "expenses"],
   architect: ["projects", "design"],
@@ -63,6 +64,7 @@ export const MODULE_ROUTES: Record<ModuleKey, string> = {
   equipment: "/equipment",
   team: "/team",
   activity: "/activity",
+  transactions: "/transactions",
 };
 
 /** Which module a pathname belongs to (null = unguarded route). */
@@ -73,7 +75,7 @@ export function pathModule(pathname: string): ModuleKey | null {
     ["/clients", "clients"], ["/quotations", "quotations"], ["/invoices", "invoices"],
     ["/material", "material"], ["/subcon", "subcon"], ["/payroll", "payroll"],
     ["/expenses", "expenses"], ["/equipment", "equipment"], ["/team", "team"],
-    ["/activity", "activity"],
+    ["/activity", "activity"], ["/transactions", "transactions"],
   ];
   for (const [p, m] of prefixes) if (pathname === p || pathname.startsWith(p + "/")) return m;
   return null;

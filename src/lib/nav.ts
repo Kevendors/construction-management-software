@@ -13,6 +13,7 @@ import {
   Wrench,
   ShieldCheck,
   History,
+  ArrowLeftRight,
   type LucideIcon,
 } from "lucide-react";
 import type { ModuleKey } from "@/lib/auth/permissions";
@@ -51,6 +52,7 @@ export const navSections: NavSection[] = [
       { label: "Clients / CRM", href: "/clients", icon: Users, module: "clients" },
       { label: "Quotations", href: "/quotations", icon: FileText, module: "quotations" },
       { label: "Sales Invoices", href: "/invoices", icon: ReceiptText, module: "invoices" },
+      { label: "Transactions", href: "/transactions", icon: ArrowLeftRight, module: "transactions" },
     ],
   },
   {
