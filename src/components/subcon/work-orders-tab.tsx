@@ -21,7 +21,7 @@ import { woTotals } from "@/lib/data/compute";
 import { createWorkOrder, type WorkOrderItemInput } from "@/app/subcon/actions";
 import type { SubconBoard } from "@/lib/data/subcon";
 import { tradeLabel, woStatusMeta } from "@/lib/labels";
-import { formatINR } from "@/lib/utils";
+import { formatINR, todayISO } from "@/lib/utils";
 import type { WOStatus } from "@/lib/types";
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -131,7 +131,7 @@ function NewWorkOrderDialog({
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="wo-date">Date</Label>
-            <Input id="wo-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+            <Input id="wo-date" type="date" value={date} max={todayISO()} onChange={(e) => setDate(e.target.value)} />
           </div>
         </div>
         <div className="grid grid-cols-2 gap-3">

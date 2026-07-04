@@ -11,7 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { InvoiceDocument } from "@/components/invoice/invoice-document";
 import { computeInvoice, invoiceLineAmount, type InvoiceLine, type InvoiceState } from "@/lib/invoice/compute";
 import { saveInvoiceAction, getInvoicePayloadAction } from "../actions";
-import { formatINR } from "@/lib/utils";
+import { formatINR, todayISO } from "@/lib/utils";
 
 const today = () => new Date().toISOString().slice(0, 10);
 const plusDays = (n: number) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
@@ -143,7 +143,7 @@ export default function NewInvoicePage() {
             <CardContent className="grid grid-cols-2 gap-3">
               <Field label="Project Name" full><Input value={s.projectName} onChange={(e) => set("projectName", e.target.value)} placeholder="e.g. Interior Renovation - Block A" /></Field>
               <Field label="Invoice Number"><Input value={s.number} onChange={(e) => set("number", e.target.value)} /></Field>
-              <Field label="Date"><Input type="date" value={s.date} onChange={(e) => set("date", e.target.value)} /></Field>
+              <Field label="Date"><Input type="date" value={s.date} max={todayISO()} onChange={(e) => set("date", e.target.value)} /></Field>
               <Field label="Due Date"><Input type="date" value={s.dueDate} min={s.date} onChange={(e) => set("dueDate", e.target.value)} /></Field>
             </CardContent>
           </Card>

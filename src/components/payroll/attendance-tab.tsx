@@ -21,6 +21,7 @@ import type { PayrollBoard } from "@/lib/payroll/compute";
 import { labourAttendanceByDay } from "@/lib/payroll/compute";
 import { markAttendanceAction } from "@/app/payroll/actions";
 import { shiftLabel } from "@/lib/labels";
+import { todayISO } from "@/lib/utils";
 import type { Shift } from "@/lib/types";
 
 const SHIFTS: Shift[] = ["general", "first", "second"];
@@ -168,7 +169,7 @@ function MarkAttendanceDialog({ board, open, onClose }: { board: PayrollBoard; o
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="a-date">Date</Label>
-            <Input id="a-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+            <Input id="a-date" type="date" value={date} max={todayISO()} onChange={(e) => setDate(e.target.value)} />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="a-shift">Shift</Label>

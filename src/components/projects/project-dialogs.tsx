@@ -7,7 +7,7 @@ import { Dialog, Select, Textarea } from "@/components/ui/dialog";
 import { useProjectInvoices, useStore } from "@/lib/store/project-store";
 import { categoryLabel, costCodeLabel } from "@/lib/labels";
 import { lineTotalWithTax } from "@/lib/mock/selectors";
-import { formatINR } from "@/lib/utils";
+import { formatINR, todayISO } from "@/lib/utils";
 import type { CostCode, ExpenseCategory } from "@/lib/types";
 
 const CATEGORIES: ExpenseCategory[] = ["material", "salary", "site", "subcon", "other"];
@@ -62,7 +62,7 @@ export function AddExpenseDialog({
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="e-date">Date</Label>
-            <Input id="e-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+            <Input id="e-date" type="date" value={date} max={todayISO()} onChange={(e) => setDate(e.target.value)} />
           </div>
         </div>
         <div className="grid grid-cols-2 gap-3">
@@ -154,7 +154,7 @@ export function AddInvoiceDialog({
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="i-date">Date</Label>
-            <Input id="i-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+            <Input id="i-date" type="date" value={date} max={todayISO()} onChange={(e) => setDate(e.target.value)} />
           </div>
         </div>
         <div className="grid grid-cols-3 gap-3">
@@ -279,7 +279,7 @@ export function AddAttendanceDialog({
       <form onSubmit={submit} className="space-y-4">
         <div className="space-y-1.5">
           <Label htmlFor="a-date">Date</Label>
-          <Input id="a-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+          <Input id="a-date" type="date" value={date} max={todayISO()} onChange={(e) => setDate(e.target.value)} />
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">

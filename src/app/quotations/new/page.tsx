@@ -14,7 +14,7 @@ import { computeQuote, getLumpsumMode, lineAmount, type QuoteLine, type QuoteSta
 import { DEFAULT_SIGNATURE, DEFAULT_TERMS } from "@/lib/quotation/company";
 import { saveQuotationAction, getQuotationPayloadAction } from "../actions";
 import { fileToResizedDataUrl } from "@/lib/image";
-import { formatINR } from "@/lib/utils";
+import { formatINR, todayISO } from "@/lib/utils";
 
 const today = () => new Date().toISOString().slice(0, 10);
 const plusDays = (n: number) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
@@ -178,7 +178,7 @@ export default function NewQuotationPage() {
             <CardContent className="grid grid-cols-2 gap-3">
               <Field label="Quotation Name" full><Input value={s.quoteName} onChange={(e) => set("quoteName", e.target.value)} placeholder="e.g. Painting & Civil Work" /></Field>
               <Field label="Quotation Number"><Input value={s.number} onChange={(e) => set("number", e.target.value)} /></Field>
-              <Field label="Date"><Input type="date" value={s.date} onChange={(e) => set("date", e.target.value)} /></Field>
+              <Field label="Date"><Input type="date" value={s.date} max={todayISO()} onChange={(e) => set("date", e.target.value)} /></Field>
               <Field label="Valid Till"><Input type="date" value={s.validTill} onChange={(e) => set("validTill", e.target.value)} /></Field>
             </CardContent>
           </Card>

@@ -93,7 +93,7 @@ function NewDprDialog({
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
             <Label htmlFor="d-date">Date</Label>
-            <Input id="d-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+            <Input id="d-date" type="date" value={date} max={today} onChange={(e) => setDate(e.target.value)} />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="d-author">Reported by</Label>

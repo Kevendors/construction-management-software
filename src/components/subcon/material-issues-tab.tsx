@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/table";
 import { issueMaterial } from "@/app/subcon/actions";
 import type { SubconBoard } from "@/lib/data/subcon";
-import { formatINR, formatNumber } from "@/lib/utils";
+import { formatINR, formatNumber, todayISO } from "@/lib/utils";
 
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -106,7 +106,7 @@ function IssueMaterialDialog({
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="mi-date">Date</Label>
-            <Input id="mi-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+            <Input id="mi-date" type="date" value={date} max={todayISO()} onChange={(e) => setDate(e.target.value)} />
           </div>
         </div>
         <p className="text-sm text-muted-foreground">

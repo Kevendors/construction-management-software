@@ -12,6 +12,7 @@ import { Dialog, Select, Textarea } from "@/components/ui/dialog";
 import { logProgress } from "@/app/subcon/actions";
 import type { SubconBoard } from "@/lib/data/subcon";
 import { woStatusMeta } from "@/lib/labels";
+import { todayISO } from "@/lib/utils";
 
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -84,7 +85,7 @@ function LogProgressDialog({
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="pr-date">Date</Label>
-            <Input id="pr-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+            <Input id="pr-date" type="date" value={date} max={todayISO()} onChange={(e) => setDate(e.target.value)} />
           </div>
         </div>
         <div className="space-y-1.5">

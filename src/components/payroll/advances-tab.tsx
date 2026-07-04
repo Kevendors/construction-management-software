@@ -21,7 +21,7 @@ import type { PayrollBoard } from "@/lib/payroll/compute";
 import { advanceOutstanding } from "@/lib/payroll/compute";
 import { recordAdvanceAction } from "@/app/payroll/actions";
 import { advanceStatusMeta } from "@/lib/labels";
-import { formatINR } from "@/lib/utils";
+import { formatINR, todayISO } from "@/lib/utils";
 import type { Advance, AdvanceParty } from "@/lib/types";
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -160,7 +160,7 @@ function RecordAdvanceDialog({ board, open, onClose }: { board: PayrollBoard; op
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="ad-date">Date</Label>
-            <Input id="ad-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+            <Input id="ad-date" type="date" value={date} max={todayISO()} onChange={(e) => setDate(e.target.value)} />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="ad-amount">Amount (₹) *</Label>

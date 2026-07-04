@@ -30,3 +30,9 @@ export function formatNumber(value: number, maximumFractionDigits = 0) {
 export function formatPercent(value: number, digits = 1) {
   return `${value.toFixed(digits)}%`;
 }
+
+/** Today's date as a local `YYYY-MM-DD` string — use as the `max` on date
+ *  inputs that record something that already happened (no future dates). */
+export function todayISO() {
+  return new Date().toLocaleDateString("en-CA");
+}
