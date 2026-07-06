@@ -20,6 +20,7 @@ import { ClientDetailActions } from "@/components/crm/client-detail-actions";
 import { lineTotalWithTax } from "@/lib/data/compute";
 import { projectStatusMeta, quotationStatusMeta } from "@/lib/labels";
 import { formatINR } from "@/lib/utils";
+import { getAuthContext } from "@/lib/auth/context";
 
 // Rendered on-demand — the data layer reads request cookies (Supabase auth),
 // which aren't available during build-time static generation.
@@ -36,6 +37,10 @@ export default async function ClientPage({
 
   const clientProjects = await getProjectsByClient(id);
   const quotations = await getClientQuotations(id);
+
+  // Project Value is Super Admin only (matches the projects/dashboard gating).
+  const ctx = await getAuthContext();
+  const canSeeValue = ctx?.role === "super_admin";
 
   return (
     <div>
@@ -85,7 +90,7 @@ export default async function ClientPage({
                     <TableRow>
                       <TableHead>Project</TableHead>
                       <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Value</TableHead>
+                      {canSeeValue && <TableHead className="text-right">Value</TableHead>}
                       <TableHead className="text-right">Progress</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -102,9 +107,11 @@ export default async function ClientPage({
                           <TableCell>
                             <Badge variant={meta.variant}>{meta.label}</Badge>
                           </TableCell>
-                          <TableCell className="text-right tabular-nums">
-                            {formatINR(p.value, { compact: true })}
-                          </TableCell>
+                          {canSeeValue && (
+                            <TableCell className="text-right tabular-nums">
+                              {formatINR(p.value, { compact: true })}
+                            </TableCell>
+                          )}
                           <TableCell className="text-right tabular-nums">
                             {p.percentComplete}%
                           </TableCell>

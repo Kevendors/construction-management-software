@@ -5,6 +5,7 @@ import { GanttChart } from "@/components/charts/gantt-chart";
 import { MarginTrendChart } from "@/components/charts/trend-charts";
 import { CashFlowChart } from "@/components/charts/cashflow-chart";
 import { getCompanyAnalytics } from "@/lib/data/dashboard";
+import { getAuthContext } from "@/lib/auth/context";
 import type { ProjectStatus, Task, TaskStatus } from "@/lib/types";
 
 /* Map a project's status onto the task-status palette so the portfolio
@@ -18,6 +19,9 @@ const STATUS_MAP: Record<ProjectStatus, TaskStatus> = {
 
 export default async function AnalyticsPage() {
   const { health, trend, flow, projects } = await getCompanyAnalytics();
+  // Margin is value-derived → Super Admin only, matching the rest of the app.
+  const ctx = await getAuthContext();
+  const canSeeValue = ctx?.role === "super_admin";
 
   // project-level pseudo-tasks for the portfolio timeline
   const portfolioTasks: Task[] = projects.map((p) => ({
@@ -42,7 +46,7 @@ export default async function AnalyticsPage() {
         description="Portfolio health, delivery timeline & financial trends across all projects"
       />
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <div className={`grid grid-cols-1 gap-4 ${canSeeValue ? "lg:grid-cols-2" : ""}`}>
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Portfolio Health — Task Status Mix</CardTitle>
@@ -51,14 +55,16 @@ export default async function AnalyticsPage() {
             <PortfolioHealthChart data={health} />
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Margin Trend</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <MarginTrendChart data={trend} />
-          </CardContent>
-        </Card>
+        {canSeeValue && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Margin Trend</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <MarginTrendChart data={trend} />
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       <Card className="mt-4">

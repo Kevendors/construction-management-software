@@ -47,7 +47,7 @@ export default async function CompanyDashboardPage() {
       <DashboardKpis totals={safeTotals} portfolio={safePortfolio} canSeeValue={canSeeValue} />
 
       {/* trends */}
-      <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
+      <div className={`mt-4 grid grid-cols-1 gap-4 ${canSeeValue ? "lg:grid-cols-3" : "lg:grid-cols-2"}`}>
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Sales Invoice Trend</CardTitle>
@@ -64,14 +64,16 @@ export default async function CompanyDashboardPage() {
             <TrendChart data={trend} dataKey="expense" color="var(--chart-1)" label="Expense" />
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Margin Trend</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <MarginTrendChart data={trend} />
-          </CardContent>
-        </Card>
+        {canSeeValue && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Margin Trend</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <MarginTrendChart data={trend} />
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       {/* cash-flow (chart 14) */}
