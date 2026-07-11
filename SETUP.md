@@ -10,9 +10,12 @@ See `PLAN.md` (in the Google Drive project folder) for the full scope and roadma
 - **Phase 2 (Material & Subcontractor)** ✅ UI on mock data — warehouse inventory + stock-level chart (18), material requests, purchase orders, suppliers, usage; subcontractors, work orders, progress, RA bills, material issues. PO & Work Order produce real PDFs via **print-optimized A4 views** (browser Print → Save as PDF).
 - **Phase 3 (Payroll/Attendance · Petty Expenses · Equipment)** ✅ UI on mock data — GPS labour attendance, staff payroll + salary-slip print (chart 19), contractors, advances; petty-expense approval + supervisor imprest ledger; equipment/tools/assets. Cash-flow chart (14) added to the dashboard.
 - **Phase 4 (Analytics & polish)** ✅ UI on mock data — Company Analytics page (portfolio health chart 15, portfolio Gantt chart 17), per-project Gantt on the Tasks tab, live notifications dropdown in the topbar.
-- **Supabase wiring** 🟡 in progress — schema migration + RLS and client helpers landed (`supabase/migrations/0001_init.sql`, `src/lib/supabase/`). Still pending: a live project, swapping `selectors.ts` for server queries, and Auth.
+- **Supabase wiring** 🟡 in progress — schema migration + RLS and client helpers landed (`supabase/migrations/0001_init.sql`, `src/lib/supabase/`). Still pending: swapping `selectors.ts` for server queries on the read-only pages.
+- **Live multi-device sync** 🟢 code complete, awaiting DB apply — the client stores (`src/lib/store/project-store.tsx`, `category-store.tsx`) now run **Supabase + Realtime** when env is set, so a change on one device streams to all others in ~1s; they fall back to localStorage/mock when env is absent. New: `supabase/migrations/0002_realtime_activity.sql` (activity_log + categories tables, dynamic-category columns, DPR photos, Realtime enabled), `src/lib/supabase/active-org.ts`, inverse row-writers in `src/lib/data/mappers.ts`. To go live: apply `supabase/apply_all.sql` in the SQL editor, set `.env.local`, sign up, and link the user in `memberships`.
 
-Everything still runs with **no backend** — data comes from `src/lib/mock/data.ts` until the queries are swapped.
+> **Run location:** the runnable copy lives on **local disk** at `C:\Users\<you>\sitehub` — **not** on Google Drive, which leaves `node_modules` as 0-byte stubs and won't start (`next` fails to load). Copy source to local disk and `npm ci` there.
+
+Without env the app still runs with **no backend** — data comes from `src/lib/mock/data.ts`. With env + the migrated DB it reads/writes live Postgres.
 
 ## Requirements
 

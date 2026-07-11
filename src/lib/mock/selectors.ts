@@ -34,6 +34,7 @@ import {
 } from "@/lib/mock/data";
 import type {
   Boq,
+  CostCode,
   LineItem,
   MaterialItem,
   Project,

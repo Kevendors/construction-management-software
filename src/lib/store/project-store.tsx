@@ -1,41 +1,20 @@
 "use client";
 
 import * as React from "react";
-import { isSupabaseConfigured } from "@/lib/supabase/config";
-import { createClient } from "@/lib/supabase/client";
-import { getDprPhotoUrls, uploadDprPhotos } from "@/app/projects/dpr-actions";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import {
-  mapClient,
-  mapExpense,
-  mapInvoice,
-  mapProject,
-  mapTask,
-  mapTransaction,
-  mapUser,
-  type ClientRow,
-  type ExpenseRow,
-  type InvoiceRow,
-  type ProjectRow,
-  type TaskRow,
-  type TransactionRow,
-  type UserRow,
-} from "@/lib/data/mappers";
-import { lineTotalWithTax, getProject as getMockProject } from "@/lib/mock/selectors";
-import {
-  clients as seedClients,
   dprs as seedDprs,
-  expenses as seedExpenses,
+  employees as seedEmployees,
   labourAttendance as seedAttendance,
-  projects as seedProjects,
   salesInvoices as seedInvoices,
   siteInstructions as seedInstructions,
   tasks as seedTasks,
   transactions as seedTxns,
-  users as seedUsers,
 } from "@/lib/mock/data";
 import type {
-  Client,
+  ActivityLogEntry,
   Dpr,
+  Employee,
   Expense,
   LabourAttendance,
   Project,
@@ -43,142 +22,104 @@ import type {
   SiteInstruction,
   Task,
   Transaction,
-  User,
 } from "@/lib/types";
+import { isSupabaseConfigured } from "@/lib/supabase/config";
+import { createClient } from "@/lib/supabase/client";
+import { getActiveOrg, type ActiveOrg } from "@/lib/supabase/active-org";
+import {
+  mapActivity,
+  mapAttendance,
+  mapDpr,
+  mapEmployee,
+  mapExpense,
+  mapInstruction,
+  mapInvoice,
+  mapProject,
+  mapTask,
+  mapTransaction,
+  toActivityRow,
+  toAttendanceRow,
+  toDprRow,
+  toEmployeePatch,
+  toEmployeeRow,
+  toExpenseRow,
+  toInstructionRow,
+  toInvoiceItemRows,
+  toInvoiceRow,
+  toProjectRow,
+  toTaskPatch,
+  toTaskRow,
+  toTransactionRow,
+  type ActivityLogRow,
+  type DprRow,
+  type EmployeeRow,
+  type ExpenseRow,
+  type InvoiceRow,
+  type LabourAttendanceRow,
+  type ProjectRow,
+  type SiteInstructionRow,
+  type TaskRow,
+  type TransactionRow,
+} from "@/lib/data/mappers";
 
 /**
- * Client-side data store backed by Supabase. On mount the provider loads the
- * signed-in org's projects, tasks, DPRs, instructions, expenses, invoices and
- * attendance (RLS scopes everything to the caller's org); every create / edit
- * writes straight back to Postgres and updates local state so the UI stays
- * live. When Supabase isn't configured (local dev with no env) it falls back to
- * the in-repo mock so the app still runs with zero setup.
+ * Client-side data store for the interactive modules (Projects, Payroll,
+ * Expenses). Two interchangeable backends behind one identical hook API:
+ *
+ *  - Supabase not configured → localStorage over the mock seed (demo mode,
+ *    single device). Unchanged from the original implementation.
+ *  - Supabase configured → live Postgres reads/writes + Realtime, so a change
+ *    on one device streams to every other device/user within ~1s.
+ *
+ * Consumers use `useStore()` / the `useProject*` selectors and never learn
+ * which backend is active.
  */
 
-/* ---------- row shapes for tables without a shared mapper ---------- */
+const LS_KEY = "sitehub:store:v1";
 
-interface DprRow {
-  id: string;
-  project_id: string;
-  date: string;
-  author_id: string | null;
-  weather: string | null;
-  work_done: string | null;
-  labour_count: number;
-  photos: number;
-}
-interface InstructionRow {
-  id: string;
-  project_id: string;
-  date: string;
-  by_id: string | null;
-  text: string;
-  priority: SiteInstruction["priority"];
-}
-interface AttendanceRow {
-  id: string;
-  contractor_id: string | null;
-  project_id: string | null;
-  date: string;
-  shift: LabourAttendance["shift"];
-  present: number;
-  absent: number;
-  gps: string | null;
-}
-
-const mapDpr = (r: DprRow): Dpr => ({
-  id: r.id,
-  projectId: r.project_id,
-  date: r.date,
-  authorId: r.author_id ?? "",
-  weather: r.weather ?? "",
-  workDone: r.work_done ?? "",
-  labourCount: r.labour_count,
-  photos: r.photos,
-});
-const mapInstruction = (r: InstructionRow): SiteInstruction => ({
-  id: r.id,
-  projectId: r.project_id,
-  date: r.date,
-  byId: r.by_id ?? "",
-  text: r.text,
-  priority: r.priority,
-});
-const mapAttendance = (r: AttendanceRow): LabourAttendance => ({
-  id: r.id,
-  contractorId: r.contractor_id ?? "",
-  projectId: r.project_id ?? "",
-  date: r.date,
-  shift: r.shift,
-  present: r.present,
-  absent: r.absent,
-  gps: r.gps ?? "",
-});
-
-/* ---------- store shape ---------- */
-
-interface StoreData {
-  loading: boolean;
-  source: "supabase" | "mock";
-  orgId: string | null;
-  currentUserId: string | null;
+interface AddedData {
   projects: Project[];
+  tasks: Task[];
+  taskEdits: Record<string, Partial<Task>>;
+  taskDeletes: string[];
+  dprs: Dpr[];
+  instructions: SiteInstruction[];
+  transactions: Transaction[];
+  invoices: SalesInvoice[];
+  invoiceReceipts: Record<string, number>;
+  attendance: LabourAttendance[];
+  activityLog: ActivityLogEntry[];
+  employees: Employee[];
+  employeeDeletes: string[];
+  expenses: Expense[];
+}
+
+const EMPTY: AddedData = {
+  projects: [],
+  tasks: [],
+  taskEdits: {},
+  taskDeletes: [],
+  dprs: [],
+  instructions: [],
+  transactions: [],
+  invoices: [],
+  invoiceReceipts: {},
+  attendance: [],
+  activityLog: [],
+  employees: [],
+  employeeDeletes: [],
+  expenses: [],
+};
+
+interface StoreValue {
   addedProjects: Project[];
-  clients: Client[];
-  users: User[];
   tasks: Task[];
   dprs: Dpr[];
   instructions: SiteInstruction[];
   transactions: Transaction[];
-  expenses: Expense[];
   invoices: SalesInvoice[];
   attendance: LabourAttendance[];
-  expenseCategories: CodeOption[];
-  costCodes: CodeOption[];
-}
-
-export interface CodeOption {
-  slug: string;
-  label: string;
-}
-
-const DEFAULT_EXPENSE_CATEGORIES: CodeOption[] = [
-  { slug: "material", label: "Material" },
-  { slug: "salary", label: "Salary" },
-  { slug: "site", label: "Site" },
-  { slug: "subcon", label: "Subcon" },
-  { slug: "other", label: "Other" },
-];
-const DEFAULT_COST_CODES: CodeOption[] = [
-  { slug: "material", label: "Material" },
-  { slug: "machinery", label: "Machinery" },
-  { slug: "diesel", label: "Diesel" },
-  { slug: "labour", label: "Labour" },
-  { slug: "other", label: "Other" },
-];
-
-const EMPTY: StoreData = {
-  loading: true,
-  source: "mock",
-  orgId: null,
-  currentUserId: null,
-  projects: [],
-  addedProjects: [],
-  clients: [],
-  users: [],
-  tasks: [],
-  dprs: [],
-  instructions: [],
-  transactions: [],
-  expenses: [],
-  invoices: [],
-  attendance: [],
-  expenseCategories: DEFAULT_EXPENSE_CATEGORIES,
-  costCodes: DEFAULT_COST_CODES,
-};
-
-interface StoreValue extends StoreData {
-  addProject: (p: Omit<Project, "id">) => Promise<Project | null>;
+  addProject: (p: Omit<Project, "id">) => Project;
   addTask: (t: Omit<Task, "id">) => void;
   updateTask: (id: string, patch: Partial<Task>) => void;
   deleteTask: (id: string) => void;
@@ -188,475 +129,768 @@ interface StoreValue extends StoreData {
   addInvoice: (i: Omit<SalesInvoice, "id">) => void;
   recordPayment: (invoiceId: string, amount: number) => void;
   addAttendance: (a: Omit<LabourAttendance, "id">) => void;
+  activityLog: ActivityLogEntry[];
+  employees: Employee[];
+  addEmployee: (e: Omit<Employee, "id">) => void;
+  updateEmployee: (id: string, patch: Partial<Employee>) => void;
+  deleteEmployee: (id: string) => void;
+  expenses: Expense[];
+  addExpense: (e: Omit<Expense, "id">) => void;
 }
 
 const StoreContext = React.createContext<StoreValue | null>(null);
+
+/* ======================================================================== *
+ * Provider selector — pick the backend once (env is constant at runtime).
+ * ======================================================================== */
+export function ProjectStoreProvider({ children }: { children: React.ReactNode }) {
+  if (isSupabaseConfigured()) {
+    return <SupabaseProjectStore>{children}</SupabaseProjectStore>;
+  }
+  return <LocalProjectStore>{children}</LocalProjectStore>;
+}
+
+/* ======================================================================== *
+ * Backend A — localStorage over mock seed (demo mode). Unchanged behavior.
+ * ======================================================================== */
 
 function genId(prefix: string) {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 }
 
-type Supabase = ReturnType<typeof createClient>;
-
-/** The mock seed, used until Supabase responds and when env is absent. */
-function mockData(): StoreData {
-  return {
-    loading: false,
-    source: "mock",
-    orgId: null,
-    currentUserId: seedUsers[0]?.id ?? null,
-    projects: seedProjects,
-    addedProjects: [],
-    clients: seedClients,
-    users: seedUsers,
-    tasks: seedTasks,
-    dprs: seedDprs,
-    instructions: seedInstructions,
-    transactions: seedTxns,
-    expenses: seedExpenses,
-    invoices: seedInvoices,
-    attendance: seedAttendance,
-    expenseCategories: DEFAULT_EXPENSE_CATEGORIES,
-    costCodes: DEFAULT_COST_CODES,
-  };
+function loadAdded(): AddedData {
+  if (typeof window === "undefined") return EMPTY;
+  try {
+    const raw = window.localStorage.getItem(LS_KEY);
+    if (!raw) return EMPTY;
+    const p = JSON.parse(raw) as Partial<AddedData>;
+    return {
+      projects: p.projects ?? [],
+      tasks: p.tasks ?? [],
+      taskEdits: p.taskEdits ?? {},
+      taskDeletes: p.taskDeletes ?? [],
+      dprs: p.dprs ?? [],
+      instructions: p.instructions ?? [],
+      transactions: p.transactions ?? [],
+      invoices: p.invoices ?? [],
+      invoiceReceipts: p.invoiceReceipts ?? {},
+      attendance: p.attendance ?? [],
+      activityLog: p.activityLog ?? [],
+      employees: p.employees ?? [],
+      employeeDeletes: p.employeeDeletes ?? [],
+      expenses: p.expenses ?? [],
+    };
+  } catch {
+    return EMPTY;
+  }
 }
 
-export function ProjectStoreProvider({ children }: { children: React.ReactNode }) {
-  const [data, setData] = React.useState<StoreData>(EMPTY);
-  const supabaseRef = React.useRef<Supabase | null>(null);
+function LocalProjectStore({ children }: { children: React.ReactNode }) {
+  // Start empty so server and first client render match; hydrate after mount.
+  const [added, setAdded] = React.useState<AddedData>(EMPTY);
 
-  // Load everything for the signed-in org on mount.
   React.useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      if (!isSupabaseConfigured()) {
-        if (!cancelled) setData(mockData());
-        return;
-      }
-      const supabase = createClient();
-      supabaseRef.current = supabase;
-
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) {
-        if (!cancelled) setData(mockData());
-        return;
-      }
-
-      const { data: membership } = await supabase
-        .from("memberships")
-        .select("org_id")
-        .eq("user_id", user.id)
-        .limit(1)
-        .maybeSingle();
-      const orgId = (membership?.org_id as string | undefined) ?? null;
-
-      const [proj, cli, prof, tsk, dpr, ins, txn, inv, att, exp, cat, cc] = await Promise.all([
-        // Value privacy is enforced server-side: this RPC returns value=0 for
-        // non-super-admins, so the real figure never reaches their client.
-        supabase.rpc("list_org_projects"),
-        supabase.from("clients").select("*"),
-        supabase.from("profiles").select("*"),
-        supabase.from("tasks").select("*"),
-        supabase.from("dprs").select("*"),
-        supabase.from("site_instructions").select("*"),
-        supabase.from("transactions").select("*"),
-        supabase.from("sales_invoices").select("*, invoice_items(*)"),
-        supabase.from("labour_attendance").select("*"),
-        supabase.from("expenses").select("*"),
-        supabase.from("expense_categories").select("slug,label").order("label"),
-        supabase.from("cost_codes").select("slug,label").order("label"),
-      ]);
-
-      if (cancelled) return;
-
-      // Mint signed URLs for any DPR photos (private bucket, keyed by dpr id).
-      let dprList = ((dpr.data as DprRow[] | null) ?? []).map(mapDpr);
-      const photoMap = await getDprPhotoUrls(
-        dprList.filter((d) => d.photos > 0).map((d) => ({ id: d.id, photos: d.photos }))
-      );
-      if (Object.keys(photoMap).length) {
-        dprList = dprList.map((d) =>
-          photoMap[d.id] ? { ...d, photoUrls: photoMap[d.id] } : d
-        );
-      }
-
-      if (cancelled) return;
-      setData({
-        loading: false,
-        source: "supabase",
-        orgId,
-        currentUserId: user.id,
-        projects: ((proj.data as ProjectRow[] | null) ?? []).map(mapProject),
-        addedProjects: [],
-        clients: ((cli.data as ClientRow[] | null) ?? []).map(mapClient),
-        users: ((prof.data as UserRow[] | null) ?? []).map(mapUser),
-        tasks: ((tsk.data as TaskRow[] | null) ?? []).map(mapTask),
-        dprs: dprList,
-        instructions: ((ins.data as InstructionRow[] | null) ?? []).map(mapInstruction),
-        transactions: ((txn.data as TransactionRow[] | null) ?? []).map(mapTransaction),
-        expenses: ((exp.data as ExpenseRow[] | null) ?? []).map(mapExpense),
-        invoices: ((inv.data as InvoiceRow[] | null) ?? []).map(mapInvoice),
-        attendance: ((att.data as AttendanceRow[] | null) ?? []).map(mapAttendance),
-        expenseCategories: (cat.data as CodeOption[] | null)?.length ? (cat.data as CodeOption[]) : DEFAULT_EXPENSE_CATEGORIES,
-        costCodes: (cc.data as CodeOption[] | null)?.length ? (cc.data as CodeOption[]) : DEFAULT_COST_CODES,
-      });
-    }
-    load().catch((e) => {
-      console.error("[project-store] load failed, using mock", e);
-      if (!cancelled) setData(mockData());
-    });
-    return () => {
-      cancelled = true;
-    };
+    // Hydrate from localStorage after mount so SSR and first client render match.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setAdded(loadAdded());
   }, []);
 
-  const patch = React.useCallback(
-    (updater: (prev: StoreData) => StoreData) => setData((prev) => updater(prev)),
-    []
-  );
+  const update = React.useCallback((updater: (prev: AddedData) => AddedData) => {
+    setAdded((prev) => {
+      const next = updater(prev);
+      try {
+        window.localStorage.setItem(LS_KEY, JSON.stringify(next));
+      } catch {
+        /* storage unavailable — keep in-memory */
+      }
+      return next;
+    });
+  }, []);
 
-  // Coerce a person id to a valid profile id (FK → profiles) or null.
-  const profileId = React.useCallback(
-    (id: string | null | undefined): string | null => {
-      if (!id) return null;
-      return data.users.some((u) => u.id === id) ? id : null;
+  const logActivity = React.useCallback(
+    (projectId: string, action: ActivityLogEntry["action"], entity: ActivityLogEntry["entity"], entityId: string, details: string) => {
+      update((prev) => ({
+        ...prev,
+        activityLog: [
+          { id: genId("log"), projectId, action, entity, entityId, timestamp: new Date().toISOString(), userId: "", details },
+          ...prev.activityLog,
+        ],
+      }));
     },
-    [data.users]
+    [update]
   );
-
-  const sb = () => supabaseRef.current;
-  const live = () => data.source === "supabase" && sb() && data.orgId;
-
-  /* ---------------- mutations ---------------- */
 
   const addProject = React.useCallback(
-    async (p: Omit<Project, "id">): Promise<Project | null> => {
-      if (!live()) {
-        const project: Project = { ...p, id: genId("proj") };
-        patch((prev) => ({
-          ...prev,
-          projects: [...prev.projects, project],
-          addedProjects: [...prev.addedProjects, project],
-        }));
-        return project;
-      }
-      const { data: row, error } = await sb()!
-        .from("projects")
-        .insert({
-          org_id: data.orgId,
-          code: p.code,
-          name: p.name,
-          client_id: p.clientId || null,
-          value: p.value,
-          status: p.status,
-          start_date: p.startDate || null,
-          end_date: p.endDate || null,
-          percent_complete: p.percentComplete,
-          location: p.location || null,
-          pm_id: profileId(p.pmId),
-        })
-        .select("*")
-        .single();
-      if (error || !row) {
-        console.error("[project-store] addProject failed", error);
-        return null;
-      }
-      const project = mapProject(row as ProjectRow);
-      patch((prev) => ({
-        ...prev,
-        projects: [...prev.projects, project],
-        addedProjects: [...prev.addedProjects, project],
-      }));
+    (p: Omit<Project, "id">): Project => {
+      const project: Project = { ...p, id: genId("proj") };
+      update((prev) => ({ ...prev, projects: [...prev.projects, project] }));
       return project;
     },
-    [data.orgId, patch, profileId]
+    [update]
   );
 
   const addTask = React.useCallback(
     (t: Omit<Task, "id">) => {
-      const optimistic: Task = { ...t, id: genId("task") };
-      patch((prev) => ({ ...prev, tasks: [...prev.tasks, optimistic] }));
-      if (!live()) return;
-      sb()!
-        .from("tasks")
-        .insert({
-          org_id: data.orgId,
-          project_id: t.projectId,
-          parent_id: t.parentId,
-          name: t.name,
-          assignee_id: profileId(t.assigneeId),
-          start_date: t.startDate || null,
-          end_date: t.endDate || null,
-          status: t.status,
-          progress_value: t.progressValue,
-          progress_target: t.progressTarget,
-          unit: t.unit,
-          delay_days: t.delayDays,
-        })
-        .select("*")
-        .single()
-        .then(({ data: row, error }) => {
-          if (error || !row) return console.error("[project-store] addTask failed", error);
-          const real = mapTask(row as TaskRow);
-          patch((prev) => ({
-            ...prev,
-            tasks: prev.tasks.map((x) => (x.id === optimistic.id ? real : x)),
-          }));
-        });
+      const id = genId("task");
+      update((prev) => ({ ...prev, tasks: [...prev.tasks, { ...t, id }] }));
+      logActivity(t.projectId, "created", "task", id, `Task "${t.name}" created`);
     },
-    [data.orgId, patch, profileId]
+    [update, logActivity]
   );
 
   const updateTask = React.useCallback(
-    (id: string, p: Partial<Task>) => {
-      patch((prev) => ({
+    (id: string, patch: Partial<Task>) => {
+      update((prev) => ({
         ...prev,
-        tasks: prev.tasks.map((t) => (t.id === id ? { ...t, ...p } : t)),
+        taskEdits: { ...prev.taskEdits, [id]: { ...prev.taskEdits[id], ...patch } },
       }));
-      if (!live()) return;
-      const row: Record<string, unknown> = {};
-      if (p.name !== undefined) row.name = p.name;
-      if (p.assigneeId !== undefined) row.assignee_id = profileId(p.assigneeId);
-      if (p.startDate !== undefined) row.start_date = p.startDate || null;
-      if (p.endDate !== undefined) row.end_date = p.endDate || null;
-      if (p.status !== undefined) row.status = p.status;
-      if (p.progressValue !== undefined) row.progress_value = p.progressValue;
-      if (p.progressTarget !== undefined) row.progress_target = p.progressTarget;
-      if (p.unit !== undefined) row.unit = p.unit;
-      if (p.delayDays !== undefined) row.delay_days = p.delayDays;
-      sb()!
-        .from("tasks")
-        .update(row)
-        .eq("id", id)
-        .then(({ error }) => {
-          if (error) console.error("[project-store] updateTask failed", error);
-        });
+      const action = patch.status === "completed" ? "completed" as const : "updated" as const;
+      const detail = patch.status ? `Task status changed to ${patch.status}` : "Task updated";
+      // Find the task's projectId from seed or added tasks
+      const task = [...seedTasks, ...added.tasks].find((t) => t.id === id);
+      if (task) logActivity(task.projectId, action, "task", id, detail);
     },
-    [patch, profileId]
+    [update, logActivity, added.tasks]
   );
 
   const deleteTask = React.useCallback(
     (id: string) => {
-      patch((prev) => ({ ...prev, tasks: prev.tasks.filter((t) => t.id !== id) }));
-      if (!live()) return;
-      sb()!
-        .from("tasks")
-        .delete()
-        .eq("id", id)
-        .then(({ error }) => {
-          if (error) console.error("[project-store] deleteTask failed", error);
-        });
+      const task = [...seedTasks, ...added.tasks].find((t) => t.id === id);
+      update((prev) => ({
+        ...prev,
+        tasks: prev.tasks.filter((t) => t.id !== id),
+        taskDeletes: prev.taskDeletes.includes(id) ? prev.taskDeletes : [...prev.taskDeletes, id],
+      }));
+      if (task) logActivity(task.projectId, "deleted", "task", id, `Task "${task.name}" deleted`);
     },
-    [patch]
+    [update, logActivity, added.tasks]
   );
 
   const addDpr = React.useCallback(
     (d: Omit<Dpr, "id">) => {
-      const optimistic: Dpr = { ...d, id: genId("dpr") };
-      patch((prev) => ({ ...prev, dprs: [optimistic, ...prev.dprs] }));
-      if (!live()) return;
-      sb()!
-        .from("dprs")
-        .insert({
-          org_id: data.orgId,
-          project_id: d.projectId,
-          date: d.date,
-          author_id: profileId(d.authorId),
-          weather: d.weather,
-          work_done: d.workDone,
-          labour_count: d.labourCount,
-          photos: d.photos,
-        })
-        .select("*")
-        .single()
-        .then(async ({ data: row, error }) => {
-          if (error || !row) return console.error("[project-store] addDpr failed", error);
-          // Upload photos to the private bucket; fall back to the local data
-          // URLs for instant display if the upload returns nothing.
-          let photoUrls = d.photoUrls;
-          if (d.photoUrls?.length) {
-            const signed = await uploadDprPhotos((row as DprRow).id, d.photoUrls);
-            if (signed.length) photoUrls = signed;
-          }
-          const real = { ...mapDpr(row as DprRow), photoUrls };
-          patch((prev) => ({
-            ...prev,
-            dprs: prev.dprs.map((x) => (x.id === optimistic.id ? real : x)),
-          }));
-        });
+      const id = genId("dpr");
+      update((prev) => ({ ...prev, dprs: [{ ...d, id }, ...prev.dprs] }));
+      logActivity(d.projectId, "filed", "dpr", id, `DPR filed for ${d.date}`);
     },
-    [data.orgId, patch, profileId]
+    [update, logActivity]
   );
 
   const addInstruction = React.useCallback(
     (s: Omit<SiteInstruction, "id">) => {
-      const optimistic: SiteInstruction = { ...s, id: genId("si") };
-      patch((prev) => ({ ...prev, instructions: [optimistic, ...prev.instructions] }));
-      if (!live()) return;
-      sb()!
-        .from("site_instructions")
-        .insert({
-          org_id: data.orgId,
-          project_id: s.projectId,
-          date: s.date,
-          by_id: profileId(s.byId),
-          text: s.text,
-          priority: s.priority,
-        })
-        .select("*")
-        .single()
-        .then(({ data: row, error }) => {
-          if (error || !row) return console.error("[project-store] addInstruction failed", error);
-          const real = mapInstruction(row as InstructionRow);
-          patch((prev) => ({
-            ...prev,
-            instructions: prev.instructions.map((x) => (x.id === optimistic.id ? real : x)),
-          }));
-        });
+      const id = genId("si");
+      update((prev) => ({
+        ...prev,
+        instructions: [{ ...s, id }, ...prev.instructions],
+      }));
+      logActivity(s.projectId, "created", "instruction", id, `Site instruction added (${s.priority} priority)`);
     },
-    [data.orgId, patch, profileId]
+    [update, logActivity]
   );
 
   const addTransaction = React.useCallback(
     (t: Omit<Transaction, "id">) => {
-      const optimistic: Transaction = { ...t, id: genId("txn") };
-      patch((prev) => ({ ...prev, transactions: [optimistic, ...prev.transactions] }));
-      if (!live()) return;
-      sb()!
-        .from("transactions")
-        .insert({
-          org_id: data.orgId,
-          project_id: t.projectId,
-          party_id: t.partyId,
-          date: t.date,
-          direction: t.direction,
-          amount: t.amount,
-          cost_code: t.costCode,
-          category: t.category,
-          note: t.note,
-        })
-        .select("*")
-        .single()
-        .then(({ data: row, error }) => {
-          if (error || !row) return console.error("[project-store] addTransaction failed", error);
-          const real = mapTransaction(row as TransactionRow);
-          patch((prev) => ({
-            ...prev,
-            transactions: prev.transactions.map((x) => (x.id === optimistic.id ? real : x)),
-          }));
-        });
+      const id = genId("txn");
+      update((prev) => ({
+        ...prev,
+        transactions: [{ ...t, id }, ...prev.transactions],
+      }));
+      const dir = t.direction === "in" ? "received" : "spent";
+      logActivity(t.projectId, "created", "transaction", id, `Transaction ${dir}: ${t.amount}`);
     },
-    [data.orgId, patch]
+    [update, logActivity]
   );
 
   const addInvoice = React.useCallback(
     (i: Omit<SalesInvoice, "id">) => {
-      const optimistic: SalesInvoice = { ...i, id: genId("inv") };
-      patch((prev) => ({ ...prev, invoices: [optimistic, ...prev.invoices] }));
-      if (!live()) return;
-      (async () => {
-        const { data: row, error } = await sb()!
-          .from("sales_invoices")
-          .insert({
-            org_id: data.orgId,
-            number: i.number,
-            project_id: i.projectId || null,
-            client_id: i.clientId || null,
-            date: i.date,
-            due_date: i.dueDate || null,
-            tax_rate: i.taxRate,
-            received: i.received,
-            status: i.status,
-          })
-          .select("*")
-          .single();
-        if (error || !row) return console.error("[project-store] addInvoice failed", error);
-        const invoiceId = (row as { id: string }).id;
-        if (i.items.length) {
-          await sb()!.from("invoice_items").insert(
-            i.items.map((it) => ({
-              org_id: data.orgId,
-              invoice_id: invoiceId,
-              description: it.description,
-              qty: it.qty,
-              unit: it.unit,
-              rate: it.rate,
-            }))
-          );
-        }
-        const real = mapInvoice({ ...(row as InvoiceRow), invoice_items: [] });
-        real.items = i.items; // keep the items we just wrote (with their ids)
-        patch((prev) => ({
-          ...prev,
-          invoices: prev.invoices.map((x) => (x.id === optimistic.id ? real : x)),
-        }));
-      })();
+      const id = genId("inv");
+      update((prev) => ({ ...prev, invoices: [{ ...i, id }, ...prev.invoices] }));
+      logActivity(i.projectId, "created", "invoice", id, `Invoice ${i.number} created`);
     },
-    [data.orgId, patch]
+    [update, logActivity]
   );
 
   const recordPayment = React.useCallback(
     (invoiceId: string, amount: number) => {
-      const inv = data.invoices.find((x) => x.id === invoiceId);
-      if (!inv) return;
-      const received = inv.received + amount;
-      const total = lineTotalWithTax(inv.items, inv.taxRate);
-      const status: SalesInvoice["status"] =
-        received <= 0 ? inv.status : received >= total ? "paid" : "partial";
-      patch((prev) => ({
+      update((prev) => ({
         ...prev,
-        invoices: prev.invoices.map((x) =>
-          x.id === invoiceId ? { ...x, received, status } : x
-        ),
+        invoiceReceipts: {
+          ...prev.invoiceReceipts,
+          [invoiceId]: (prev.invoiceReceipts[invoiceId] ?? 0) + amount,
+        },
       }));
-      if (!live()) return;
-      sb()!
-        .from("sales_invoices")
-        .update({ received, status })
-        .eq("id", invoiceId)
-        .then(({ error }) => {
-          if (error) console.error("[project-store] recordPayment failed", error);
-        });
+      const inv = [...seedInvoices, ...added.invoices].find((i) => i.id === invoiceId);
+      if (inv) logActivity(inv.projectId, "created", "payment", invoiceId, `Payment of ${amount} recorded for ${inv.number}`);
     },
-    [data.invoices, patch]
+    [update, logActivity, added.invoices]
   );
 
   const addAttendance = React.useCallback(
     (a: Omit<LabourAttendance, "id">) => {
-      const optimistic: LabourAttendance = { ...a, id: genId("la") };
-      patch((prev) => ({ ...prev, attendance: [optimistic, ...prev.attendance] }));
-      if (!live()) return;
-      sb()!
-        .from("labour_attendance")
-        .insert({
-          org_id: data.orgId,
-          contractor_id: null, // manual entry — no contractor FK
-          project_id: a.projectId,
-          date: a.date,
-          shift: a.shift,
-          present: a.present,
-          absent: a.absent,
-          gps: a.gps || null,
-        })
-        .select("*")
-        .single()
-        .then(({ data: row, error }) => {
-          if (error || !row) return console.error("[project-store] addAttendance failed", error);
-          const real = mapAttendance(row as AttendanceRow);
-          patch((prev) => ({
-            ...prev,
-            attendance: prev.attendance.map((x) => (x.id === optimistic.id ? real : x)),
-          }));
+      const id = genId("la");
+      update((prev) => ({
+        ...prev,
+        attendance: [{ ...a, id }, ...prev.attendance],
+      }));
+      logActivity(a.projectId, "filed", "attendance", id, `Attendance logged: ${a.present} present, ${a.absent} absent`);
+    },
+    [update, logActivity]
+  );
+
+  const addEmployee = React.useCallback(
+    (e: Omit<Employee, "id">) => {
+      const id = genId("emp");
+      update((prev) => ({ ...prev, employees: [...prev.employees, { ...e, id }] }));
+    },
+    [update]
+  );
+
+  const updateEmployee = React.useCallback(
+    (id: string, patch: Partial<Employee>) =>
+      update((prev) => ({
+        ...prev,
+        employees: prev.employees.map((e) => (e.id === id ? { ...e, ...patch } : e)),
+      })),
+    [update]
+  );
+
+  const deleteEmployee = React.useCallback(
+    (id: string) =>
+      update((prev) => ({
+        ...prev,
+        employees: prev.employees.filter((e) => e.id !== id),
+        employeeDeletes: [...prev.employeeDeletes, id],
+      })),
+    [update]
+  );
+
+  const addExpense = React.useCallback(
+    (e: Omit<Expense, "id">) => {
+      const id = genId("exp");
+      update((prev) => ({ ...prev, expenses: [{ ...e, id }, ...prev.expenses] }));
+      logActivity(e.projectId, "created", "expense", id, `Expense of ${e.amount} added (${e.category})`);
+    },
+    [update, logActivity]
+  );
+
+  const value = React.useMemo<StoreValue>(() => {
+    const tasks = [...seedTasks, ...added.tasks]
+      .filter((t) => !added.taskDeletes.includes(t.id))
+      .map((t) => (added.taskEdits[t.id] ? { ...t, ...added.taskEdits[t.id] } : t));
+
+    const invoices = [...seedInvoices, ...added.invoices].map((inv) => {
+      const extra = added.invoiceReceipts[inv.id] ?? 0;
+      return extra ? { ...inv, received: inv.received + extra } : inv;
+    });
+
+    return {
+      addedProjects: added.projects,
+      tasks,
+      dprs: [...added.dprs, ...seedDprs],
+      instructions: [...added.instructions, ...seedInstructions],
+      transactions: [...added.transactions, ...seedTxns],
+      invoices,
+      attendance: [...added.attendance, ...seedAttendance],
+      activityLog: added.activityLog,
+      employees: [...seedEmployees, ...added.employees].filter((e) => !added.employeeDeletes.includes(e.id)),
+      expenses: added.expenses,
+      addProject,
+      addTask,
+      updateTask,
+      deleteTask,
+      addDpr,
+      addInstruction,
+      addTransaction,
+      addInvoice,
+      recordPayment,
+      addAttendance,
+      addEmployee,
+      updateEmployee,
+      deleteEmployee,
+      addExpense,
+    };
+  }, [
+    added,
+    addProject,
+    addTask,
+    updateTask,
+    deleteTask,
+    addDpr,
+    addInstruction,
+    addTransaction,
+    addInvoice,
+    recordPayment,
+    addAttendance,
+    addEmployee,
+    updateEmployee,
+    deleteEmployee,
+    addExpense,
+  ]);
+
+  return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
+}
+
+/* ======================================================================== *
+ * Backend B — Supabase + Realtime (live multi-device).
+ * ======================================================================== */
+
+interface Lists {
+  projects: Project[];
+  tasks: Task[];
+  dprs: Dpr[];
+  instructions: SiteInstruction[];
+  transactions: Transaction[];
+  invoices: SalesInvoice[];
+  attendance: LabourAttendance[];
+  employees: Employee[];
+  expenses: Expense[];
+  activityLog: ActivityLogEntry[];
+}
+
+type ListsKey = keyof Lists;
+
+const EMPTY_LISTS: Lists = {
+  projects: [],
+  tasks: [],
+  dprs: [],
+  instructions: [],
+  transactions: [],
+  invoices: [],
+  attendance: [],
+  employees: [],
+  expenses: [],
+  activityLog: [],
+};
+
+function upsertById<T extends { id: string }>(list: T[], item: T): T[] {
+  const i = list.findIndex((x) => x.id === item.id);
+  if (i === -1) return [item, ...list];
+  const copy = list.slice();
+  copy[i] = item;
+  return copy;
+}
+
+function withList(prev: Lists, key: ListsKey, list: Array<{ id: string }>): Lists {
+  return { ...prev, [key]: list } as Lists;
+}
+
+// Tables whose Realtime + fetch map 1:1 to a Lists key (invoices are special —
+// they carry line items and are refetched on change).
+const SIMPLE_TABLES: Array<{ table: string; key: ListsKey; map: (r: unknown) => { id: string } }> = [
+  { table: "projects", key: "projects", map: (r) => mapProject(r as ProjectRow) },
+  { table: "tasks", key: "tasks", map: (r) => mapTask(r as TaskRow) },
+  { table: "dprs", key: "dprs", map: (r) => mapDpr(r as DprRow) },
+  { table: "site_instructions", key: "instructions", map: (r) => mapInstruction(r as SiteInstructionRow) },
+  { table: "transactions", key: "transactions", map: (r) => mapTransaction(r as TransactionRow) },
+  { table: "labour_attendance", key: "attendance", map: (r) => mapAttendance(r as LabourAttendanceRow) },
+  { table: "employees", key: "employees", map: (r) => mapEmployee(r as EmployeeRow) },
+  { table: "expenses", key: "expenses", map: (r) => mapExpense(r as ExpenseRow) },
+  { table: "activity_log", key: "activityLog", map: (r) => mapActivity(r as ActivityLogRow) },
+];
+
+function SupabaseProjectStore({ children }: { children: React.ReactNode }) {
+  const [lists, setLists] = React.useState<Lists>(EMPTY_LISTS);
+  const [org, setOrg] = React.useState<ActiveOrg | null>(null);
+
+  // Latest snapshots for callbacks that need to read current data without
+  // re-subscribing (activity lookups, payment base amounts, etc.). Synced via
+  // effects (commit-time) so callbacks — which fire after commit — see current
+  // values without writing refs during render.
+  const orgRef = React.useRef<ActiveOrg | null>(null);
+  const listsRef = React.useRef<Lists>(lists);
+  React.useEffect(() => {
+    orgRef.current = org;
+  }, [org]);
+  React.useEffect(() => {
+    listsRef.current = lists;
+  }, [lists]);
+
+  // One browser client for the provider's lifetime; built lazily in-browser.
+  const supabaseRef = React.useRef<SupabaseClient | null>(null);
+  const getSb = React.useCallback((): SupabaseClient => {
+    if (!supabaseRef.current) supabaseRef.current = createClient();
+    return supabaseRef.current;
+  }, []);
+
+  // ---- initial identity + data load ----
+  React.useEffect(() => {
+    let active = true;
+    const sb = getSb();
+    (async () => {
+      const ident = await getActiveOrg(sb);
+      if (!active) return;
+      if (!ident) {
+        console.warn(
+          "SiteHub: signed-in user has no org membership — the store stays empty. " +
+            "Link the user to an org (insert into memberships)."
+        );
+        return;
+      }
+      setOrg(ident);
+      const [pr, ts, dp, si, tx, inv, at, em, ex, al] = await Promise.all([
+        sb.from("projects").select("*").order("code"),
+        sb.from("tasks").select("*"),
+        sb.from("dprs").select("*"),
+        sb.from("site_instructions").select("*"),
+        sb.from("transactions").select("*"),
+        sb.from("sales_invoices").select("*, invoice_items(*)"),
+        sb.from("labour_attendance").select("*"),
+        sb.from("employees").select("*").order("name"),
+        sb.from("expenses").select("*"),
+        sb.from("activity_log").select("*").order("logged_at", { ascending: false }),
+      ]);
+      if (!active) return;
+      setLists({
+        projects: (pr.data ?? []).map((r) => mapProject(r as ProjectRow)),
+        tasks: (ts.data ?? []).map((r) => mapTask(r as TaskRow)),
+        dprs: (dp.data ?? []).map((r) => mapDpr(r as DprRow)),
+        instructions: (si.data ?? []).map((r) => mapInstruction(r as SiteInstructionRow)),
+        transactions: (tx.data ?? []).map((r) => mapTransaction(r as TransactionRow)),
+        invoices: (inv.data ?? []).map((r) => mapInvoice(r as InvoiceRow)),
+        attendance: (at.data ?? []).map((r) => mapAttendance(r as LabourAttendanceRow)),
+        employees: (em.data ?? []).map((r) => mapEmployee(r as EmployeeRow)),
+        expenses: (ex.data ?? []).map((r) => mapExpense(r as ExpenseRow)),
+        activityLog: (al.data ?? []).map((r) => mapActivity(r as ActivityLogRow)),
+      });
+    })();
+    return () => {
+      active = false;
+    };
+  }, [getSb]);
+
+  // Refetch a single invoice (with its line items) after a Realtime change.
+  const refetchInvoice = React.useCallback(
+    async (id: string) => {
+      const { data, error } = await getSb()
+        .from("sales_invoices")
+        .select("*, invoice_items(*)")
+        .eq("id", id)
+        .maybeSingle();
+      if (error || !data) return;
+      const inv = mapInvoice(data as InvoiceRow);
+      setLists((prev) => ({ ...prev, invoices: upsertById(prev.invoices, inv) }));
+    },
+    [getSb]
+  );
+
+  // ---- Realtime subscription (scoped to the org) ----
+  React.useEffect(() => {
+    if (!org) return;
+    const sb = getSb();
+    const channel = sb.channel(`sitehub-store-${org.orgId}`);
+
+    for (const cfg of SIMPLE_TABLES) {
+      channel.on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: cfg.table, filter: `org_id=eq.${org.orgId}` },
+        (payload) => {
+          setLists((prev) => {
+            const list = prev[cfg.key] as Array<{ id: string }>;
+            if (payload.eventType === "DELETE") {
+              const id = (payload.old as { id?: string }).id;
+              if (!id) return prev;
+              return withList(prev, cfg.key, list.filter((x) => x.id !== id));
+            }
+            return withList(prev, cfg.key, upsertById(list, cfg.map(payload.new)));
+          });
+        }
+      );
+    }
+
+    // Invoices: header + line items. Refetch the affected invoice so items stay
+    // in sync; delete removes it locally.
+    channel.on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "sales_invoices", filter: `org_id=eq.${org.orgId}` },
+      (payload) => {
+        if (payload.eventType === "DELETE") {
+          const id = (payload.old as { id?: string }).id;
+          if (id) setLists((prev) => ({ ...prev, invoices: prev.invoices.filter((i) => i.id !== id) }));
+          return;
+        }
+        const id = (payload.new as { id?: string }).id;
+        if (id) void refetchInvoice(id);
+      }
+    );
+    channel.on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "invoice_items", filter: `org_id=eq.${org.orgId}` },
+      (payload) => {
+        const invId =
+          (payload.new as { invoice_id?: string }).invoice_id ??
+          (payload.old as { invoice_id?: string }).invoice_id;
+        if (invId) void refetchInvoice(invId);
+      }
+    );
+
+    channel.subscribe();
+    return () => {
+      void sb.removeChannel(channel);
+    };
+  }, [org, getSb, refetchInvoice]);
+
+  // ---- shared write helpers ----
+  const logActivity = React.useCallback(
+    (
+      projectId: string,
+      action: ActivityLogEntry["action"],
+      entity: ActivityLogEntry["entity"],
+      entityId: string,
+      details: string
+    ) => {
+      const o = orgRef.current;
+      if (!o) return;
+      const id = crypto.randomUUID();
+      const entry: ActivityLogEntry = {
+        id,
+        projectId,
+        action,
+        entity,
+        entityId,
+        timestamp: new Date().toISOString(),
+        userId: o.userId,
+        details,
+      };
+      setLists((prev) => ({ ...prev, activityLog: [entry, ...prev.activityLog] }));
+      getSb()
+        .from("activity_log")
+        .insert({ id, ...toActivityRow({ projectId, action, entity, entityId, userId: o.userId, details }, o.orgId) })
+        .then(({ error }) => {
+          if (error) console.error("activity_log insert failed", error);
         });
     },
-    [data.orgId, patch]
+    [getSb]
+  );
+
+  // Optimistic insert with rollback on error. `item` is the resolved domain
+  // object; `row` is the snake_case insert payload (without id).
+  const insertRow = React.useCallback(
+    (key: ListsKey, item: { id: string }, table: string, row: Record<string, unknown>) => {
+      setLists((prev) => withList(prev, key, upsertById(prev[key] as Array<{ id: string }>, item)));
+      getSb()
+        .from(table)
+        .insert({ id: item.id, ...row })
+        .then(({ error }) => {
+          if (error) {
+            console.error(`${table} insert failed`, error);
+            setLists((prev) =>
+              withList(prev, key, (prev[key] as Array<{ id: string }>).filter((x) => x.id !== item.id))
+            );
+          }
+        });
+    },
+    [getSb]
+  );
+
+  // ---- mutations ----
+  const addProject = React.useCallback(
+    (p: Omit<Project, "id">): Project => {
+      const project: Project = { ...p, id: crypto.randomUUID() };
+      const o = orgRef.current;
+      if (o) insertRow("projects", project, "projects", toProjectRow(p, o.orgId));
+      return project;
+    },
+    [insertRow]
+  );
+
+  const addTask = React.useCallback(
+    (t: Omit<Task, "id">) => {
+      const o = orgRef.current;
+      if (!o) return;
+      const id = crypto.randomUUID();
+      insertRow("tasks", { ...t, id }, "tasks", toTaskRow(t, o.orgId));
+      logActivity(t.projectId, "created", "task", id, `Task "${t.name}" created`);
+    },
+    [insertRow, logActivity]
+  );
+
+  const updateTask = React.useCallback(
+    (id: string, patch: Partial<Task>) => {
+      setLists((prev) => ({ ...prev, tasks: prev.tasks.map((t) => (t.id === id ? { ...t, ...patch } : t)) }));
+      getSb()
+        .from("tasks")
+        .update(toTaskPatch(patch))
+        .eq("id", id)
+        .then(({ error }) => {
+          if (error) console.error("task update failed", error);
+        });
+      const action = patch.status === "completed" ? ("completed" as const) : ("updated" as const);
+      const detail = patch.status ? `Task status changed to ${patch.status}` : "Task updated";
+      const task = listsRef.current.tasks.find((t) => t.id === id);
+      if (task) logActivity(task.projectId, action, "task", id, detail);
+    },
+    [getSb, logActivity]
+  );
+
+  const deleteTask = React.useCallback(
+    (id: string) => {
+      const task = listsRef.current.tasks.find((t) => t.id === id);
+      setLists((prev) => ({ ...prev, tasks: prev.tasks.filter((t) => t.id !== id) }));
+      getSb()
+        .from("tasks")
+        .delete()
+        .eq("id", id)
+        .then(({ error }) => {
+          if (error) console.error("task delete failed", error);
+        });
+      if (task) logActivity(task.projectId, "deleted", "task", id, `Task "${task.name}" deleted`);
+    },
+    [getSb, logActivity]
+  );
+
+  const addDpr = React.useCallback(
+    (d: Omit<Dpr, "id">) => {
+      const o = orgRef.current;
+      if (!o) return;
+      const id = crypto.randomUUID();
+      insertRow("dprs", { ...d, id }, "dprs", toDprRow(d, o.orgId, o.userId));
+      logActivity(d.projectId, "filed", "dpr", id, `DPR filed for ${d.date}`);
+    },
+    [insertRow, logActivity]
+  );
+
+  const addInstruction = React.useCallback(
+    (s: Omit<SiteInstruction, "id">) => {
+      const o = orgRef.current;
+      if (!o) return;
+      const id = crypto.randomUUID();
+      insertRow("instructions", { ...s, id }, "site_instructions", toInstructionRow(s, o.orgId, o.userId));
+      logActivity(s.projectId, "created", "instruction", id, `Site instruction added (${s.priority} priority)`);
+    },
+    [insertRow, logActivity]
+  );
+
+  const addTransaction = React.useCallback(
+    (t: Omit<Transaction, "id">) => {
+      const o = orgRef.current;
+      if (!o) return;
+      const id = crypto.randomUUID();
+      insertRow("transactions", { ...t, id }, "transactions", toTransactionRow(t, o.orgId));
+      const dir = t.direction === "in" ? "received" : "spent";
+      logActivity(t.projectId, "created", "transaction", id, `Transaction ${dir}: ${t.amount}`);
+    },
+    [insertRow, logActivity]
+  );
+
+  const addInvoice = React.useCallback(
+    (i: Omit<SalesInvoice, "id">) => {
+      const o = orgRef.current;
+      if (!o) return;
+      const id = crypto.randomUUID();
+      setLists((prev) => ({ ...prev, invoices: upsertById(prev.invoices, { ...i, id }) }));
+      void (async () => {
+        const sb = getSb();
+        const { error: e1 } = await sb.from("sales_invoices").insert({ id, ...toInvoiceRow(i, o.orgId) });
+        if (e1) {
+          console.error("invoice insert failed", e1);
+          setLists((prev) => ({ ...prev, invoices: prev.invoices.filter((x) => x.id !== id) }));
+          return;
+        }
+        if (i.items.length) {
+          const { error: e2 } = await sb.from("invoice_items").insert(toInvoiceItemRows(i.items, o.orgId, id));
+          if (e2) console.error("invoice_items insert failed", e2);
+        }
+      })();
+      logActivity(i.projectId, "created", "invoice", id, `Invoice ${i.number} created`);
+    },
+    [getSb, logActivity]
+  );
+
+  const recordPayment = React.useCallback(
+    (invoiceId: string, amount: number) => {
+      const inv = listsRef.current.invoices.find((i) => i.id === invoiceId);
+      if (!inv) return;
+      const received = inv.received + amount;
+      setLists((prev) => ({
+        ...prev,
+        invoices: prev.invoices.map((i) => (i.id === invoiceId ? { ...i, received } : i)),
+      }));
+      getSb()
+        .from("sales_invoices")
+        .update({ received })
+        .eq("id", invoiceId)
+        .then(({ error }) => {
+          if (error) console.error("payment update failed", error);
+        });
+      logActivity(inv.projectId, "created", "payment", invoiceId, `Payment of ${amount} recorded for ${inv.number}`);
+    },
+    [getSb, logActivity]
+  );
+
+  const addAttendance = React.useCallback(
+    (a: Omit<LabourAttendance, "id">) => {
+      const o = orgRef.current;
+      if (!o) return;
+      const id = crypto.randomUUID();
+      insertRow("attendance", { ...a, id }, "labour_attendance", toAttendanceRow(a, o.orgId));
+      logActivity(a.projectId, "filed", "attendance", id, `Attendance logged: ${a.present} present, ${a.absent} absent`);
+    },
+    [insertRow, logActivity]
+  );
+
+  const addEmployee = React.useCallback(
+    (e: Omit<Employee, "id">) => {
+      const o = orgRef.current;
+      if (!o) return;
+      const id = crypto.randomUUID();
+      insertRow("employees", { ...e, id }, "employees", toEmployeeRow(e, o.orgId));
+    },
+    [insertRow]
+  );
+
+  const updateEmployee = React.useCallback(
+    (id: string, patch: Partial<Employee>) => {
+      setLists((prev) => ({
+        ...prev,
+        employees: prev.employees.map((e) => (e.id === id ? { ...e, ...patch } : e)),
+      }));
+      getSb()
+        .from("employees")
+        .update(toEmployeePatch(patch))
+        .eq("id", id)
+        .then(({ error }) => {
+          if (error) console.error("employee update failed", error);
+        });
+    },
+    [getSb]
+  );
+
+  const deleteEmployee = React.useCallback(
+    (id: string) => {
+      setLists((prev) => ({ ...prev, employees: prev.employees.filter((e) => e.id !== id) }));
+      getSb()
+        .from("employees")
+        .delete()
+        .eq("id", id)
+        .then(({ error }) => {
+          if (error) console.error("employee delete failed", error);
+        });
+    },
+    [getSb]
+  );
+
+  const addExpense = React.useCallback(
+    (e: Omit<Expense, "id">) => {
+      const o = orgRef.current;
+      if (!o) return;
+      const id = crypto.randomUUID();
+      insertRow("expenses", { ...e, id }, "expenses", toExpenseRow(e, o.orgId, o.userId));
+      logActivity(e.projectId, "created", "expense", id, `Expense of ${e.amount} added (${e.category})`);
+    },
+    [insertRow, logActivity]
   );
 
   const value = React.useMemo<StoreValue>(
     () => ({
-      ...data,
+      addedProjects: lists.projects,
+      tasks: lists.tasks,
+      dprs: lists.dprs,
+      instructions: lists.instructions,
+      transactions: lists.transactions,
+      invoices: lists.invoices,
+      attendance: lists.attendance,
+      activityLog: lists.activityLog,
+      employees: lists.employees,
+      expenses: lists.expenses,
       addProject,
       addTask,
       updateTask,
@@ -667,9 +901,13 @@ export function ProjectStoreProvider({ children }: { children: React.ReactNode }
       addInvoice,
       recordPayment,
       addAttendance,
+      addEmployee,
+      updateEmployee,
+      deleteEmployee,
+      addExpense,
     }),
     [
-      data,
+      lists,
       addProject,
       addTask,
       updateTask,
@@ -680,6 +918,10 @@ export function ProjectStoreProvider({ children }: { children: React.ReactNode }
       addInvoice,
       recordPayment,
       addAttendance,
+      addEmployee,
+      updateEmployee,
+      deleteEmployee,
+      addExpense,
     ]
   );
 
@@ -718,21 +960,6 @@ export function useProjectTransactions(projectId: string) {
   return transactions.filter((t) => t.projectId === projectId);
 }
 
-export function useProjectExpenses(projectId: string) {
-  const { expenses } = useStore();
-  return expenses
-    .filter((e) => e.projectId === projectId)
-    .sort((a, b) => +new Date(b.date) - +new Date(a.date));
-}
-
-export function useExpenseCategories() {
-  return useStore().expenseCategories;
-}
-
-export function useCostCodes() {
-  return useStore().costCodes;
-}
-
 export function useProjectInvoices(projectId: string) {
   const { invoices } = useStore();
   return invoices
@@ -756,27 +983,24 @@ export function useProjectAttendance(projectId: string) {
     .slice(-7);
 }
 
-/** Resolve a project by id from the store (Supabase), falling back to mock. */
-export function useProject(projectId: string): Project | null {
-  const { projects } = useStore();
-  return projects.find((p) => p.id === projectId) ?? getMockProject(projectId) ?? null;
+/** Resolve a user-created project by id (returns null for seed/unknown ids). */
+export function useAddedProject(projectId: string) {
+  const { addedProjects } = useStore();
+  return addedProjects.find((p) => p.id === projectId) ?? null;
 }
 
-/** Back-compat alias — resolves user-created (and now all) projects by id. */
-export const useAddedProject = useProject;
-
-/* ---------- people & clients (for dropdowns + name resolution) ---------- */
-
-export function useUsers() {
-  return useStore().users;
+/** Petty expenses for a specific project, most recent first. */
+export function useProjectExpenses(projectId: string) {
+  const { expenses } = useStore();
+  return expenses
+    .filter((e) => e.projectId === projectId)
+    .sort((a, b) => +new Date(b.date) - +new Date(a.date));
 }
 
-export function useUser(id: string | null) {
-  const { users } = useStore();
-  if (!id) return null;
-  return users.find((u) => u.id === id) ?? null;
-}
-
-export function useClients() {
-  return useStore().clients;
+/** Activity log entries for a specific project, most recent first. */
+export function useProjectActivityLog(projectId: string) {
+  const { activityLog } = useStore();
+  return activityLog
+    .filter((e) => e.projectId === projectId)
+    .sort((a, b) => +new Date(b.timestamp) - +new Date(a.timestamp));
 }

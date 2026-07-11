@@ -2,13 +2,17 @@
 // renders against. One mapper per table; keeps query files declarative.
 
 import type {
+  ActivityLogEntry,
   Boq,
   BoqItem,
   Client,
+  Dpr,
   Drawing,
   DrawingVersion,
+  Employee,
   Equipment,
   Expense,
+  LabourAttendance,
   LineItem,
   MaterialIssue,
   MaterialItem,
@@ -20,6 +24,7 @@ import type {
   Quotation,
   RaBill,
   SalesInvoice,
+  SiteInstruction,
   Subcontractor,
   SubconProgress,
   SubconWorkOrder,
@@ -122,21 +127,6 @@ export interface TransactionRow {
   cost_code: Transaction["costCode"];
   category: Transaction["category"];
   note: string | null;
-}
-
-export interface ExpenseRow {
-  id: string;
-  title: string | null;
-  project_id: string | null;
-  date: string;
-  category: Expense["category"];
-  cost_code: Expense["costCode"];
-  amount: number;
-  payment_mode: string | null;
-  note: string | null;
-  status: Expense["status"];
-  by_id: string | null;
-  bill_path: string | null;
 }
 
 /* ---------- mappers ---------- */
@@ -569,17 +559,338 @@ export const mapTransaction = (r: TransactionRow): Transaction => ({
   note: r.note ?? "",
 });
 
+/* ==========================================================================
+ * Client-store entities: forward mappers (row -> domain) + inverse writers
+ * (domain -> insertable row). Used by the Supabase-backed project/category
+ * stores for reads, Realtime patches, and writes. Kept server-free so the
+ * browser store can import them.
+ * ======================================================================== */
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Postgres uuid/FK columns reject non-uuid ids (e.g. mock "u1"); null them. */
+export const uuidOrNull = (v?: string | null): string | null =>
+  v && UUID_RE.test(v) ? v : null;
+
+/** Empty date strings must become NULL, not '' (invalid for a date column). */
+const dateOrNull = (v?: string | null): string | null => (v ? v : null);
+
+/* ---------- DPR ---------- */
+export interface DprRow {
+  id: string;
+  project_id: string;
+  date: string;
+  author_id: string | null;
+  weather: string | null;
+  work_done: string | null;
+  labour_count: number;
+  photos: number;
+  photo_urls?: string[] | null;
+}
+
+export const mapDpr = (r: DprRow): Dpr => ({
+  id: r.id,
+  projectId: r.project_id,
+  date: r.date,
+  authorId: r.author_id ?? "",
+  weather: r.weather ?? "",
+  workDone: r.work_done ?? "",
+  labourCount: Number(r.labour_count),
+  photos: Number(r.photos),
+  photoUrls: r.photo_urls ?? [],
+});
+
+export const toDprRow = (d: Omit<Dpr, "id">, orgId: string, userId: string | null) => ({
+  org_id: orgId,
+  project_id: d.projectId,
+  date: d.date,
+  author_id: uuidOrNull(userId ?? d.authorId),
+  weather: d.weather,
+  work_done: d.workDone,
+  labour_count: d.labourCount,
+  photos: d.photos,
+  photo_urls: d.photoUrls ?? [],
+});
+
+/* ---------- Site instruction ---------- */
+export interface SiteInstructionRow {
+  id: string;
+  project_id: string;
+  date: string;
+  by_id: string | null;
+  text: string;
+  priority: SiteInstruction["priority"];
+}
+
+export const mapInstruction = (r: SiteInstructionRow): SiteInstruction => ({
+  id: r.id,
+  projectId: r.project_id,
+  date: r.date,
+  byId: r.by_id ?? "",
+  text: r.text,
+  priority: r.priority,
+});
+
+export const toInstructionRow = (
+  s: Omit<SiteInstruction, "id">,
+  orgId: string,
+  userId: string | null
+) => ({
+  org_id: orgId,
+  project_id: s.projectId,
+  date: s.date,
+  by_id: uuidOrNull(userId ?? s.byId),
+  text: s.text,
+  priority: s.priority,
+});
+
+/* ---------- Labour attendance ---------- */
+export interface LabourAttendanceRow {
+  id: string;
+  contractor_id: string | null;
+  project_id: string | null;
+  date: string;
+  shift: LabourAttendance["shift"];
+  present: number;
+  absent: number;
+  gps: string | null;
+}
+
+export const mapAttendance = (r: LabourAttendanceRow): LabourAttendance => ({
+  id: r.id,
+  contractorId: r.contractor_id ?? "",
+  projectId: r.project_id ?? "",
+  date: r.date,
+  shift: r.shift,
+  present: Number(r.present),
+  absent: Number(r.absent),
+  gps: r.gps ?? "",
+});
+
+export const toAttendanceRow = (a: Omit<LabourAttendance, "id">, orgId: string) => ({
+  org_id: orgId,
+  contractor_id: uuidOrNull(a.contractorId),
+  project_id: uuidOrNull(a.projectId),
+  date: a.date,
+  shift: a.shift,
+  present: a.present,
+  absent: a.absent,
+  gps: a.gps,
+});
+
+/* ---------- Employee ---------- */
+export interface EmployeeRow {
+  id: string;
+  name: string;
+  designation: string | null;
+  department: Employee["department"];
+  monthly_ctc: number;
+  join_date: string | null;
+  phone: string | null;
+  initials: string | null;
+  avatar_color: string | null;
+}
+
+export const mapEmployee = (r: EmployeeRow): Employee => ({
+  id: r.id,
+  name: r.name,
+  designation: r.designation ?? "",
+  department: r.department,
+  monthlyCtc: Number(r.monthly_ctc),
+  joinDate: r.join_date ?? "",
+  phone: r.phone ?? "",
+  initials: r.initials ?? "",
+  avatarColor: r.avatar_color ?? "#1e3a5f",
+});
+
+export const toEmployeeRow = (e: Omit<Employee, "id">, orgId: string) => ({
+  org_id: orgId,
+  name: e.name,
+  designation: e.designation,
+  department: e.department,
+  monthly_ctc: e.monthlyCtc,
+  join_date: dateOrNull(e.joinDate),
+  phone: e.phone,
+  initials: e.initials,
+  avatar_color: e.avatarColor,
+});
+
+/** Partial employee patch (camel -> snake) for updates; only present keys. */
+export const toEmployeePatch = (p: Partial<Employee>): Record<string, unknown> => {
+  const row: Record<string, unknown> = {};
+  if (p.name !== undefined) row.name = p.name;
+  if (p.designation !== undefined) row.designation = p.designation;
+  if (p.department !== undefined) row.department = p.department;
+  if (p.monthlyCtc !== undefined) row.monthly_ctc = p.monthlyCtc;
+  if (p.joinDate !== undefined) row.join_date = dateOrNull(p.joinDate);
+  if (p.phone !== undefined) row.phone = p.phone;
+  if (p.initials !== undefined) row.initials = p.initials;
+  if (p.avatarColor !== undefined) row.avatar_color = p.avatarColor;
+  return row;
+};
+
+/* ---------- Expense ---------- */
+export interface ExpenseRow {
+  id: string;
+  project_id: string | null;
+  date: string;
+  category: string;
+  cost_code: string;
+  amount: number;
+  note: string | null;
+  status: Expense["status"];
+  by_id: string | null;
+}
+
 export const mapExpense = (r: ExpenseRow): Expense => ({
   id: r.id,
-  title: r.title ?? "",
   projectId: r.project_id ?? "",
   date: r.date,
   category: r.category,
   costCode: r.cost_code,
   amount: Number(r.amount),
-  paymentMode: r.payment_mode ?? "",
   note: r.note ?? "",
   status: r.status,
   byId: r.by_id ?? "",
-  billPath: r.bill_path ?? "",
 });
+
+export const toExpenseRow = (
+  e: Omit<Expense, "id">,
+  orgId: string,
+  userId: string | null
+) => ({
+  org_id: orgId,
+  project_id: uuidOrNull(e.projectId),
+  date: e.date,
+  category: e.category,
+  cost_code: e.costCode,
+  amount: e.amount,
+  note: e.note,
+  status: e.status,
+  by_id: uuidOrNull(userId ?? e.byId),
+});
+
+/* ---------- Activity log ---------- */
+export interface ActivityLogRow {
+  id: string;
+  project_id: string | null;
+  action: ActivityLogEntry["action"];
+  entity: ActivityLogEntry["entity"];
+  entity_id: string | null;
+  logged_at: string;
+  user_id: string | null;
+  details: string | null;
+}
+
+export const mapActivity = (r: ActivityLogRow): ActivityLogEntry => ({
+  id: r.id,
+  projectId: r.project_id ?? "",
+  action: r.action,
+  entity: r.entity,
+  entityId: r.entity_id ?? "",
+  timestamp: r.logged_at,
+  userId: r.user_id ?? "",
+  details: r.details ?? "",
+});
+
+export const toActivityRow = (
+  e: Omit<ActivityLogEntry, "id" | "timestamp">,
+  orgId: string
+) => ({
+  org_id: orgId,
+  project_id: uuidOrNull(e.projectId),
+  action: e.action,
+  entity: e.entity,
+  entity_id: e.entityId,
+  user_id: uuidOrNull(e.userId),
+  details: e.details,
+});
+
+/* ---------- Project (inverse only; mapProject already defined) ---------- */
+export const toProjectRow = (p: Omit<Project, "id">, orgId: string) => ({
+  org_id: orgId,
+  code: p.code,
+  name: p.name,
+  client_id: uuidOrNull(p.clientId),
+  value: p.value,
+  status: p.status,
+  start_date: dateOrNull(p.startDate),
+  end_date: dateOrNull(p.endDate),
+  percent_complete: p.percentComplete,
+  location: p.location,
+  pm_id: uuidOrNull(p.pmId),
+});
+
+/* ---------- Task (inverse; mapTask already defined) ---------- */
+export const toTaskRow = (t: Omit<Task, "id">, orgId: string) => ({
+  org_id: orgId,
+  project_id: t.projectId,
+  parent_id: uuidOrNull(t.parentId),
+  name: t.name,
+  assignee_id: uuidOrNull(t.assigneeId),
+  start_date: dateOrNull(t.startDate),
+  end_date: dateOrNull(t.endDate),
+  status: t.status,
+  progress_value: t.progressValue,
+  progress_target: t.progressTarget,
+  unit: t.unit,
+  delay_days: t.delayDays,
+});
+
+/** Partial task patch (camel -> snake) for updates; only present keys emitted. */
+export const toTaskPatch = (p: Partial<Task>): Record<string, unknown> => {
+  const row: Record<string, unknown> = {};
+  if (p.projectId !== undefined) row.project_id = p.projectId;
+  if (p.parentId !== undefined) row.parent_id = uuidOrNull(p.parentId);
+  if (p.name !== undefined) row.name = p.name;
+  if (p.assigneeId !== undefined) row.assignee_id = uuidOrNull(p.assigneeId);
+  if (p.startDate !== undefined) row.start_date = dateOrNull(p.startDate);
+  if (p.endDate !== undefined) row.end_date = dateOrNull(p.endDate);
+  if (p.status !== undefined) row.status = p.status;
+  if (p.progressValue !== undefined) row.progress_value = p.progressValue;
+  if (p.progressTarget !== undefined) row.progress_target = p.progressTarget;
+  if (p.unit !== undefined) row.unit = p.unit;
+  if (p.delayDays !== undefined) row.delay_days = p.delayDays;
+  return row;
+};
+
+/* ---------- Transaction (inverse; mapTransaction already defined) ---------- */
+export const toTransactionRow = (t: Omit<Transaction, "id">, orgId: string) => ({
+  org_id: orgId,
+  project_id: uuidOrNull(t.projectId),
+  party_id: uuidOrNull(t.partyId),
+  date: t.date,
+  direction: t.direction,
+  amount: t.amount,
+  cost_code: t.costCode,
+  category: t.category,
+  note: t.note,
+});
+
+/* ---------- Invoice (inverse; mapInvoice already defined) ---------- */
+export const toInvoiceRow = (i: Omit<SalesInvoice, "id">, orgId: string) => ({
+  org_id: orgId,
+  number: i.number,
+  project_id: uuidOrNull(i.projectId),
+  client_id: uuidOrNull(i.clientId),
+  date: i.date,
+  due_date: dateOrNull(i.dueDate),
+  tax_rate: i.taxRate,
+  received: i.received,
+  status: i.status,
+});
+
+export const toInvoiceItemRows = (
+  items: LineItem[],
+  orgId: string,
+  invoiceId: string
+) =>
+  items.map((it) => ({
+    org_id: orgId,
+    invoice_id: invoiceId,
+    description: it.description,
+    qty: it.qty,
+    unit: it.unit,
+    rate: it.rate,
+  }));
