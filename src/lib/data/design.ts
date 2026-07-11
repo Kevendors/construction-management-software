@@ -9,6 +9,7 @@ import {
   type DrawingRow,
   type ProjectRow,
 } from "./mappers";
+import { filterByProjectIds, getVisibleProjectIds } from "./team";
 
 // mock fallback
 import { drawings as mockDrawings, projects as mockProjects } from "@/lib/mock/data";
@@ -42,8 +43,10 @@ export async function getDesignBoard(): Promise<DesignBoard> {
   ]);
   if (d.error) throw d.error;
   if (p.error) throw p.error;
+  // Non-super-admins only see drawings for projects they're assigned to.
+  const visible = await getVisibleProjectIds();
   return assemble(
-    (p.data as ProjectRow[]).map(mapProject),
-    (d.data as DrawingRow[]).map(mapDrawing)
+    filterByProjectIds((p.data as ProjectRow[]).map(mapProject), visible, (x) => x.id),
+    filterByProjectIds((d.data as DrawingRow[]).map(mapDrawing), visible, (x) => x.projectId)
   );
 }

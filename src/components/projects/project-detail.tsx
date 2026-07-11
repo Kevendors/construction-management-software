@@ -11,6 +11,7 @@ import { FilesTab } from "./files-tab";
 import { CommercialTab } from "./commercial-tab";
 import { AlertsTab, useProjectAlerts } from "./alerts-tab";
 import { HistoryTab } from "./history-tab";
+import { TeamTab } from "./team-tab";
 import { useRole } from "@/components/layout/role-provider";
 import { DrawingList } from "@/components/design/drawing-list";
 import { getProjectDrawings } from "@/lib/mock/selectors";
@@ -145,6 +146,7 @@ function ProjectDetailInner({ projectId }: { projectId: string }) {
             Commercial
           </TabsTrigger>
           <TabsTrigger value="files">Files</TabsTrigger>
+          <TabsTrigger value="team">Team</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview">
@@ -170,6 +172,9 @@ function ProjectDetailInner({ projectId }: { projectId: string }) {
         </TabsContent>
         <TabsContent value="files">
           <FilesTab projectId={projectId} />
+        </TabsContent>
+        <TabsContent value="team">
+          <TeamTab projectId={projectId} />
         </TabsContent>
       </Tabs>
     </div>

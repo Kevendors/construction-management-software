@@ -6,10 +6,16 @@ import { CheckCircle2, Eye, EyeOff, HardHat, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 import { createClient } from "@/lib/supabase/client";
+import { isSupabaseConfigured } from "@/lib/supabase/config";
 
 export default function ResetPasswordPage() {
   const router = useRouter();
-  const supabase = React.useMemo(() => createClient(), []);
+  // null in demo mode (no env) — also keeps the build-time prerender from
+  // constructing a client with missing env vars.
+  const supabase = React.useMemo(
+    () => (isSupabaseConfigured() ? createClient() : null),
+    []
+  );
   const [ready, setReady] = React.useState(false);
   const [validLink, setValidLink] = React.useState(false);
   const [password, setPassword] = React.useState("");
@@ -24,6 +30,12 @@ export default function ResetPasswordPage() {
   React.useEffect(() => {
     let active = true;
     async function init() {
+      if (!supabase) {
+        setValidLink(false);
+        setError("Password reset is not available in demo mode.");
+        setReady(true);
+        return;
+      }
       const params = new URLSearchParams(window.location.search);
       const code = params.get("code");
       if (code) {
@@ -52,6 +64,7 @@ export default function ResetPasswordPage() {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    if (!supabase) return setError("Password reset is not available in demo mode.");
     if (password.length < 6) return setError("Password must be at least 6 characters.");
     if (password !== confirm) return setError("Passwords do not match.");
     setLoading(true);

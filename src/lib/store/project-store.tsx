@@ -5,16 +5,23 @@ import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createClient } from "@/lib/supabase/client";
 import { getDprPhotoUrls, uploadDprPhotos } from "@/app/projects/dpr-actions";
 import {
+  addProjectMemberAction,
+  removeProjectMemberAction,
+  setProjectMemberRoleAction,
+} from "@/app/projects/team-actions";
+import {
   mapClient,
   mapExpense,
   mapInvoice,
   mapProject,
+  mapProjectMember,
   mapTask,
   mapTransaction,
   mapUser,
   type ClientRow,
   type ExpenseRow,
   type InvoiceRow,
+  type ProjectMemberRow,
   type ProjectRow,
   type TaskRow,
   type TransactionRow,
@@ -26,6 +33,7 @@ import {
   dprs as seedDprs,
   expenses as seedExpenses,
   labourAttendance as seedAttendance,
+  projectMembers as seedProjectMembers,
   projects as seedProjects,
   salesInvoices as seedInvoices,
   siteInstructions as seedInstructions,
@@ -39,6 +47,8 @@ import type {
   Expense,
   LabourAttendance,
   Project,
+  ProjectMember,
+  Role,
   SalesInvoice,
   SiteInstruction,
   Task,
@@ -122,6 +132,10 @@ interface StoreData {
   source: "supabase" | "mock";
   orgId: string | null;
   currentUserId: string | null;
+  /** The signed-in user's org role (null until the membership loads). */
+  currentRole: Role | null;
+  /** Per-project assignments — projects are pre-filtered by these for non-admins. */
+  projectMembers: ProjectMember[];
   projects: Project[];
   addedProjects: Project[];
   clients: Client[];
@@ -162,6 +176,8 @@ const EMPTY: StoreData = {
   source: "mock",
   orgId: null,
   currentUserId: null,
+  currentRole: null,
+  projectMembers: [],
   projects: [],
   addedProjects: [],
   clients: [],
@@ -188,6 +204,10 @@ interface StoreValue extends StoreData {
   addInvoice: (i: Omit<SalesInvoice, "id">) => void;
   recordPayment: (invoiceId: string, amount: number) => void;
   addAttendance: (a: Omit<LabourAttendance, "id">) => void;
+  /** Team assignment (super admin only) — resolve to an error message or null. */
+  addProjectMember: (projectId: string, userId: string, role: Role) => Promise<string | null>;
+  setProjectMemberRole: (projectId: string, userId: string, role: Role) => Promise<string | null>;
+  removeProjectMember: (projectId: string, userId: string) => Promise<string | null>;
 }
 
 const StoreContext = React.createContext<StoreValue | null>(null);
@@ -205,6 +225,8 @@ function mockData(): StoreData {
     source: "mock",
     orgId: null,
     currentUserId: seedUsers[0]?.id ?? null,
+    currentRole: seedUsers[0]?.role ?? null,
+    projectMembers: seedProjectMembers,
     projects: seedProjects,
     addedProjects: [],
     clients: seedClients,
@@ -246,13 +268,14 @@ export function ProjectStoreProvider({ children }: { children: React.ReactNode }
 
       const { data: membership } = await supabase
         .from("memberships")
-        .select("org_id")
+        .select("org_id, role")
         .eq("user_id", user.id)
         .limit(1)
         .maybeSingle();
       const orgId = (membership?.org_id as string | undefined) ?? null;
+      const currentRole = (membership?.role as Role | undefined) ?? null;
 
-      const [proj, cli, prof, tsk, dpr, ins, txn, inv, att, exp, cat, cc] = await Promise.all([
+      const [proj, cli, prof, tsk, dpr, ins, txn, inv, att, exp, cat, cc, pmem] = await Promise.all([
         // Value privacy is enforced server-side: this RPC returns value=0 for
         // non-super-admins, so the real figure never reaches their client.
         supabase.rpc("list_org_projects"),
@@ -267,6 +290,7 @@ export function ProjectStoreProvider({ children }: { children: React.ReactNode }
         supabase.from("expenses").select("*"),
         supabase.from("expense_categories").select("slug,label").order("label"),
         supabase.from("cost_codes").select("slug,label").order("label"),
+        supabase.from("project_members").select("*"),
       ]);
 
       if (cancelled) return;
@@ -283,22 +307,52 @@ export function ProjectStoreProvider({ children }: { children: React.ReactNode }
       }
 
       if (cancelled) return;
+
+      // Visibility: non-super-admins only see projects they're assigned to.
+      // RLS (migration 0010) enforces this server-side too; filtering here
+      // keeps behavior correct before that migration is applied.
+      const memberList = ((pmem.data as ProjectMemberRow[] | null) ?? []).map(mapProjectMember);
+      let projectList = ((proj.data as ProjectRow[] | null) ?? []).map(mapProject);
+      // If the table hasn't been migrated yet (0009 pending), keep today's
+      // org-wide visibility instead of locking everyone out. RLS (0010) is the
+      // hard gate; this keeps client state consistent before it's applied.
+      // scoped() filters project-keyed rows; rows without a project stay.
+      let scoped = <T,>(rows: T[], pid: (row: T) => string | null | undefined): T[] => rows;
+      if (currentRole !== "super_admin" && !pmem.error) {
+        const mine = new Set(
+          memberList.filter((m) => m.userId === user.id).map((m) => m.projectId)
+        );
+        projectList = projectList.filter((p) => mine.has(p.id));
+        scoped = (rows, pid) =>
+          rows.filter((row) => {
+            const id = pid(row);
+            return id ? mine.has(id) : true;
+          });
+      }
+
       setData({
         loading: false,
         source: "supabase",
         orgId,
         currentUserId: user.id,
-        projects: ((proj.data as ProjectRow[] | null) ?? []).map(mapProject),
+        currentRole,
+        projectMembers: memberList,
+        projects: projectList,
         addedProjects: [],
         clients: ((cli.data as ClientRow[] | null) ?? []).map(mapClient),
         users: ((prof.data as UserRow[] | null) ?? []).map(mapUser),
-        tasks: ((tsk.data as TaskRow[] | null) ?? []).map(mapTask),
-        dprs: dprList,
-        instructions: ((ins.data as InstructionRow[] | null) ?? []).map(mapInstruction),
-        transactions: ((txn.data as TransactionRow[] | null) ?? []).map(mapTransaction),
-        expenses: ((exp.data as ExpenseRow[] | null) ?? []).map(mapExpense),
-        invoices: ((inv.data as InvoiceRow[] | null) ?? []).map(mapInvoice),
-        attendance: ((att.data as AttendanceRow[] | null) ?? []).map(mapAttendance),
+        tasks: scoped(((tsk.data as TaskRow[] | null) ?? []).map(mapTask), (t) => t.projectId),
+        dprs: scoped(dprList, (d) => d.projectId),
+        instructions: scoped(
+          ((ins.data as InstructionRow[] | null) ?? []).map(mapInstruction), (s) => s.projectId),
+        transactions: scoped(
+          ((txn.data as TransactionRow[] | null) ?? []).map(mapTransaction), (t) => t.projectId),
+        expenses: scoped(
+          ((exp.data as ExpenseRow[] | null) ?? []).map(mapExpense), (e) => e.projectId),
+        invoices: scoped(
+          ((inv.data as InvoiceRow[] | null) ?? []).map(mapInvoice), (i) => i.projectId),
+        attendance: scoped(
+          ((att.data as AttendanceRow[] | null) ?? []).map(mapAttendance), (a) => a.projectId),
         expenseCategories: (cat.data as CodeOption[] | null)?.length ? (cat.data as CodeOption[]) : DEFAULT_EXPENSE_CATEGORIES,
         costCodes: (cc.data as CodeOption[] | null)?.length ? (cc.data as CodeOption[]) : DEFAULT_COST_CODES,
       });
@@ -654,6 +708,73 @@ export function ProjectStoreProvider({ children }: { children: React.ReactNode }
     [data.orgId, patch]
   );
 
+  /* ---------------- team assignment (super admin only) ---------------- */
+
+  const addProjectMember = React.useCallback(
+    async (projectId: string, userId: string, role: Role): Promise<string | null> => {
+      const upsert = (prev: StoreData, member: ProjectMember): StoreData => ({
+        ...prev,
+        projectMembers: [
+          ...prev.projectMembers.filter(
+            (m) => !(m.projectId === projectId && m.userId === userId)
+          ),
+          member,
+        ],
+      });
+      if (!live()) {
+        patch((prev) => upsert(prev, { id: genId("pmem"), projectId, userId, role }));
+        return null;
+      }
+      const res = await addProjectMemberAction(projectId, userId, role);
+      if (res.error) return res.error;
+      patch((prev) => upsert(prev, { id: res.id ?? genId("pmem"), projectId, userId, role }));
+      return null;
+    },
+    // data.orgId keeps live() fresh once the Supabase load settles (same as the
+    // other mutations) — with [patch] alone the closure would pin the EMPTY state.
+    [data.orgId, patch]
+  );
+
+  const setProjectMemberRole = React.useCallback(
+    async (projectId: string, userId: string, role: Role): Promise<string | null> => {
+      const apply = (prev: StoreData): StoreData => ({
+        ...prev,
+        projectMembers: prev.projectMembers.map((m) =>
+          m.projectId === projectId && m.userId === userId ? { ...m, role } : m
+        ),
+      });
+      if (!live()) {
+        patch(apply);
+        return null;
+      }
+      const res = await setProjectMemberRoleAction(projectId, userId, role);
+      if (res.error) return res.error;
+      patch(apply);
+      return null;
+    },
+    [data.orgId, patch]
+  );
+
+  const removeProjectMember = React.useCallback(
+    async (projectId: string, userId: string): Promise<string | null> => {
+      const apply = (prev: StoreData): StoreData => ({
+        ...prev,
+        projectMembers: prev.projectMembers.filter(
+          (m) => !(m.projectId === projectId && m.userId === userId)
+        ),
+      });
+      if (!live()) {
+        patch(apply);
+        return null;
+      }
+      const res = await removeProjectMemberAction(projectId, userId);
+      if (res.error) return res.error;
+      patch(apply);
+      return null;
+    },
+    [data.orgId, patch]
+  );
+
   const value = React.useMemo<StoreValue>(
     () => ({
       ...data,
@@ -667,6 +788,9 @@ export function ProjectStoreProvider({ children }: { children: React.ReactNode }
       addInvoice,
       recordPayment,
       addAttendance,
+      addProjectMember,
+      setProjectMemberRole,
+      removeProjectMember,
     }),
     [
       data,
@@ -680,6 +804,9 @@ export function ProjectStoreProvider({ children }: { children: React.ReactNode }
       addInvoice,
       recordPayment,
       addAttendance,
+      addProjectMember,
+      setProjectMemberRole,
+      removeProjectMember,
     ]
   );
 
@@ -756,10 +883,25 @@ export function useProjectAttendance(projectId: string) {
     .slice(-7);
 }
 
-/** Resolve a project by id from the store (Supabase), falling back to mock. */
+/** Resolve a project by id from the store; the mock fallback only applies in
+ *  mock mode so scoped-out projects can't resurface from seed data. */
 export function useProject(projectId: string): Project | null {
-  const { projects } = useStore();
-  return projects.find((p) => p.id === projectId) ?? getMockProject(projectId) ?? null;
+  const { projects, source } = useStore();
+  return (
+    projects.find((p) => p.id === projectId) ??
+    (source === "mock" ? (getMockProject(projectId) ?? null) : null)
+  );
+}
+
+/** Roster of one project, joined with user profiles for display. */
+export function useProjectTeam(projectId: string) {
+  const { projectMembers, users } = useStore();
+  return projectMembers
+    .filter((m) => m.projectId === projectId)
+    .map((member) => ({
+      member,
+      user: users.find((u) => u.id === member.userId) ?? null,
+    }));
 }
 
 /** Back-compat alias — resolves user-created (and now all) projects by id. */

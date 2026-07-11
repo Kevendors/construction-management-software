@@ -4,6 +4,7 @@ import type { Project, Transaction } from "@/lib/types";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createClient as createSupabase } from "@/lib/supabase/server";
 import { mapProject, mapTransaction, type ProjectRow, type TransactionRow } from "./mappers";
+import { filterByProjectIds, getVisibleProjectIds } from "./team";
 
 // mock fallback
 import { projects as mockProjects, transactions as mockTxns } from "@/lib/mock/data";
@@ -34,8 +35,12 @@ export async function getTransactionsLedger(): Promise<TransactionsLedger> {
     ]);
     if (t.error) throw t.error;
     if (p.error) throw p.error;
-    transactions = (t.data as TransactionRow[]).map(mapTransaction);
-    projects = (p.data as ProjectRow[]).map(mapProject);
+    // Scope to assigned projects for non-admins (0010 mirrors in RLS).
+    const visible = await getVisibleProjectIds();
+    transactions = filterByProjectIds(
+      (t.data as TransactionRow[]).map(mapTransaction), visible, (x) => x.projectId);
+    projects = filterByProjectIds(
+      (p.data as ProjectRow[]).map(mapProject), visible, (x) => x.id);
   }
 
   const projectById = new Map(projects.map((p) => [p.id, p]));

@@ -18,6 +18,7 @@ import type {
   MaterialUsage,
   Project,
   ProjectFile,
+  ProjectMember,
   PurchaseBooking,
   PurchaseOrder,
   Quotation,
@@ -49,6 +50,25 @@ export const users: User[] = [
 ];
 
 export const currentUser = users[0];
+
+/* ------------------------------------------------------------------ */
+/* Project team assignments (super admin assigns any role per project) */
+/* ------------------------------------------------------------------ */
+
+export const projectMembers: ProjectMember[] = [
+  // Priya (PM) runs all four projects — mirrors each project's pmId
+  { id: "pmem1", projectId: "p1", userId: "u2", role: "pm" },
+  { id: "pmem2", projectId: "p2", userId: "u2", role: "pm" },
+  { id: "pmem3", projectId: "p3", userId: "u2", role: "pm" },
+  { id: "pmem4", projectId: "p4", userId: "u2", role: "pm" },
+  // site team
+  { id: "pmem5", projectId: "p1", userId: "u3", role: "architect" },
+  { id: "pmem6", projectId: "p1", userId: "u4", role: "engineer" },
+  { id: "pmem7", projectId: "p2", userId: "u5", role: "engineer" },
+  { id: "pmem8", projectId: "p3", userId: "u4", role: "engineer" },
+  // finance
+  { id: "pmem9", projectId: "p2", userId: "u6", role: "accountant" },
+];
 
 /* ------------------------------------------------------------------ */
 /* Clients                                                             */

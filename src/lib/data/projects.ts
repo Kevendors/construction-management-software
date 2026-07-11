@@ -5,6 +5,7 @@ import type { ProjectPnL } from "@/lib/mock/selectors";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createClient as createSupabase } from "@/lib/supabase/server";
 import { computeProjectPnL, computeTaskCompletion, computeTaskCounts } from "./compute";
+import { filterByProjectIds, getVisibleProjectIds } from "./team";
 import {
   mapBoq,
   mapClient,
@@ -74,7 +75,15 @@ export async function getProjectsOverview(): Promise<ProjectOverview[]> {
   const boqs = (boqsRes.data as BoqRow[]).map(mapBoq);
   const tasks = (tasksRes.data as TaskRow[]).map(mapTask);
 
-  return (projectsRes.data as ProjectRow[]).map(mapProject).map((project) => {
+  // Non-super-admins only see projects they're assigned to (0010 mirrors in RLS).
+  const visible = await getVisibleProjectIds();
+  const visibleProjects = filterByProjectIds(
+    (projectsRes.data as ProjectRow[]).map(mapProject),
+    visible,
+    (p) => p.id
+  );
+
+  return visibleProjects.map((project) => {
     const client = clients.find((c) => c.id === project.clientId) ?? null;
     const boq = boqs.find((b) => b.projectId === project.id) ?? null;
     const projectTasks = tasks.filter((t) => t.projectId === project.id);

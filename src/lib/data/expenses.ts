@@ -5,6 +5,7 @@ import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createClient as createSupabase } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { mapProject, mapUser, type ProjectRow, type UserRow } from "./mappers";
+import { filterByProjectIds, getVisibleProjectIds } from "./team";
 
 const BILL_BUCKET = "expense-bills";
 
@@ -123,10 +124,14 @@ export async function getExpensesBoard(): Promise<ExpensesBoard> {
   const categories =
     cat.error || !cat.data?.length ? DEFAULT_CATEGORIES : (cat.data as ExpenseCategoryOption[]);
 
+  // Scope to assigned projects for non-admins; unallocated rows stay visible.
+  const visible = await getVisibleProjectIds();
   return {
-    expenses,
-    ledger: (lg.data as LedgerRow[]).map(mapLedger),
-    projects: (pr.data as ProjectRow[]).map(mapProject),
+    expenses: filterByProjectIds(expenses, visible, (x) => x.projectId),
+    ledger: filterByProjectIds(
+      (lg.data as LedgerRow[]).map(mapLedger), visible, (x) => x.projectId),
+    projects: filterByProjectIds(
+      (pr.data as ProjectRow[]).map(mapProject), visible, (x) => x.id),
     users: (us.data as UserRow[]).map(mapUser),
     categories,
   };

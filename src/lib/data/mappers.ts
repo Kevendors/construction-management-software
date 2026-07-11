@@ -16,6 +16,7 @@ import type {
   MaterialUsage,
   PoItem,
   Project,
+  ProjectMember,
   PurchaseOrder,
   Quotation,
   RaBill,
@@ -261,6 +262,20 @@ export const mapDrawing = (r: DrawingRow): Drawing => ({
   versions: (r.drawing_versions ?? [])
     .map(mapDrawingVersion)
     .sort((a, b) => +new Date(a.date) - +new Date(b.date)),
+});
+
+export interface ProjectMemberRow {
+  id: string;
+  project_id: string;
+  user_id: string;
+  role: ProjectMember["role"];
+}
+
+export const mapProjectMember = (r: ProjectMemberRow): ProjectMember => ({
+  id: r.id,
+  projectId: r.project_id,
+  userId: r.user_id,
+  role: r.role,
 });
 
 export interface UserRow {

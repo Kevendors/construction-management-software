@@ -247,6 +247,12 @@ insert into equipment (org_id, code, name, kind, ownership, status, project_id, 
 -- ----------------------------------------------------------------------------
 -- After signup, link yourself to the org so RLS lets you read the above:
 --   insert into memberships (org_id, user_id, role)
---   values (md5('org:charu')::uuid, auth.uid(), 'admin');
--- (run while authenticated, or substitute your profiles.id for auth.uid()).
+--   values (md5('org:charu')::uuid, auth.uid(), 'super_admin');
+-- (run while authenticated, or substitute your profiles.id for auth.uid();
+--  'super_admin' needs 0008_roles_enum.sql — use 'admin' on the base enum).
+--
+-- Non-super-admins only see projects they are assigned to (0010). Assign via
+-- the project's Team tab, or by hand:
+--   insert into project_members (org_id, project_id, user_id, role)
+--   values (md5('org:charu')::uuid, md5('project:p1')::uuid, <profiles.id>, 'engineer');
 -- ----------------------------------------------------------------------------

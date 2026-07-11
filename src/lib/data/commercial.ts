@@ -13,6 +13,7 @@ import {
   type ProjectRow,
   type QuotationRow,
 } from "./mappers";
+import { filterByProjectIds, getVisibleProjectIds } from "./team";
 
 // mock fallback
 import {
@@ -73,7 +74,14 @@ export async function getInvoicesView(): Promise<InvoiceView[]> {
   if (p.error) throw p.error;
   const clients = (c.data as ClientRow[]).map(mapClient);
   const projects = (p.data as ProjectRow[]).map(mapProject);
-  return (i.data as InvoiceRow[]).map(mapInvoice).map((invoice) => ({
+  // Project-linked invoices are scoped to assigned projects for non-admins;
+  // invoices without a project stay visible to the role group.
+  const visible = await getVisibleProjectIds();
+  return filterByProjectIds(
+    (i.data as InvoiceRow[]).map(mapInvoice),
+    visible,
+    (x) => x.projectId
+  ).map((invoice) => ({
     invoice,
     client: clients.find((x) => x.id === invoice.clientId) ?? null,
     project: projects.find((x) => x.id === invoice.projectId) ?? null,

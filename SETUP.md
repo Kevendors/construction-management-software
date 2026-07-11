@@ -128,3 +128,28 @@ Remaining:
    `supervisor_id`, author/approver, attendance authors, …) that seed cleanly
    only once real users exist, so do them after the auth/sign-in step.
 8. Add `middleware.ts` for Supabase Auth session refresh + a sign-in flow.
+
+## Project team assignment & scoped visibility (migrations 0008–0010)
+
+The super admin assigns users (any of the 11 roles) to projects from each
+project's **Team** tab; non-super-admins then only see the projects they're
+assigned to (lists, dashboards, tasks, expenses, transactions, invoices,
+design). Apply on a live DB **in this order**:
+
+1. `0008_roles_enum.sql` — extends the `role` enum (super_admin, supervisor,
+   hr, staff, viewer) + `memberships.is_active`. Run alone: new enum values
+   can't be *used* in the transaction that adds them.
+2. `0009_project_members.sql` — `project_members` table + RLS (writes =
+   super_admin only), `is_project_member()` helper, auto-enrol trigger on
+   project insert, and a backfill that makes every project's `pm_id` a member.
+3. **Deploy the app**, then have the super admin fill each project's Team tab.
+4. `0010_project_scoped_visibility.sql` — flips RLS so non-super-admins only
+   read rows for assigned projects, and re-filters `list_org_projects()`
+   (security definer, so it must filter itself). Applying this last avoids
+   locking out users who haven't been assigned yet (PMs are covered by the
+   0009 backfill).
+
+Until 0009/0010 are applied the app degrades gracefully: the client store and
+server data layer treat a missing `project_members` table as "org-wide
+visibility" (today's behavior). Material/subcon/equipment/notifications and
+item child tables (boq_items, …) stay org-scoped by role — follow-up.

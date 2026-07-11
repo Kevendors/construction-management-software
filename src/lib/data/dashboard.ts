@@ -34,6 +34,7 @@ import {
   type TaskRow,
   type TransactionRow,
 } from "./mappers";
+import { filterByProjectIds, getVisibleProjectIds } from "./team";
 
 // mock fallback
 import {
@@ -76,13 +77,22 @@ async function loadPortfolio(): Promise<Portfolio> {
     supabase.from("tasks").select("*"),
   ]);
   for (const res of [p, c, t, i, b, tk]) if (res.error) throw res.error;
+
+  // Non-super-admins only aggregate the projects they're assigned to.
+  // (RLS in migration 0010 enforces the same rule server-side.)
+  const visible = await getVisibleProjectIds();
   return {
-    projects: (p.data as ProjectRow[]).map(mapProject),
+    projects: filterByProjectIds(
+      (p.data as ProjectRow[]).map(mapProject), visible, (x) => x.id),
     clients: (c.data as ClientRow[]).map(mapClient),
-    transactions: (t.data as TransactionRow[]).map(mapTransaction),
-    invoices: (i.data as InvoiceRow[]).map(mapInvoice),
-    boqs: (b.data as BoqRow[]).map(mapBoq),
-    tasks: (tk.data as TaskRow[]).map(mapTask),
+    transactions: filterByProjectIds(
+      (t.data as TransactionRow[]).map(mapTransaction), visible, (x) => x.projectId),
+    invoices: filterByProjectIds(
+      (i.data as InvoiceRow[]).map(mapInvoice), visible, (x) => x.projectId),
+    boqs: filterByProjectIds(
+      (b.data as BoqRow[]).map(mapBoq), visible, (x) => x.projectId),
+    tasks: filterByProjectIds(
+      (tk.data as TaskRow[]).map(mapTask), visible, (x) => x.projectId),
   };
 }
 

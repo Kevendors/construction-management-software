@@ -66,6 +66,14 @@ export interface Project {
   pmId: string;
 }
 
+/** A user's assignment to a single project (drives per-project visibility). */
+export interface ProjectMember {
+  id: string;
+  projectId: string;
+  userId: string;
+  role: Role;
+}
+
 export interface Task {
   id: string;
   projectId: string;
