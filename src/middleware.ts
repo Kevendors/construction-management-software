@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
-import { canAccess, landingPath, pathModule } from "@/lib/auth/permissions";
+import { canAccess, canReachMaterial, landingPath, pathModule } from "@/lib/auth/permissions";
 import type { Role } from "@/lib/types";
 
 /**
@@ -49,10 +49,12 @@ export async function middleware(request: NextRequest) {
     // Resolve role once to drive post-login landing + route guards.
     const { data: m } = await supabase
       .from("memberships")
-      .select("role")
+      .select("role, can_view_purchase_orders")
       .eq("user_id", user.id)
       .maybeSingle();
     const role = (m?.role as Role | undefined) ?? null;
+    const canViewPurchaseOrders =
+      role === "super_admin" || Boolean(m?.can_view_purchase_orders);
 
     // Signed-in users leaving /login go to their role's landing page.
     if (path === "/login") {
@@ -62,13 +64,20 @@ export async function middleware(request: NextRequest) {
     }
 
     // Bounce to the landing page if the role can't access this module.
+    // Material is also reachable by an explicit Purchase Orders grant.
     const module = pathModule(path);
-    if (module && role && !canAccess(role, module)) {
-      const dest = landingPath(role);
-      if (dest !== path) {
-        const redirect = request.nextUrl.clone();
-        redirect.pathname = dest;
-        return NextResponse.redirect(redirect);
+    if (module && role) {
+      const allowed =
+        module === "material"
+          ? canReachMaterial(role, canViewPurchaseOrders)
+          : canAccess(role, module);
+      if (!allowed) {
+        const dest = landingPath(role);
+        if (dest !== path) {
+          const redirect = request.nextUrl.clone();
+          redirect.pathname = dest;
+          return NextResponse.redirect(redirect);
+        }
       }
     }
   }

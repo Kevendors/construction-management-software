@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { HardHat, X } from "lucide-react";
 import { navSections } from "@/lib/nav";
-import { canAccess } from "@/lib/auth/permissions";
+import { canAccess, canReachMaterial } from "@/lib/auth/permissions";
 import { useRole } from "./role-provider";
 import { cn } from "@/lib/utils";
 
@@ -16,16 +16,21 @@ export function Sidebar({
   onClose: () => void;
 }) {
   const pathname = usePathname();
-  const { role, loading } = useRole();
+  const { role, loading, canViewPurchaseOrders } = useRole();
 
   const isActive = (href: string) =>
     href === "/" ? pathname === "/" : pathname.startsWith(href);
 
   // Show only the modules this role may access (empty sections drop out).
+  // Material also appears for users with an explicit Purchase Orders grant.
+  const canSee = (module: (typeof navSections)[number]["items"][number]["module"]) =>
+    module === "material"
+      ? canReachMaterial(role, canViewPurchaseOrders)
+      : canAccess(role, module);
   const sections = loading
     ? []
     : navSections
-        .map((s) => ({ ...s, items: s.items.filter((i) => canAccess(role, i.module)) }))
+        .map((s) => ({ ...s, items: s.items.filter((i) => canSee(i.module)) }))
         .filter((s) => s.items.length > 0);
 
   return (

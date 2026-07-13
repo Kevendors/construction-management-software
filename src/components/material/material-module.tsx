@@ -10,13 +10,19 @@ import { PurchaseOrdersTab } from "./purchase-orders-tab";
 import { SuppliersTab } from "./suppliers-tab";
 import { UsageTab } from "./usage-tab";
 import { useRole } from "@/components/layout/role-provider";
+import { canAccess } from "@/lib/auth/permissions";
 import { isLowStock } from "@/lib/data/compute";
 import type { MaterialBoard } from "@/lib/data/material";
 
 export function MaterialModule({ board }: { board: MaterialBoard }) {
-  // Purchase Orders are an explicit Super-Admin grant — hide the tab entirely
-  // for users without it (RLS already returns no PO rows to them).
-  const { canViewPurchaseOrders } = useRole();
+  const { role, canViewPurchaseOrders } = useRole();
+  // Full material access is role-based (super_admin, pm). A user who reaches
+  // this page only through an explicit Purchase Orders grant sees just the PO
+  // tab — not inventory/suppliers/usage their role isn't meant to see.
+  const hasFullMaterial = canAccess(role, "material");
+  const poOnly = !hasFullMaterial; // guaranteed here via the PO grant
+  const showPoTab = canViewPurchaseOrders;
+
   const lowStock = board.items.filter(isLowStock).length;
   const openPOs = board.purchaseOrders.filter((p) => p.status === "draft" || p.status === "sent").length;
   const pendingReqs = board.requests.filter((r) => r.status === "pending").length;
@@ -24,44 +30,62 @@ export function MaterialModule({ board }: { board: MaterialBoard }) {
   return (
     <>
       <PageHeader
-        title="Material Management"
-        description="Warehouse inventory, site requests, purchase orders & usage"
+        title={poOnly ? "Purchase Orders" : "Material Management"}
+        description={
+          poOnly
+            ? "Purchase orders you have been granted access to"
+            : "Warehouse inventory, site requests, purchase orders & usage"
+        }
       />
 
       <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard label="Material Items" value={String(board.items.length)} icon={Boxes} accent="primary" />
-        <StatCard label="Low Stock" value={String(lowStock)} icon={AlertTriangle} accent="destructive" />
-        {canViewPurchaseOrders && (
+        {!poOnly && (
+          <>
+            <StatCard label="Material Items" value={String(board.items.length)} icon={Boxes} accent="primary" />
+            <StatCard label="Low Stock" value={String(lowStock)} icon={AlertTriangle} accent="destructive" />
+          </>
+        )}
+        {showPoTab && (
           <StatCard label="Open POs" value={String(openPOs)} icon={ShoppingCart} accent="info" />
         )}
-        <StatCard label="Pending Requests" value={String(pendingReqs)} icon={ClipboardList} accent="accent" />
+        {!poOnly && (
+          <StatCard label="Pending Requests" value={String(pendingReqs)} icon={ClipboardList} accent="accent" />
+        )}
       </div>
 
-      <Tabs defaultValue="inventory">
+      <Tabs defaultValue={poOnly ? "po" : "inventory"}>
         <TabsList>
-          <TabsTrigger value="inventory">Inventory</TabsTrigger>
-          <TabsTrigger value="requests">Requests</TabsTrigger>
-          {canViewPurchaseOrders && <TabsTrigger value="po">Purchase Orders</TabsTrigger>}
-          <TabsTrigger value="suppliers">Suppliers</TabsTrigger>
-          <TabsTrigger value="usage">Usage</TabsTrigger>
+          {!poOnly && <TabsTrigger value="inventory">Inventory</TabsTrigger>}
+          {!poOnly && <TabsTrigger value="requests">Requests</TabsTrigger>}
+          {showPoTab && <TabsTrigger value="po">Purchase Orders</TabsTrigger>}
+          {!poOnly && <TabsTrigger value="suppliers">Suppliers</TabsTrigger>}
+          {!poOnly && <TabsTrigger value="usage">Usage</TabsTrigger>}
         </TabsList>
-        <TabsContent value="inventory">
-          <InventoryTab board={board} />
-        </TabsContent>
-        <TabsContent value="requests">
-          <RequestsTab board={board} />
-        </TabsContent>
-        {canViewPurchaseOrders && (
+        {!poOnly && (
+          <TabsContent value="inventory">
+            <InventoryTab board={board} />
+          </TabsContent>
+        )}
+        {!poOnly && (
+          <TabsContent value="requests">
+            <RequestsTab board={board} />
+          </TabsContent>
+        )}
+        {showPoTab && (
           <TabsContent value="po">
             <PurchaseOrdersTab board={board} />
           </TabsContent>
         )}
-        <TabsContent value="suppliers">
-          <SuppliersTab board={board} />
-        </TabsContent>
-        <TabsContent value="usage">
-          <UsageTab board={board} />
-        </TabsContent>
+        {!poOnly && (
+          <TabsContent value="suppliers">
+            <SuppliersTab board={board} />
+          </TabsContent>
+        )}
+        {!poOnly && (
+          <TabsContent value="usage">
+            <UsageTab board={board} />
+          </TabsContent>
+        )}
       </Tabs>
     </>
   );

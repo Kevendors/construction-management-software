@@ -48,6 +48,17 @@ export function canAccess(role: Role | null | undefined, module: ModuleKey): boo
   return (ROLE_MODULES[role] ?? []).includes(module);
 }
 
+/**
+ * The Material page is reachable either by role OR by an explicit Purchase
+ * Orders grant. A grant-only user lands there to see just the PO tab.
+ */
+export function canReachMaterial(
+  role: Role | null | undefined,
+  canViewPurchaseOrders: boolean
+): boolean {
+  return canAccess(role, "material") || canViewPurchaseOrders;
+}
+
 /** Canonical route for each module (used for redirects). */
 export const MODULE_ROUTES: Record<ModuleKey, string> = {
   dashboard: "/",
