@@ -134,20 +134,25 @@ Remaining:
 The super admin assigns users (any of the 11 roles) to projects from each
 project's **Team** tab; non-super-admins then only see the projects they're
 assigned to (lists, dashboards, tasks, expenses, transactions, invoices,
-design). Apply on a live DB **in this order**:
+design). **Assignment is always manual and super_admin-only** — creating a
+project, setting its `pm_id`, or anything else never adds anyone to a roster
+(a PM who creates a project won't see it until the super admin assigns them).
+Apply on a live DB **in this order**:
 
 1. `0008_roles_enum.sql` — extends the `role` enum (super_admin, supervisor,
    hr, staff, viewer) + `memberships.is_active`. Run alone: new enum values
    can't be *used* in the transaction that adds them.
 2. `0009_project_members.sql` — `project_members` table + RLS (writes =
-   super_admin only), `is_project_member()` helper, auto-enrol trigger on
-   project insert, and a backfill that makes every project's `pm_id` a member.
-3. **Deploy the app**, then have the super admin fill each project's Team tab.
+   super_admin only) and the `is_project_member()` helper.
+3. **Deploy the app**, then have the super admin fill each project's Team tab
+   — including every PM: nobody is enrolled automatically.
 4. `0010_project_scoped_visibility.sql` — flips RLS so non-super-admins only
    read rows for assigned projects, and re-filters `list_org_projects()`
    (security definer, so it must filter itself). Applying this last avoids
-   locking out users who haven't been assigned yet (PMs are covered by the
-   0009 backfill).
+   locking out users who haven't been assigned yet.
+5. `0011_remove_auto_assignment.sql` — only needed on DBs that ran the earlier
+   revision of 0009 (which auto-enrolled the PM/creator via a trigger): drops
+   that trigger. Harmless no-op elsewhere.
 
 Until 0009/0010 are applied the app degrades gracefully: the client store and
 server data layer treat a missing `project_members` table as "org-wide

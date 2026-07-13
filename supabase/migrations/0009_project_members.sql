@@ -3,6 +3,11 @@
 -- Super admin assigns users (any role) to projects; 0010 then scopes
 -- non-admin visibility to assigned projects. Requires 0008 (enum values).
 -- Safe to re-run (idempotent).
+--
+-- Assignment is ALWAYS manual and super_admin-only (pmem_write). No triggers,
+-- no backfills: creating a project or setting its pm_id does NOT put anyone on
+-- the roster. (An earlier revision auto-enrolled the PM/creator; 0011 removes
+-- that from DBs that ran it.)
 -- ============================================================================
 
 create table if not exists public.project_members (
@@ -44,38 +49,3 @@ create policy pmem_write on public.project_members for all to authenticated
   using (public.has_role(org_id, array['super_admin']))
   with check (public.has_role(org_id, array['super_admin']));
 
--- Auto-enrol on project creation (security definer bypasses pmem_write, which
--- is super_admin-only): the assigned PM and the creator become members, so a
--- PM who creates a project can still see it once 0010 scopes visibility.
-create or replace function public.handle_project_created()
-returns trigger language plpgsql security definer set search_path = public as $$
-begin
-  if new.pm_id is not null then
-    insert into project_members (org_id, project_id, user_id, role)
-    values (new.org_id, new.id, new.pm_id, 'pm')
-    on conflict (project_id, user_id) do nothing;
-  end if;
-  if auth.uid() is not null and auth.uid() is distinct from new.pm_id then
-    insert into project_members (org_id, project_id, user_id, role)
-    select new.org_id, new.id, auth.uid(), m.role
-    from memberships m
-    where m.org_id = new.org_id and m.user_id = auth.uid()
-    on conflict (project_id, user_id) do nothing;
-  end if;
-  return new;
-end;
-$$;
-
-drop trigger if exists on_project_created on public.projects;
-create trigger on_project_created
-  after insert on public.projects
-  for each row execute function public.handle_project_created();
-
--- Backfill: every existing project's PM becomes a project member, so nobody
--- who runs projects today loses visibility when 0010 flips enforcement on.
-insert into public.project_members (org_id, project_id, user_id, role)
-select p.org_id, p.id, p.pm_id, 'pm'::role
-from public.projects p
-where p.pm_id is not null
-  and exists (select 1 from public.profiles pr where pr.id = p.pm_id)
-on conflict (project_id, user_id) do nothing;

@@ -5,9 +5,9 @@
 -- on top. Write policies are untouched.
 --
 -- APPLY LAST: run 0008 + 0009 first, deploy the app, let the super admin
--- populate each project's Team tab, and only then apply this file —
--- otherwise unassigned users lose access abruptly (PMs are covered by the
--- 0009 pm_id backfill). Safe to re-run (idempotent).
+-- populate each project's Team tab (including PMs — nobody is enrolled
+-- automatically), and only then apply this file — otherwise unassigned
+-- users lose access abruptly. Safe to re-run (idempotent).
 -- ============================================================================
 
 -- ── projects: super_admin sees all; others need site-read role AND membership
