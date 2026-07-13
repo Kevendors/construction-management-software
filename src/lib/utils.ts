@@ -5,6 +5,14 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+/** Up-to-two-letter initials from a display name (fallback for empty avatars). */
+export function initialsOf(name: string | null | undefined): string {
+  const parts = (name ?? "").trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  const letters = (parts[0][0] ?? "") + (parts.length > 1 ? parts[parts.length - 1][0] : "");
+  return letters.toUpperCase() || "?";
+}
+
 /** Format a number as INR currency. */
 export function formatINR(value: number, opts: { compact?: boolean } = {}) {
   if (opts.compact) {

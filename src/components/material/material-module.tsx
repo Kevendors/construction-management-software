@@ -9,10 +9,14 @@ import { RequestsTab } from "./requests-tab";
 import { PurchaseOrdersTab } from "./purchase-orders-tab";
 import { SuppliersTab } from "./suppliers-tab";
 import { UsageTab } from "./usage-tab";
+import { useRole } from "@/components/layout/role-provider";
 import { isLowStock } from "@/lib/data/compute";
 import type { MaterialBoard } from "@/lib/data/material";
 
 export function MaterialModule({ board }: { board: MaterialBoard }) {
+  // Purchase Orders are an explicit Super-Admin grant — hide the tab entirely
+  // for users without it (RLS already returns no PO rows to them).
+  const { canViewPurchaseOrders } = useRole();
   const lowStock = board.items.filter(isLowStock).length;
   const openPOs = board.purchaseOrders.filter((p) => p.status === "draft" || p.status === "sent").length;
   const pendingReqs = board.requests.filter((r) => r.status === "pending").length;
@@ -27,7 +31,9 @@ export function MaterialModule({ board }: { board: MaterialBoard }) {
       <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard label="Material Items" value={String(board.items.length)} icon={Boxes} accent="primary" />
         <StatCard label="Low Stock" value={String(lowStock)} icon={AlertTriangle} accent="destructive" />
-        <StatCard label="Open POs" value={String(openPOs)} icon={ShoppingCart} accent="info" />
+        {canViewPurchaseOrders && (
+          <StatCard label="Open POs" value={String(openPOs)} icon={ShoppingCart} accent="info" />
+        )}
         <StatCard label="Pending Requests" value={String(pendingReqs)} icon={ClipboardList} accent="accent" />
       </div>
 
@@ -35,7 +41,7 @@ export function MaterialModule({ board }: { board: MaterialBoard }) {
         <TabsList>
           <TabsTrigger value="inventory">Inventory</TabsTrigger>
           <TabsTrigger value="requests">Requests</TabsTrigger>
-          <TabsTrigger value="po">Purchase Orders</TabsTrigger>
+          {canViewPurchaseOrders && <TabsTrigger value="po">Purchase Orders</TabsTrigger>}
           <TabsTrigger value="suppliers">Suppliers</TabsTrigger>
           <TabsTrigger value="usage">Usage</TabsTrigger>
         </TabsList>
@@ -45,9 +51,11 @@ export function MaterialModule({ board }: { board: MaterialBoard }) {
         <TabsContent value="requests">
           <RequestsTab board={board} />
         </TabsContent>
-        <TabsContent value="po">
-          <PurchaseOrdersTab board={board} />
-        </TabsContent>
+        {canViewPurchaseOrders && (
+          <TabsContent value="po">
+            <PurchaseOrdersTab board={board} />
+          </TabsContent>
+        )}
         <TabsContent value="suppliers">
           <SuppliersTab board={board} />
         </TabsContent>

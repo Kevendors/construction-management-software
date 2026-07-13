@@ -18,6 +18,7 @@ import {
 import { useRole } from "@/components/layout/role-provider";
 import { useProjectTeam, useStore } from "@/lib/store/project-store";
 import { roleLabel } from "@/lib/labels";
+import { initialsOf } from "@/lib/utils";
 import type { Role, User } from "@/lib/types";
 
 /** Project roles a super admin can assign (full catalog, menu order). */
@@ -161,7 +162,7 @@ export function TeamTab({ projectId }: { projectId: string }) {
                   <TableCell>
                     <div className="flex items-center gap-2">
                       <Avatar
-                        initials={user?.initials || "?"}
+                        initials={user?.initials || initialsOf(user?.name)}
                         color={user?.avatarColor ?? "#1e3a5f"}
                         className="h-7 w-7 text-[10px]"
                       />
