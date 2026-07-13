@@ -19,8 +19,8 @@ import {
   ProjectStoreProvider,
   useClients,
   useProject,
+  useProjectTeam,
   useStore,
-  useUser,
 } from "@/lib/store/project-store";
 import { projectStatusMeta } from "@/lib/labels";
 import { formatINR } from "@/lib/utils";
@@ -39,7 +39,10 @@ function ProjectDetailInner({ projectId }: { projectId: string }) {
   const { loading } = useStore();
   const project = useProject(projectId);
   const clients = useClients();
-  const pm = useUser(project?.pmId ?? null);
+  // The Team tab roster is the source of truth for people on a project —
+  // show its Project Manager, not the legacy projects.pm_id label.
+  const team = useProjectTeam(projectId);
+  const pm = team.find((t) => t.member.role === "pm")?.user ?? null;
   const alerts = useProjectAlerts(projectId);
   const highCount = alerts.filter((a) => a.severity === "high").length;
   const { role } = useRole();

@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Input, Label } from "@/components/ui/input";
 import { Dialog, Select } from "@/components/ui/dialog";
-import { useClients, useStore, useUsers } from "@/lib/store/project-store";
+import { useClients, useStore } from "@/lib/store/project-store";
 import { useRole } from "@/components/layout/role-provider";
 import { projectStatusMeta } from "@/lib/labels";
 import { formatINR } from "@/lib/utils";
@@ -112,7 +112,6 @@ function NewProjectDialog({
 }) {
   const { addProject } = useStore();
   const clients = useClients();
-  const users = useUsers();
   const router = useRouter();
   const today = new Date().toISOString().slice(0, 10);
   const nextYear = new Date(Date.now() + 365 * 86400000).toISOString().slice(0, 10);
@@ -125,20 +124,18 @@ function NewProjectDialog({
   const [location, setLocation] = React.useState("");
   const [startDate, setStartDate] = React.useState(today);
   const [endDate, setEndDate] = React.useState(nextYear);
-  const [pmId, setPmId] = React.useState("");
 
   React.useEffect(() => {
     if (!open) return;
     setCode(nextCode);
     setClientId((c) => c || clients[0]?.id || "");
-    setPmId((p) => p || users[0]?.id || "");
     if (prefill) {
       setName(prefill.name);
       setValue(String(prefill.value));
       setLocation(prefill.location);
       setStatus("planning");
     }
-  }, [open, nextCode, prefill, clients, users]);
+  }, [open, nextCode, prefill, clients]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -153,7 +150,9 @@ function NewProjectDialog({
       endDate,
       percentComplete: 0,
       location: location.trim() || "—",
-      pmId,
+      // People are put on projects only by the Super Admin via the Team tab —
+      // nothing is assigned at creation.
+      pmId: "",
     });
     onClose();
     if (project) router.push(`/projects/${project.id}`);
@@ -185,27 +184,18 @@ function NewProjectDialog({
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1.5">
-            <Label htmlFor="p-client">Client</Label>
-            <Select id="p-client" value={clientId} onChange={(e) => setClientId(e.target.value)}>
-              {clients.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.company}
-                </option>
-              ))}
-            </Select>
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="p-pm">Project Manager</Label>
-            <Select id="p-pm" value={pmId} onChange={(e) => setPmId(e.target.value)}>
-              {users.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.name}
-                </option>
-              ))}
-            </Select>
-          </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="p-client">Client</Label>
+          <Select id="p-client" value={clientId} onChange={(e) => setClientId(e.target.value)}>
+            {clients.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.company}
+              </option>
+            ))}
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            Assign the team (incl. the PM) after creating — Team tab, Super Admin only.
+          </p>
         </div>
 
         <div className="grid grid-cols-2 gap-3">
