@@ -93,6 +93,27 @@ export async function setMemberRoleAction(userId: string, role: Role): Promise<A
   return { id: userId };
 }
 
+/** Admin-only: grant/revoke a member's access to Purchase Orders. */
+export async function setMemberPoAccessAction(userId: string, canView: boolean): Promise<ActionResult> {
+  const ctx = await getAuthContext();
+  if (!ctx || !isAdminRole(ctx.role)) return { error: "Not authorized." };
+  if (!ctx.orgId) return { error: "No organization found." };
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("memberships")
+    .update({ can_view_purchase_orders: canView })
+    .eq("org_id", ctx.orgId)
+    .eq("user_id", userId);
+  if (error) return { error: error.message };
+  await logActivity({
+    action: "updated",
+    entityType: "member",
+    entityId: userId,
+    summary: canView ? "Granted Purchase Orders access" : "Revoked Purchase Orders access",
+  });
+  return { id: userId };
+}
+
 /** Admin-only: activate/deactivate a member (cannot deactivate yourself). */
 export async function setMemberActiveAction(userId: string, isActive: boolean): Promise<ActionResult> {
   const ctx = await getAuthContext();

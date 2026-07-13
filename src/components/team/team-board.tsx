@@ -21,6 +21,7 @@ import {
 import {
   createMemberAction,
   setMemberActiveAction,
+  setMemberPoAccessAction,
   setMemberRoleAction,
 } from "@/app/team/actions";
 import { roleLabel } from "@/lib/labels";
@@ -33,6 +34,7 @@ export interface TeamMember {
   email: string;
   role: Role;
   isActive: boolean;
+  canViewPurchaseOrders: boolean;
 }
 
 /** Roles an admin can assign (in menu order) — the full catalog. */
@@ -143,6 +145,14 @@ export function TeamBoard({
     else router.refresh();
   }
 
+  async function togglePoAccess(userId: string, next: boolean) {
+    setBusy(userId);
+    const res = await setMemberPoAccessAction(userId, next);
+    setBusy(null);
+    if (res.error) window.alert(res.error);
+    else router.refresh();
+  }
+
   return (
     <>
       <PageHeader
@@ -171,6 +181,7 @@ export function TeamBoard({
                 <TableHead>Member</TableHead>
                 <TableHead>Login</TableHead>
                 <TableHead>Role</TableHead>
+                <TableHead>Purchase Orders</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Action</TableHead>
               </TableRow>
@@ -201,6 +212,21 @@ export function TeamBoard({
                       </Select>
                     </TableCell>
                     <TableCell>
+                      {m.role === "super_admin" ? (
+                        <Badge variant="success">Always</Badge>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant={m.canViewPurchaseOrders ? "default" : "outline"}
+                          disabled={busy === m.userId}
+                          onClick={() => togglePoAccess(m.userId, !m.canViewPurchaseOrders)}
+                          className="h-8"
+                        >
+                          {m.canViewPurchaseOrders ? "Granted" : "No access"}
+                        </Button>
+                      )}
+                    </TableCell>
+                    <TableCell>
                       <Badge variant={m.isActive ? "success" : "muted"}>{m.isActive ? "Active" : "Disabled"}</Badge>
                     </TableCell>
                     <TableCell className="text-right">
@@ -219,7 +245,7 @@ export function TeamBoard({
               })}
               {members.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={5} className="py-10 text-center text-sm text-muted-foreground">
+                  <TableCell colSpan={6} className="py-10 text-center text-sm text-muted-foreground">
                     No members yet — add one with “New Member”.
                   </TableCell>
                 </TableRow>

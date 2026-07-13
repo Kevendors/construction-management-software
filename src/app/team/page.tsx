@@ -30,19 +30,26 @@ export default async function TeamPage() {
   const admin = createAdminClient();
 
   // Tolerate the pre-Migration-A schema (no is_active column) so the page never
-  // crashes; show a banner prompting the migration instead.
+  // crashes; show a banner prompting the migration instead. can_view_purchase_
+  // orders (0013) is loaded when present and defaults to false otherwise.
   let migrationPending = false;
-  let memberships: { user_id: string; role: Role; is_active?: boolean }[] = [];
+  type MemRow = {
+    user_id: string;
+    role: Role;
+    is_active?: boolean;
+    can_view_purchase_orders?: boolean;
+  };
+  let memberships: MemRow[] = [];
   const withActive = await admin
     .from("memberships")
-    .select("user_id, role, is_active")
+    .select("user_id, role, is_active, can_view_purchase_orders")
     .eq("org_id", ctx.orgId);
   if (withActive.error) {
     migrationPending = true;
     const basic = await admin.from("memberships").select("user_id, role").eq("org_id", ctx.orgId);
-    memberships = (basic.data ?? []) as { user_id: string; role: Role }[];
+    memberships = (basic.data ?? []) as MemRow[];
   } else {
-    memberships = (withActive.data ?? []) as { user_id: string; role: Role; is_active: boolean }[];
+    memberships = (withActive.data ?? []) as MemRow[];
   }
 
   const rows = memberships;
@@ -69,6 +76,7 @@ export default async function TeamPage() {
       email: email.endsWith("@sitehub.phone") ? "" : email,
       role: m.role,
       isActive: m.is_active ?? true,
+      canViewPurchaseOrders: m.can_view_purchase_orders ?? false,
     };
   });
 
