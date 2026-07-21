@@ -30,6 +30,8 @@ import type { Role } from "@/lib/types";
 export interface TeamMember {
   userId: string;
   name: string;
+  /** Auto-generated KV001-style ID; empty until migration 0015 is applied. */
+  employeeId: string;
   phone: string;
   email: string;
   role: Role;
@@ -179,6 +181,7 @@ export function TeamBoard({
             <TableHeader>
               <TableRow>
                 <TableHead>Member</TableHead>
+                <TableHead>Employee ID</TableHead>
                 <TableHead>Login</TableHead>
                 <TableHead>Role</TableHead>
                 <TableHead>Purchase Orders</TableHead>
@@ -197,6 +200,7 @@ export function TeamBoard({
                         <span className="font-medium">{m.name}{self && <span className="ml-1 text-xs text-muted-foreground">(you)</span>}</span>
                       </div>
                     </TableCell>
+                    <TableCell className="font-mono text-xs text-muted-foreground">{m.employeeId || "—"}</TableCell>
                     <TableCell className="text-muted-foreground">{m.phone || m.email || "—"}</TableCell>
                     <TableCell>
                       <Select
@@ -245,7 +249,7 @@ export function TeamBoard({
               })}
               {members.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={6} className="py-10 text-center text-sm text-muted-foreground">
+                  <TableCell colSpan={7} className="py-10 text-center text-sm text-muted-foreground">
                     No members yet — add one with “New Member”.
                   </TableCell>
                 </TableRow>

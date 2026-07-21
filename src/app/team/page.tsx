@@ -38,18 +38,28 @@ export default async function TeamPage() {
     role: Role;
     is_active?: boolean;
     can_view_purchase_orders?: boolean;
+    employee_id?: string | null;
   };
   let memberships: MemRow[] = [];
-  const withActive = await admin
+  const withEmployeeId = await admin
     .from("memberships")
-    .select("user_id, role, is_active, can_view_purchase_orders")
+    .select("user_id, role, is_active, can_view_purchase_orders, employee_id")
     .eq("org_id", ctx.orgId);
-  if (withActive.error) {
-    migrationPending = true;
-    const basic = await admin.from("memberships").select("user_id, role").eq("org_id", ctx.orgId);
-    memberships = (basic.data ?? []) as MemRow[];
+  if (!withEmployeeId.error) {
+    memberships = (withEmployeeId.data ?? []) as MemRow[];
   } else {
-    memberships = (withActive.data ?? []) as MemRow[];
+    // employee_id column missing (0015 not applied) — keep is_active/PO display
+    const withActive = await admin
+      .from("memberships")
+      .select("user_id, role, is_active, can_view_purchase_orders")
+      .eq("org_id", ctx.orgId);
+    if (withActive.error) {
+      migrationPending = true;
+      const basic = await admin.from("memberships").select("user_id, role").eq("org_id", ctx.orgId);
+      memberships = (basic.data ?? []) as MemRow[];
+    } else {
+      memberships = (withActive.data ?? []) as MemRow[];
+    }
   }
 
   const rows = memberships;
@@ -77,6 +87,7 @@ export default async function TeamPage() {
       role: m.role,
       isActive: m.is_active ?? true,
       canViewPurchaseOrders: m.can_view_purchase_orders ?? false,
+      employeeId: m.employee_id ?? "",
     };
   });
 

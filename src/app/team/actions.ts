@@ -23,6 +23,32 @@ function phoneAlias(phone: string) {
   return { digits, email: `${digits}@sitehub.phone` };
 }
 
+/** Next sequential Employee ID (KV001, KV002, …) after the highest existing one. */
+function nextEmployeeId(existing: (string | null)[]): string {
+  const max = existing.reduce((m, id) => {
+    const x = /^KV(\d+)$/.exec(id ?? "");
+    return x ? Math.max(m, Number(x[1])) : m;
+  }, 0);
+  return `KV${String(max + 1).padStart(3, "0")}`;
+}
+
+/**
+ * Fetch the org's employee IDs and compute the next one. Returns null when the
+ * employee_id column doesn't exist yet (migration 0015 not applied) so member
+ * creation keeps working pre-migration.
+ */
+async function computeNextEmployeeId(
+  admin: ReturnType<typeof createAdminClient>,
+  orgId: string
+): Promise<string | null> {
+  const { data, error } = await admin
+    .from("memberships")
+    .select("employee_id")
+    .eq("org_id", orgId);
+  if (error) return null;
+  return nextEmployeeId((data ?? []).map((r) => (r as { employee_id: string | null }).employee_id));
+}
+
 export interface NewMemberInput {
   name: string;
   phone: string;
@@ -56,12 +82,31 @@ export async function createMemberAction(input: NewMemberInput): Promise<ActionR
     .from("profiles")
     .upsert({ id: userId, name: input.name.trim(), initials: initialsOf(input.name) }, { onConflict: "id" });
 
-  const { error: mErr } = await admin
-    .from("memberships")
-    .upsert(
-      { org_id: ctx.orgId, user_id: userId, role: input.role, is_active: true },
-      { onConflict: "org_id,user_id" }
-    );
+  type MembershipUpsert = {
+    org_id: string;
+    user_id: string;
+    role: Role;
+    is_active: boolean;
+    employee_id?: string;
+  };
+  const membership: MembershipUpsert = { org_id: ctx.orgId, user_id: userId, role: input.role, is_active: true };
+  const upsertMembership = (row: MembershipUpsert) =>
+    admin.from("memberships").upsert(row, { onConflict: "org_id,user_id" });
+
+  let employeeId = await computeNextEmployeeId(admin, ctx.orgId);
+  let { error: mErr } = await upsertMembership(
+    employeeId ? { ...membership, employee_id: employeeId } : membership
+  );
+  if (mErr && employeeId && mErr.code === "23505") {
+    // Concurrent create took our number — recompute and retry once.
+    employeeId = await computeNextEmployeeId(admin, ctx.orgId);
+    ({ error: mErr } = await upsertMembership(
+      employeeId ? { ...membership, employee_id: employeeId } : membership
+    ));
+  } else if (mErr && employeeId && mErr.code === "42703") {
+    // employee_id column missing (migration 0015 not applied) — insert without it.
+    ({ error: mErr } = await upsertMembership(membership));
+  }
   if (mErr) return { error: mErr.message };
   await logActivity({
     action: "created",
