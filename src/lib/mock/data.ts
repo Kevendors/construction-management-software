@@ -7,6 +7,7 @@ import type {
   Dpr,
   Drawing,
   Employee,
+  EmployeeAttendance,
   Equipment,
   Expense,
   GoodsReceipt,
@@ -134,6 +135,10 @@ export const projects: Project[] = [
     percentComplete: 62,
     location: "Sector 62, Noida",
     pmId: "u2",
+    // Demo geo-fence around the Noida site (Sector 62)
+    geofenceLat: 28.6273,
+    geofenceLng: 77.3714,
+    geofenceRadiusM: 300,
   },
   {
     id: "p2",
@@ -147,6 +152,9 @@ export const projects: Project[] = [
     percentComplete: 81,
     location: "Vasant Kunj, Delhi",
     pmId: "u2",
+    geofenceLat: null,
+    geofenceLng: null,
+    geofenceRadiusM: null,
   },
   {
     id: "p3",
@@ -160,6 +168,9 @@ export const projects: Project[] = [
     percentComplete: 28,
     location: "MG Road, Gurugram",
     pmId: "u2",
+    geofenceLat: null,
+    geofenceLng: null,
+    geofenceRadiusM: null,
   },
   {
     id: "p4",
@@ -173,6 +184,9 @@ export const projects: Project[] = [
     percentComplete: 8,
     location: "Indiranagar, Bengaluru",
     pmId: "u2",
+    geofenceLat: null,
+    geofenceLng: null,
+    geofenceRadiusM: null,
   },
 ];
 
@@ -614,6 +628,69 @@ export const labourAttendance: LabourAttendance[] = [
   { id: "la11", contractorId: "lc2", projectId: "p1", date: "2026-06-13", shift: "first", present: 20, absent: 2, gps: "28.6271, 77.3784" },
   { id: "la12", contractorId: "lc1", projectId: "p1", date: "2026-06-12", shift: "first", present: 38, absent: 10, gps: "28.6270, 77.3786" },
 ];
+
+/* ---------- Employee GPS + selfie attendance (self check-in/out) ---------- */
+/* Generated relative to today so "My Attendance" and the admin board always
+   have current-month data. Deterministic (no Math.random). */
+
+const attendanceIst = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" });
+const attendanceDay = (daysAgo: number) =>
+  attendanceIst.format(new Date(Date.now() - daysAgo * 86400000));
+// minutesFromMidnight must be a whole minutes-of-day value (0–1439) — building
+// the "HH:MM" string by hand instead of via divmod overflows into invalid
+// times like "08:74" once the minute part passes 59.
+const istIsoFromMinutes = (date: string, minutesFromMidnight: number) => {
+  const h = Math.floor(minutesFromMidnight / 60);
+  const m = minutesFromMidnight % 60;
+  return `${date}T${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:00+05:30`;
+};
+
+function buildEmployeeAttendance(): EmployeeAttendance[] {
+  const people = [
+    { userId: "u1", employeeId: "KV001", userName: "Arjun Mehta", projectId: "p1" },
+    { userId: "u2", employeeId: "KV002", userName: "Priya Nair", projectId: "p1" },
+    { userId: "u4", employeeId: "KV004", userName: "Sana Kapoor", projectId: "p3" },
+  ];
+  const rows: EmployeeAttendance[] = [];
+  let n = 0;
+  for (let daysAgo = 20; daysAgo >= 0; daysAgo--) {
+    const date = attendanceDay(daysAgo);
+    if (new Date(`${date}T00:00:00`).getDay() === 0) continue; // Sunday holiday
+    people.forEach((p, pi) => {
+      // Skip a few scattered weekdays so Absent shows up (u1 stays regular).
+      if (pi > 0 && (daysAgo + pi * 3) % 7 === 2) return;
+      const checkInMinutes = 8 * 60 + 45 + ((daysAgo * 7 + pi * 11) % 30); // 08:45–09:14
+      const checkOutMinutes = 17 * 60 + 45 + ((daysAgo * 5 + pi * 13) % 45); // 17:45–18:29 (some OT)
+      const checkedIn = istIsoFromMinutes(date, checkInMinutes);
+      const isOpenToday = daysAgo === 0 && p.userId === "u1"; // demo the Check Out state
+      const checkedOut = isOpenToday ? "" : istIsoFromMinutes(date, checkOutMinutes);
+      const total = checkedOut
+        ? Math.floor((+new Date(checkedOut) - +new Date(checkedIn)) / 60000)
+        : 0;
+      rows.push({
+        id: `ea${++n}`,
+        userId: p.userId,
+        employeeId: p.employeeId,
+        userName: p.userName,
+        projectId: p.projectId,
+        date,
+        checkInAt: checkedIn,
+        checkInLat: 28.6273,
+        checkInLng: 77.3714,
+        checkInSelfiePath: "",
+        checkOutAt: checkedOut,
+        checkOutLat: checkedOut ? 28.6273 : null,
+        checkOutLng: checkedOut ? 77.3714 : null,
+        checkOutSelfiePath: "",
+        totalMinutes: total,
+        overtimeMinutes: Math.max(0, total - 480),
+      });
+    });
+  }
+  return rows;
+}
+
+export const employeeAttendance: EmployeeAttendance[] = buildEmployeeAttendance();
 
 /* ---------- Advances (employees + contractors) ---------- */
 

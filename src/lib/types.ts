@@ -64,6 +64,10 @@ export interface Project {
   percentComplete: number;
   location: string;
   pmId: string;
+  /** Optional site geo-fence (all three null = fence disabled). */
+  geofenceLat: number | null;
+  geofenceLng: number | null;
+  geofenceRadiusM: number | null;
 }
 
 /** A user's assignment to a single project (drives per-project visibility). */
@@ -458,6 +462,30 @@ export interface LabourAttendance {
   present: number;
   absent: number;
   gps: string; // "28.6139, 77.2090"
+}
+
+/**
+ * Per-employee GPS + selfie attendance — one record per user per day.
+ * Keyed on the login (memberships.user_id); `employeeId` is the KV### code
+ * from memberships.employee_id ("" until migration 0015 is applied).
+ */
+export interface EmployeeAttendance {
+  id: string;
+  userId: string;
+  employeeId: string;
+  userName: string;
+  projectId: string;
+  date: string; // "2026-07-17" (org-local day)
+  checkInAt: string; // ISO timestamp
+  checkInLat: number | null;
+  checkInLng: number | null;
+  checkInSelfiePath: string;
+  checkOutAt: string; // "" while still checked in
+  checkOutLat: number | null;
+  checkOutLng: number | null;
+  checkOutSelfiePath: string;
+  totalMinutes: number; // 0 until check-out
+  overtimeMinutes: number;
 }
 
 export interface Advance {

@@ -56,6 +56,9 @@ export interface ProjectRow {
   percent_complete: number;
   location: string | null;
   pm_id: string | null;
+  geofence_lat?: number | null;
+  geofence_lng?: number | null;
+  geofence_radius_m?: number | null;
 }
 
 export interface LineItemRow {
@@ -165,6 +168,9 @@ export const mapProject = (r: ProjectRow): Project => ({
   percentComplete: Number(r.percent_complete),
   location: r.location ?? "",
   pmId: r.pm_id ?? "",
+  geofenceLat: r.geofence_lat ?? null,
+  geofenceLng: r.geofence_lng ?? null,
+  geofenceRadiusM: r.geofence_radius_m ?? null,
 });
 
 export const mapLineItem = (r: LineItemRow): LineItem => ({

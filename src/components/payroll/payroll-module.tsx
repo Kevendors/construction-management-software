@@ -9,6 +9,8 @@ import { AttendanceTab } from "./attendance-tab";
 import { EmployeesTab } from "./employees-tab";
 import { ContractorsTab } from "./contractors-tab";
 import { AdvancesTab } from "./advances-tab";
+import { AdminAttendanceTab } from "@/components/attendance/admin-attendance-tab";
+import type { AttendanceAdminBoard } from "@/lib/attendance/compute";
 import type { PayrollBoard } from "@/lib/payroll/compute";
 import {
   latestAttendancePresent,
@@ -20,7 +22,13 @@ import { formatINR } from "@/lib/utils";
 
 const thisMonth = () => new Date().toISOString().slice(0, 7);
 
-export function PayrollModule({ board }: { board: PayrollBoard }) {
+export function PayrollModule({
+  board,
+  attendanceBoard,
+}: {
+  board: PayrollBoard;
+  attendanceBoard: AttendanceAdminBoard;
+}) {
   const activeMonth = latestSlipMonth(board.slips) || thisMonth();
   const [month, setMonth] = React.useState(activeMonth);
   const presentLatest = latestAttendancePresent(board.attendance);
@@ -49,13 +57,19 @@ export function PayrollModule({ board }: { board: PayrollBoard }) {
         <TabsList>
           <TabsTrigger value="payroll">Staff Payroll</TabsTrigger>
           <TabsTrigger value="attendance">Attendance</TabsTrigger>
+          <TabsTrigger value="labour">Labour</TabsTrigger>
           <TabsTrigger value="contractors">Contractors</TabsTrigger>
           <TabsTrigger value="advances">Advances</TabsTrigger>
         </TabsList>
         <TabsContent value="payroll">
           <EmployeesTab board={board} month={month} onMonthChange={setMonth} />
         </TabsContent>
+        {/* Employee selfie/GPS attendance (admin view) */}
         <TabsContent value="attendance">
+          <AdminAttendanceTab board={attendanceBoard} projects={board.projects} />
+        </TabsContent>
+        {/* Contractor labour headcount log (the pre-existing attendance tab) */}
+        <TabsContent value="labour">
           <AttendanceTab board={board} />
         </TabsContent>
         <TabsContent value="contractors">

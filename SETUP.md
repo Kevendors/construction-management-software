@@ -158,3 +158,40 @@ Until 0009/0010 are applied the app degrades gracefully: the client store and
 server data layer treat a missing `project_members` table as "org-wide
 visibility" (today's behavior). Material/subcon/equipment/notifications and
 item child tables (boq_items, …) stay org-scoped by role — follow-up.
+
+## Employee IDs (migration 0015)
+
+`0015_member_employee_id.sql` adds `memberships.employee_id` (KV001, KV002, …)
+and backfills existing members per org in account-creation order. New members
+get the next number automatically in `createMemberAction`; a unique index on
+`(org_id, employee_id)` guards collisions. Safe to apply anytime, in any order
+relative to 0012–0014, and safe to re-run. Until it's applied the Team page
+shows "—" in the Employee ID column and member creation still works.
+
+## Employee attendance (migration 0016)
+
+Per-employee GPS + selfie check-in/check-out ("My Attendance" at `/attendance`
+for every role; admin dashboard on the Payroll → Attendance tab). To enable on
+a live DB:
+
+1. Run `0016_employee_attendance.sql` in the SQL editor (any order relative to
+   0012–0015, idempotent). Creates `employee_attendance` (one row per user per
+   day, self-only RLS + super_admin/hr org-wide read) and adds optional
+   `geofence_lat` / `geofence_lng` / `geofence_radius_m` columns to `projects`.
+2. **Create a private Storage bucket named `attendance-selfies`** in the
+   Supabase dashboard (same as `dpr-photos` / `project-files` — private, no
+   public access). Selfies are stored at
+   `${orgId}/${userId}/${date}-in.jpg` / `-out.jpg` and served via short-lived
+   signed URLs.
+3. Optional per-project geo-fence: a super admin opens the project's
+   **Settings** tab and sets site coordinates + radius ("Use my current
+   location" fills lat/lng). When set, check-in/out is rejected outside the
+   radius; when cleared, attendance works from anywhere.
+4. Employees must be assigned to at least one project (project Team tab) to
+   check in. Attendance shows the member's `employee_id` (KV###, migration
+   0015; "—" until applied).
+
+> **Phone testing note:** the camera and GPS APIs require a secure context.
+> `http://localhost:3000` works, but a LAN IP (`http://192.168.x.x:3000`) does
+> NOT — use `next dev --experimental-https` (accept the self-signed cert on
+> the phone) or a tunnel (cloudflared/ngrok) to test on a real device.

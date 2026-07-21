@@ -12,6 +12,7 @@ import { CommercialTab } from "./commercial-tab";
 import { AlertsTab, useProjectAlerts } from "./alerts-tab";
 import { HistoryTab } from "./history-tab";
 import { TeamTab } from "./team-tab";
+import { SettingsTab } from "./settings-tab";
 import { useRole } from "@/components/layout/role-provider";
 import { DrawingList } from "@/components/design/drawing-list";
 import { getProjectDrawings } from "@/lib/mock/selectors";
@@ -150,6 +151,7 @@ function ProjectDetailInner({ projectId }: { projectId: string }) {
           </TabsTrigger>
           <TabsTrigger value="files">Files</TabsTrigger>
           <TabsTrigger value="team">Team</TabsTrigger>
+          {role === "super_admin" && <TabsTrigger value="settings">Settings</TabsTrigger>}
         </TabsList>
 
         <TabsContent value="overview">
@@ -179,6 +181,11 @@ function ProjectDetailInner({ projectId }: { projectId: string }) {
         <TabsContent value="team">
           <TeamTab projectId={projectId} />
         </TabsContent>
+        {role === "super_admin" && (
+          <TabsContent value="settings">
+            <SettingsTab project={project} />
+          </TabsContent>
+        )}
       </Tabs>
     </div>
   );

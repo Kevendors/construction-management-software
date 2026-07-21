@@ -1,6 +1,7 @@
 import {
   LayoutDashboard,
   LineChart,
+  CalendarCheck,
   FolderKanban,
   Users,
   PencilRuler,
@@ -37,6 +38,7 @@ export const navSections: NavSection[] = [
     items: [
       { label: "Company Dashboard", href: "/", icon: LayoutDashboard, module: "dashboard" },
       { label: "Analytics", href: "/analytics", icon: LineChart, module: "analytics" },
+      { label: "My Attendance", href: "/attendance", icon: CalendarCheck, module: "attendance" },
     ],
   },
   {

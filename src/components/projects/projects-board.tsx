@@ -153,6 +153,9 @@ function NewProjectDialog({
       // People are put on projects only by the Super Admin via the Team tab —
       // nothing is assigned at creation.
       pmId: "",
+      geofenceLat: null,
+      geofenceLng: null,
+      geofenceRadiusM: null,
     });
     onClose();
     if (project) router.push(`/projects/${project.id}`);

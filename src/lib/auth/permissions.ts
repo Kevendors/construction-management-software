@@ -16,11 +16,13 @@ export type ModuleKey =
   | "equipment"
   | "team"
   | "activity"
-  | "transactions";
+  | "transactions"
+  | "attendance";
 
 const ALL: ModuleKey[] = [
   "dashboard", "analytics", "projects", "design", "clients", "quotations",
   "invoices", "material", "subcon", "payroll", "expenses", "equipment", "team", "activity", "transactions",
+  "attendance",
 ];
 
 /**
@@ -28,18 +30,20 @@ const ALL: ModuleKey[] = [
  * and route guards. (DB-level RLS enforces the hard read/write boundary; this
  * drives the UI so users only see what applies to them.)
  */
+// "attendance" (self check-in at /attendance) is appended for every role —
+// appending keeps each role's landingPath (first entry) unchanged.
 export const ROLE_MODULES: Record<Role, ModuleKey[]> = {
   super_admin: ALL,
-  pm: ["dashboard", "analytics", "projects", "design", "clients", "quotations", "invoices", "material", "subcon", "expenses", "equipment", "activity", "transactions"],
-  supervisor: ["projects", "expenses"], // site-only: projects (Updates/DPRs/Attendance live in the project) + petty expenses
-  accountant: ["dashboard", "analytics", "clients", "quotations", "invoices", "expenses", "transactions"],
-  hr: ["dashboard", "payroll", "team"],
-  staff: ["projects", "expenses"],
-  architect: ["projects", "design"],
-  engineer: ["projects", "expenses"],
-  subcontractor: ["projects", "subcon"],
-  viewer: ["dashboard", "projects"],
-  client: ["dashboard", "projects"],
+  pm: ["dashboard", "analytics", "projects", "design", "clients", "quotations", "invoices", "material", "subcon", "expenses", "equipment", "activity", "transactions", "attendance"],
+  supervisor: ["projects", "expenses", "attendance"], // site-only: projects (Updates/DPRs/Attendance live in the project) + petty expenses
+  accountant: ["dashboard", "analytics", "clients", "quotations", "invoices", "expenses", "transactions", "attendance"],
+  hr: ["dashboard", "payroll", "team", "attendance"],
+  staff: ["projects", "expenses", "attendance"],
+  architect: ["projects", "design", "attendance"],
+  engineer: ["projects", "expenses", "attendance"],
+  subcontractor: ["projects", "subcon", "attendance"],
+  viewer: ["dashboard", "projects", "attendance"],
+  client: ["dashboard", "projects", "attendance"],
 };
 
 /** True if the role may access the module. Unknown/null role → deny. */
@@ -76,6 +80,7 @@ export const MODULE_ROUTES: Record<ModuleKey, string> = {
   team: "/team",
   activity: "/activity",
   transactions: "/transactions",
+  attendance: "/attendance",
 };
 
 /** Which module a pathname belongs to (null = unguarded route). */
@@ -87,6 +92,7 @@ export function pathModule(pathname: string): ModuleKey | null {
     ["/material", "material"], ["/subcon", "subcon"], ["/payroll", "payroll"],
     ["/expenses", "expenses"], ["/equipment", "equipment"], ["/team", "team"],
     ["/activity", "activity"], ["/transactions", "transactions"],
+    ["/attendance", "attendance"],
   ];
   for (const [p, m] of prefixes) if (pathname === p || pathname.startsWith(p + "/")) return m;
   return null;

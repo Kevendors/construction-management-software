@@ -9,6 +9,7 @@ import {
   removeProjectMemberAction,
   setProjectMemberRoleAction,
 } from "@/app/projects/team-actions";
+import { updateProjectGeofenceAction } from "@/app/projects/geofence-actions";
 import {
   mapClient,
   mapExpense,
@@ -208,6 +209,12 @@ interface StoreValue extends StoreData {
   addProjectMember: (projectId: string, userId: string, role: Role) => Promise<string | null>;
   setProjectMemberRole: (projectId: string, userId: string, role: Role) => Promise<string | null>;
   removeProjectMember: (projectId: string, userId: string) => Promise<string | null>;
+  setProjectGeofence: (
+    projectId: string,
+    lat: number | null,
+    lng: number | null,
+    radiusM: number | null
+  ) => Promise<string | null>;
 }
 
 const StoreContext = React.createContext<StoreValue | null>(null);
@@ -775,6 +782,34 @@ export function ProjectStoreProvider({ children }: { children: React.ReactNode }
     [data.orgId, patch]
   );
 
+  /** Super-admin-only: set/clear a project's site geo-fence (Settings tab). */
+  const setProjectGeofence = React.useCallback(
+    async (
+      projectId: string,
+      lat: number | null,
+      lng: number | null,
+      radiusM: number | null
+    ): Promise<string | null> => {
+      const apply = (prev: StoreData): StoreData => ({
+        ...prev,
+        projects: prev.projects.map((p) =>
+          p.id === projectId
+            ? { ...p, geofenceLat: lat, geofenceLng: lng, geofenceRadiusM: radiusM }
+            : p
+        ),
+      });
+      if (!live()) {
+        patch(apply);
+        return null;
+      }
+      const res = await updateProjectGeofenceAction(projectId, lat, lng, radiusM);
+      if (res.error) return res.error;
+      patch(apply);
+      return null;
+    },
+    [data.orgId, patch]
+  );
+
   const value = React.useMemo<StoreValue>(
     () => ({
       ...data,
@@ -791,6 +826,7 @@ export function ProjectStoreProvider({ children }: { children: React.ReactNode }
       addProjectMember,
       setProjectMemberRole,
       removeProjectMember,
+      setProjectGeofence,
     }),
     [
       data,
@@ -807,6 +843,7 @@ export function ProjectStoreProvider({ children }: { children: React.ReactNode }
       addProjectMember,
       setProjectMemberRole,
       removeProjectMember,
+      setProjectGeofence,
     ]
   );
 
