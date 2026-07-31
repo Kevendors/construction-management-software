@@ -159,6 +159,44 @@ export async function setMemberPoAccessAction(userId: string, canView: boolean):
   return { id: userId };
 }
 
+/**
+ * Admin-only: set a member's password directly. Phone logins use a
+ * `<digits>@sitehub.phone` alias that can't receive mail, so the email recovery
+ * flow can't reach them — an admin hands over the new password out of band.
+ */
+export async function resetMemberPasswordAction(
+  userId: string,
+  password: string
+): Promise<ActionResult> {
+  const ctx = await getAuthContext();
+  if (!ctx || !isAdminRole(ctx.role)) return { error: "Not authorized." };
+  if (!ctx.orgId) return { error: "No organization found." };
+  if (password.length < 6) return { error: "Password must be at least 6 characters." };
+
+  const admin = createAdminClient();
+  // Scope to the caller's own org — the service-role client bypasses RLS, so
+  // this check is the only thing stopping a cross-org reset.
+  const { data: member, error: lookupErr } = await admin
+    .from("memberships")
+    .select("user_id")
+    .eq("org_id", ctx.orgId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (lookupErr) return { error: lookupErr.message };
+  if (!member) return { error: "That member isn't in your organization." };
+
+  const { error } = await admin.auth.admin.updateUserById(userId, { password });
+  if (error) return { error: error.message };
+
+  await logActivity({
+    action: "updated",
+    entityType: "member",
+    entityId: userId,
+    summary: "Reset account password",
+  });
+  return { id: userId };
+}
+
 /** Admin-only: activate/deactivate a member (cannot deactivate yourself). */
 export async function setMemberActiveAction(userId: string, isActive: boolean): Promise<ActionResult> {
   const ctx = await getAuthContext();
