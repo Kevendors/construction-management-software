@@ -667,6 +667,9 @@ function buildEmployeeAttendance(): EmployeeAttendance[] {
       const total = checkedOut
         ? Math.floor((+new Date(checkedOut) - +new Date(checkedIn)) / 60000)
         : 0;
+      // One demo admin-marked record (Sana, 5 days ago) so the "Manual" state
+      // is visible without needing a real correction to be made first.
+      const isAdminMarked = p.userId === "u4" && daysAgo === 5;
       rows.push({
         id: `ea${++n}`,
         userId: p.userId,
@@ -675,15 +678,18 @@ function buildEmployeeAttendance(): EmployeeAttendance[] {
         projectId: p.projectId,
         date,
         checkInAt: checkedIn,
-        checkInLat: 28.6273,
-        checkInLng: 77.3714,
+        checkInLat: isAdminMarked ? null : 28.6273,
+        checkInLng: isAdminMarked ? null : 77.3714,
         checkInSelfiePath: "",
         checkOutAt: checkedOut,
-        checkOutLat: checkedOut ? 28.6273 : null,
-        checkOutLng: checkedOut ? 77.3714 : null,
+        checkOutLat: isAdminMarked || !checkedOut ? null : 28.6273,
+        checkOutLng: isAdminMarked || !checkedOut ? null : 77.3714,
         checkOutSelfiePath: "",
         totalMinutes: total,
         overtimeMinutes: Math.max(0, total - 480),
+        source: isAdminMarked ? "admin" : "self",
+        markedByName: isAdminMarked ? "Charu Keyvendors" : "",
+        note: isAdminMarked ? "Phone died on site — confirmed present by supervisor call." : "",
       });
     });
   }

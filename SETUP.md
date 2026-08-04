@@ -195,3 +195,18 @@ a live DB:
 > `http://localhost:3000` works, but a LAN IP (`http://192.168.x.x:3000`) does
 > NOT — use `next dev --experimental-https` (accept the self-signed cert on
 > the phone) or a tunnel (cloudflared/ngrok) to test on a real device.
+
+## Admin manual attendance correction (migration 0017)
+
+Run `0017_attendance_admin_override.sql` after 0016 (idempotent). Adds
+`source` / `marked_by` / `note` columns to `employee_attendance` and RLS
+policies letting super_admin/hr insert or update **any** org member's row —
+not just their own. Used when an employee genuinely couldn't self check-in
+(dead phone, no signal, forgot): on the Payroll → Attendance daily view, a
+"Mark" button appears on Missed rows and an edit (pencil) icon on existing
+ones, opening a dialog that requires a reason and never touches GPS/selfie
+fields. These rows are tagged `source = 'admin'` and always render with a
+"Manual" badge — they're never mistaken for GPS+selfie-verified attendance,
+in the daily table, the monthly grid (`P*` instead of `P`), and the detail
+dialog. Until 0017 is applied, the Mark/Edit actions will error (the columns
+don't exist yet) — everything else in the Attendance feature is unaffected.

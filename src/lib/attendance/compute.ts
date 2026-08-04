@@ -29,6 +29,8 @@ export interface AttendanceAdminBoard {
 
 /** Single org for now; make per-org when a second timezone shows up. */
 export const ORG_TIMEZONE = "Asia/Kolkata";
+/** India has no DST, so this fixed offset is always correct for ORG_TIMEZONE. */
+export const ORG_UTC_OFFSET = "+05:30";
 
 /** Standard workday; minutes beyond this count as overtime. */
 export const STANDARD_WORKDAY_MINUTES = 8 * 60;

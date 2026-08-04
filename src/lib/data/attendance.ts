@@ -41,30 +41,43 @@ export interface EmployeeAttendanceRow {
   check_out_selfie_path: string | null;
   total_minutes: number | null;
   overtime_minutes: number | null;
+  // Optional: absent pre-migration-0017 (select("*") just omits them, no error).
+  source?: string | null;
+  marked_by?: string | null;
+  note?: string | null;
 }
 
-/** Identity fields come from memberships/profiles, joined in by the caller. */
+/**
+ * Identity fields come from memberships/profiles, joined in by the caller.
+ * `markedByName` only matters when the row's source is "admin".
+ */
 export const mapEmployeeAttendance = (
   r: EmployeeAttendanceRow,
-  identity: { name: string; employeeId: string }
-): EmployeeAttendance => ({
-  id: r.id,
-  userId: r.user_id,
-  employeeId: identity.employeeId,
-  userName: identity.name,
-  projectId: r.project_id ?? "",
-  date: r.date,
-  checkInAt: r.check_in_at,
-  checkInLat: r.check_in_lat,
-  checkInLng: r.check_in_lng,
-  checkInSelfiePath: r.check_in_selfie_path ?? "",
-  checkOutAt: r.check_out_at ?? "",
-  checkOutLat: r.check_out_lat,
-  checkOutLng: r.check_out_lng,
-  checkOutSelfiePath: r.check_out_selfie_path ?? "",
-  totalMinutes: r.total_minutes ?? 0,
-  overtimeMinutes: r.overtime_minutes ?? 0,
-});
+  identity: { name: string; employeeId: string; markedByName?: string }
+): EmployeeAttendance => {
+  const source: "self" | "admin" = r.source === "admin" ? "admin" : "self";
+  return {
+    id: r.id,
+    userId: r.user_id,
+    employeeId: identity.employeeId,
+    userName: identity.name,
+    projectId: r.project_id ?? "",
+    date: r.date,
+    checkInAt: r.check_in_at,
+    checkInLat: r.check_in_lat,
+    checkInLng: r.check_in_lng,
+    checkInSelfiePath: r.check_in_selfie_path ?? "",
+    checkOutAt: r.check_out_at ?? "",
+    checkOutLat: r.check_out_lat,
+    checkOutLng: r.check_out_lng,
+    checkOutSelfiePath: r.check_out_selfie_path ?? "",
+    totalMinutes: r.total_minutes ?? 0,
+    overtimeMinutes: r.overtime_minutes ?? 0,
+    source,
+    markedByName: source === "admin" ? (identity.markedByName ?? "") : "",
+    note: r.note ?? "",
+  };
+};
 
 const monthRange = (month: string) => {
   const [y, m] = month.split("-").map(Number);
@@ -143,19 +156,37 @@ export async function getMyAttendancePage(month?: string): Promise<MyAttendanceD
   ]);
   if (monthRes.error) throw monthRes.error;
 
-  const identity = { name: ctx.name, employeeId };
+  const monthRows = (monthRes.data ?? []) as EmployeeAttendanceRow[];
+  const todayRow = todayRes.data as EmployeeAttendanceRow | null;
+
+  // Resolve names for any admin-marked rows (rare — usually 0, so this is a
+  // small targeted query rather than joining profiles on every fetch).
+  const markedByIds = Array.from(
+    new Set(
+      [...monthRows, ...(todayRow ? [todayRow] : [])]
+        .filter((r) => r.source === "admin" && r.marked_by)
+        .map((r) => r.marked_by as string)
+    )
+  );
+  const markedByName = new Map<string, string>();
+  if (markedByIds.length) {
+    const { data: markers } = await supabase.from("profiles").select("id, name").in("id", markedByIds);
+    for (const m of markers ?? []) markedByName.set(m.id as string, (m.name as string) || "Admin");
+  }
+  const identityFor = (r: EmployeeAttendanceRow) => ({
+    name: ctx.name,
+    employeeId,
+    markedByName: r.marked_by ? markedByName.get(r.marked_by) ?? "Admin" : undefined,
+  });
+
   const assignedIds = new Set(
     ((pmRes.data ?? []) as { project_id: string }[]).map((r) => r.project_id)
   );
   const projects = ((projRes.data ?? []) as ProjectRow[]).map(mapProject);
 
   return {
-    today: todayRes.data
-      ? mapEmployeeAttendance(todayRes.data as EmployeeAttendanceRow, identity)
-      : null,
-    records: ((monthRes.data ?? []) as EmployeeAttendanceRow[]).map((r) =>
-      mapEmployeeAttendance(r, identity)
-    ),
+    today: todayRow ? mapEmployeeAttendance(todayRow, identityFor(todayRow)) : null,
+    records: monthRows.map((r) => mapEmployeeAttendance(r, identityFor(r))),
     assignedProjects:
       ctx.role === "super_admin" ? projects : projects.filter((p) => assignedIds.has(p.id)),
     employeeId,
@@ -237,6 +268,7 @@ export async function getAttendanceAdminBoard(): Promise<AttendanceAdminBoard> {
       return mapEmployeeAttendance(r, {
         name: m?.name ?? "User",
         employeeId: m?.employeeId ?? "",
+        markedByName: r.marked_by ? nameById.get(r.marked_by) ?? "Admin" : undefined,
       });
     }),
     members,

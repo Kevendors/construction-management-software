@@ -65,6 +65,7 @@ export function RecordDetailDialog({
       <div className="space-y-4">
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="success">Present</Badge>
+          {record.source === "admin" && <Badge variant="warning">Manual Entry</Badge>}
           {record.totalMinutes > 0 && (
             <span className="text-sm font-medium tabular-nums">
               {formatDuration(record.totalMinutes)} worked
@@ -74,6 +75,15 @@ export function RecordDetailDialog({
             <Badge variant="warning">OT {formatDuration(record.overtimeMinutes)}</Badge>
           )}
         </div>
+
+        {record.source === "admin" && (
+          <div className="rounded-lg bg-warning/10 p-3 text-sm">
+            <p className="font-medium">
+              Marked by {record.markedByName || "an admin"} — not GPS/selfie verified
+            </p>
+            {record.note && <p className="mt-1 text-muted-foreground">{record.note}</p>}
+          </div>
+        )}
 
         <div className="grid grid-cols-2 gap-3">
           {sides.map((s) => {
@@ -92,8 +102,8 @@ export function RecordDetailDialog({
                   />
                 ) : (
                   s.at && (
-                    <div className="flex aspect-square w-full items-center justify-center rounded-md bg-muted text-xs text-muted-foreground">
-                      No selfie
+                    <div className="flex aspect-square w-full items-center justify-center rounded-md bg-muted p-2 text-center text-xs text-muted-foreground">
+                      {record.source === "admin" ? "Not required (manual entry)" : "No selfie"}
                     </div>
                   )
                 )}

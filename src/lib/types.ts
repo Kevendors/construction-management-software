@@ -486,6 +486,12 @@ export interface EmployeeAttendance {
   checkOutSelfiePath: string;
   totalMinutes: number; // 0 until check-out
   overtimeMinutes: number;
+  /** "self" = GPS+selfie by the employee; "admin" = manually marked/corrected. */
+  source: "self" | "admin";
+  /** Name of the admin/hr who marked this ("" for self-verified records). */
+  markedByName: string;
+  /** Required reason for an admin-marked entry ("" for self-verified records). */
+  note: string;
 }
 
 export interface Advance {

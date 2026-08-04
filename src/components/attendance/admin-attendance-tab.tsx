@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { Download, Eye, Search } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Download, Eye, Pencil, Plus, Search, UserPlus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -27,6 +28,13 @@ import {
 } from "@/lib/attendance/compute";
 import type { EmployeeAttendance, Project } from "@/lib/types";
 import { RecordDetailDialog } from "./record-detail-dialog";
+import { AdminMarkAttendanceDialog } from "./admin-mark-attendance-dialog";
+
+interface MarkContext {
+  userId?: string;
+  date: string;
+  existing?: EmployeeAttendance | null;
+}
 
 function downloadCsv(filename: string, header: string[], rows: (string | number)[][]) {
   const escape = (v: string | number) => {
@@ -50,12 +58,14 @@ export function AdminAttendanceTab({
   board: AttendanceAdminBoard;
   projects: Project[];
 }) {
+  const router = useRouter();
   const [view, setView] = React.useState<"daily" | "monthly">("daily");
   const [date, setDate] = React.useState(orgToday());
   const [month, setMonth] = React.useState(orgThisMonth());
   const [search, setSearch] = React.useState("");
   const [projectId, setProjectId] = React.useState("");
   const [selected, setSelected] = React.useState<EmployeeAttendance | null>(null);
+  const [markContext, setMarkContext] = React.useState<MarkContext | null>(null);
 
   const projectById = new Map(projects.map((p) => [p.id, p]));
   const q = search.trim().toLowerCase();
@@ -172,7 +182,15 @@ export function AdminAttendanceTab({
             </option>
           ))}
         </Select>
-        <Button size="sm" variant="outline" className="ml-auto" onClick={exportCsv}>
+        <Button
+          size="sm"
+          variant="outline"
+          className="ml-auto"
+          onClick={() => setMarkContext({ date, existing: null })}
+        >
+          <Plus /> Manual Entry
+        </Button>
+        <Button size="sm" variant="outline" onClick={exportCsv}>
           <Download /> Export CSV
         </Button>
       </div>
@@ -238,7 +256,10 @@ export function AdminAttendanceTab({
                       </TableCell>
                       <TableCell>
                         {record ? (
-                          <Badge variant="success">Present</Badge>
+                          <div className="flex items-center gap-1.5">
+                            <Badge variant="success">Present</Badge>
+                            {record.source === "admin" && <Badge variant="warning">Manual</Badge>}
+                          </div>
                         ) : dayStatus(date, false) === "holiday" ? (
                           <Badge variant="muted">Holiday</Badge>
                         ) : (
@@ -246,16 +267,38 @@ export function AdminAttendanceTab({
                         )}
                       </TableCell>
                       <TableCell>
-                        {record && (
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            aria-label="View details"
-                            onClick={() => setSelected(record)}
-                          >
-                            <Eye />
-                          </Button>
-                        )}
+                        <div className="flex items-center gap-0.5">
+                          {record && (
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              aria-label="View details"
+                              onClick={() => setSelected(record)}
+                            >
+                              <Eye />
+                            </Button>
+                          )}
+                          {record ? (
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              aria-label="Correct attendance"
+                              onClick={() => setMarkContext({ userId: member.userId, date, existing: record })}
+                            >
+                              <Pencil />
+                            </Button>
+                          ) : (
+                            dayStatus(date, false) !== "holiday" && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => setMarkContext({ userId: member.userId, date, existing: null })}
+                              >
+                                <UserPlus /> Mark
+                              </Button>
+                            )
+                          )}
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -304,10 +347,12 @@ export function AdminAttendanceTab({
                           const record = byDate.get(d);
                           const status = dayStatus(d, Boolean(record));
                           const glyph =
-                            status === "present" ? "P" : status === "absent" ? "A" : status === "holiday" ? "H" : "";
+                            status === "present" ? (record?.source === "admin" ? "P*" : "P")
+                              : status === "absent" ? "A" : status === "holiday" ? "H" : "";
                           return (
                             <td
                               key={d}
+                              title={record?.source === "admin" ? `Manually marked — ${record.note}` : undefined}
                               className={
                                 status === "present"
                                   ? "cursor-pointer px-0.5 py-1.5 text-center font-medium text-success"
@@ -342,6 +387,17 @@ export function AdminAttendanceTab({
       {selected && (
         <RecordDetailDialog record={selected} onClose={() => setSelected(null)} showName />
       )}
+
+      <AdminMarkAttendanceDialog
+        open={markContext !== null}
+        onClose={() => setMarkContext(null)}
+        onSaved={() => router.refresh()}
+        members={board.members}
+        projects={projects}
+        defaultUserId={markContext?.userId}
+        defaultDate={markContext?.date ?? date}
+        existing={markContext?.existing}
+      />
     </div>
   );
 }

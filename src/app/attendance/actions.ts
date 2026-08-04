@@ -9,6 +9,7 @@ import {
   haversineMeters,
   minutesBetween,
   orgToday,
+  ORG_UTC_OFFSET,
   overtimeOf,
 } from "@/lib/attendance/compute";
 
@@ -277,4 +278,82 @@ export async function getAttendanceSelfieUrls(
     (out[id] ??= {})[kind] = s.signedUrl;
   });
   return out;
+}
+
+export interface AdminMarkAttendanceInput {
+  userId: string;
+  date: string; // "YYYY-MM-DD"
+  projectId: string | null;
+  checkInTime: string; // "HH:MM"
+  checkOutTime: string; // "HH:MM" or "" (leave open)
+  note: string;
+}
+
+const HHMM = /^\d{2}:\d{2}$/;
+const YMD = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Super_admin/hr only: mark or correct an attendance record without GPS/selfie
+ * proof (e.g. dead phone, no signal, forgot to check in). Always tagged
+ * source="admin" with who did it and why — self check-in/out never take this
+ * path, so this can never silently masquerade as GPS+selfie verified.
+ */
+export async function adminMarkAttendanceAction(input: AdminMarkAttendanceInput): Promise<ActionResult> {
+  if (!isSupabaseConfigured()) return { id: "mock" };
+
+  const ctx = await getAuthContext();
+  if (!ctx?.orgId || !(ctx.role === "super_admin" || ctx.role === "hr")) {
+    return { error: "Not authorized." };
+  }
+  if (!input.userId) return { error: "Choose an employee." };
+  if (!YMD.test(input.date) || input.date > orgToday()) return { error: "Choose a valid past or current date." };
+  if (!HHMM.test(input.checkInTime)) return { error: "Enter a valid check-in time." };
+  if (input.checkOutTime && !HHMM.test(input.checkOutTime)) return { error: "Enter a valid check-out time." };
+  const note = input.note.trim();
+  if (!note) return { error: "A reason is required for a manual entry." };
+
+  const checkInAt = `${input.date}T${input.checkInTime}:00${ORG_UTC_OFFSET}`;
+  const checkOutAt = input.checkOutTime ? `${input.date}T${input.checkOutTime}:00${ORG_UTC_OFFSET}` : null;
+  if (checkOutAt && checkOutAt <= checkInAt) return { error: "Check-out must be after check-in." };
+  const totalMinutes = checkOutAt ? minutesBetween(checkInAt, checkOutAt) : null;
+
+  const supabase = await createClient();
+  const { data: existing } = await supabase
+    .from("employee_attendance")
+    .select("id")
+    .eq("user_id", input.userId)
+    .eq("date", input.date)
+    .maybeSingle();
+
+  const row = {
+    org_id: ctx.orgId,
+    user_id: input.userId,
+    project_id: input.projectId,
+    date: input.date,
+    check_in_at: checkInAt,
+    check_out_at: checkOutAt,
+    total_minutes: totalMinutes,
+    overtime_minutes: totalMinutes != null ? overtimeOf(totalMinutes) : null,
+    status: "present",
+    source: "admin",
+    marked_by: ctx.userId,
+    note,
+  };
+
+  const result = existing
+    ? await supabase.from("employee_attendance").update(row).eq("id", existing.id).select("id").single()
+    : await supabase.from("employee_attendance").insert(row).select("id").single();
+  if (result.error) {
+    if (result.error.code === "23505") return { error: "A record for that employee and date was just created — refresh and try again." };
+    return { error: result.error.message };
+  }
+
+  await logActivity({
+    action: existing ? "updated" : "created",
+    entityType: "attendance",
+    entityId: result.data.id,
+    summary: `${ctx.name} manually marked attendance for ${input.date} — ${note}`,
+    meta: { userId: input.userId, date: input.date },
+  });
+  return { id: result.data.id };
 }

@@ -66,6 +66,9 @@ export function MyAttendance({ data }: { data: MyAttendanceData }) {
         checkOutSelfiePath: "",
         totalMinutes: 0,
         overtimeMinutes: 0,
+        source: "self",
+        markedByName: "",
+        note: "",
       });
     } else if (today) {
       const total = minutesBetween(today.checkInAt, result.at);
