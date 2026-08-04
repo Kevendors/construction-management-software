@@ -105,3 +105,16 @@ export async function getQuotationPayloadAction(id: string): Promise<QuoteState 
   const { data } = await supabase.from("quotations").select("payload").eq("id", id).maybeSingle();
   return (data?.payload as QuoteState | undefined) ?? null;
 }
+
+export type QuotationStatus = "draft" | "sent" | "accepted" | "rejected";
+
+/** Update a quotation's status (RLS-scoped — the org check happens in the policy). */
+export async function updateQuotationStatusAction(
+  id: string,
+  status: QuotationStatus
+): Promise<SaveResult> {
+  const supabase = await createClient();
+  const { error } = await supabase.from("quotations").update({ status }).eq("id", id);
+  if (error) return { error: error.message };
+  return { id };
+}

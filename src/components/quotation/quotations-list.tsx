@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ArrowRightLeft, Download, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -20,6 +21,9 @@ import { lineSubtotal, lineTotalWithTax } from "@/lib/data/compute";
 import { quotationStatusMeta } from "@/lib/labels";
 import { formatINR } from "@/lib/utils";
 import type { Client, Quotation } from "@/lib/types";
+import { updateQuotationStatusAction, type QuotationStatus } from "@/app/quotations/actions";
+
+const QUOTATION_STATUSES: QuotationStatus[] = ["draft", "sent", "accepted", "rejected"];
 
 export interface QuotationListItem {
   quotation: Quotation;
@@ -50,9 +54,49 @@ function haystack({ quotation: q, client }: QuotationListItem): string {
     .toLowerCase();
 }
 
+/**
+ * Same handoff the quotation editor's "Convert to Project" button uses
+ * (src/app/quotations/new/page.tsx): drop a prefill payload in localStorage
+ * and land on /projects, where ProjectsBoard picks it up and opens the New
+ * Project dialog pre-filled. The user still confirms via "Create Project".
+ */
+function convertToProject(
+  router: ReturnType<typeof useRouter>,
+  q: Quotation,
+  client: Client | null,
+  total: number
+) {
+  const payload = {
+    name: q.projectName || client?.company || client?.name || "New Project",
+    value: Math.round(total),
+    location: "",
+  };
+  try {
+    localStorage.setItem("sitehub:newProjectPrefill", JSON.stringify(payload));
+  } catch {
+    /* ignore (quota/private-browsing) */
+  }
+  router.push("/projects?new=1");
+}
+
 export function QuotationsList({ items }: { items: QuotationListItem[] }) {
+  const router = useRouter();
   const [query, setQuery] = React.useState("");
   const [status, setStatus] = React.useState<string>("all");
+  const [updatingId, setUpdatingId] = React.useState<string | null>(null);
+  const [statusError, setStatusError] = React.useState<{ id: string; message: string } | null>(null);
+
+  async function changeStatus(id: string, next: QuotationStatus) {
+    setUpdatingId(id);
+    setStatusError(null);
+    const res = await updateQuotationStatusAction(id, next);
+    setUpdatingId(null);
+    if (res.error) {
+      setStatusError({ id, message: res.error });
+      return;
+    }
+    router.refresh();
+  }
 
   const filtered = React.useMemo(() => {
     const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
@@ -126,6 +170,22 @@ export function QuotationsList({ items }: { items: QuotationListItem[] }) {
                   <div className="flex items-center gap-2">
                     <span className="font-semibold">{q.number}</span>
                     <Badge variant={meta.variant}>{meta.label}</Badge>
+                    <Select
+                      aria-label={`Change status of ${q.number}`}
+                      value={q.status}
+                      disabled={updatingId === q.id}
+                      onChange={(e) => changeStatus(q.id, e.target.value as QuotationStatus)}
+                      className="h-7 w-auto py-0 text-xs"
+                    >
+                      {QUOTATION_STATUSES.map((s) => (
+                        <option key={s} value={s}>
+                          Mark {quotationStatusMeta[s].label}
+                        </option>
+                      ))}
+                    </Select>
+                    {statusError?.id === q.id && (
+                      <span className="text-xs text-destructive">{statusError.message}</span>
+                    )}
                   </div>
                   <p className="mt-0.5 text-sm text-muted-foreground">
                     {q.projectName} ·{" "}
@@ -142,7 +202,7 @@ export function QuotationsList({ items }: { items: QuotationListItem[] }) {
                     </Button>
                   </Link>
                   {q.status === "accepted" && (
-                    <Button size="sm">
+                    <Button size="sm" onClick={() => convertToProject(router, q, client, total)}>
                       <ArrowRightLeft /> Convert to Project
                     </Button>
                   )}
