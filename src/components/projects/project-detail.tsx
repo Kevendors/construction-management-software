@@ -7,6 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { OverviewTab } from "./overview-tab";
 import { TasksTab } from "./tasks-tab";
 import { UpdatesTab } from "./updates-tab";
+import { CommentsTab } from "./comments-tab";
 import { FilesTab } from "./files-tab";
 import { CommercialTab } from "./commercial-tab";
 import { AlertsTab, useProjectAlerts } from "./alerts-tab";
@@ -130,6 +131,7 @@ function ProjectDetailInner({ projectId }: { projectId: string }) {
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="tasks">Tasks</TabsTrigger>
           <TabsTrigger value="updates">Updates</TabsTrigger>
+          <TabsTrigger value="comments">Comments</TabsTrigger>
           <TabsTrigger value="alerts">
             Alerts
             {alerts.length > 0 && (
@@ -162,6 +164,9 @@ function ProjectDetailInner({ projectId }: { projectId: string }) {
         </TabsContent>
         <TabsContent value="updates">
           <UpdatesTab projectId={projectId} />
+        </TabsContent>
+        <TabsContent value="comments">
+          <CommentsTab projectId={projectId} />
         </TabsContent>
         <TabsContent value="alerts">
           <AlertsTab projectId={projectId} />
