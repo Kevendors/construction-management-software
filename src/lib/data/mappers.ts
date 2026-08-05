@@ -80,6 +80,8 @@ export interface QuotationRow {
   status: Quotation["status"];
   tax_rate: number;
   quotation_items?: LineItemRow[];
+  /** Absent until migration 0019 adds the column. */
+  converted_project_id?: string | null;
 }
 
 export interface InvoiceRow {
@@ -192,6 +194,7 @@ export const mapQuotation = (r: QuotationRow): Quotation => ({
   status: r.status,
   taxRate: Number(r.tax_rate),
   items: (r.quotation_items ?? []).map(mapLineItem),
+  convertedProjectId: r.converted_project_id ?? undefined,
 });
 
 export const mapInvoice = (r: InvoiceRow): SalesInvoice => ({

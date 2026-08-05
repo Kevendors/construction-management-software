@@ -3,12 +3,13 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowRightLeft, Download, Search, X } from "lucide-react";
+import { ArrowRightLeft, Download, ExternalLink, Search, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/dialog";
+import { Dialog, Select } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -21,7 +22,11 @@ import { lineSubtotal, lineTotalWithTax } from "@/lib/data/compute";
 import { quotationStatusMeta } from "@/lib/labels";
 import { formatINR } from "@/lib/utils";
 import type { Client, Quotation } from "@/lib/types";
-import { updateQuotationStatusAction, type QuotationStatus } from "@/app/quotations/actions";
+import {
+  deleteQuotationAction,
+  updateQuotationStatusAction,
+  type QuotationStatus,
+} from "@/app/quotations/actions";
 
 const QUOTATION_STATUSES: QuotationStatus[] = ["draft", "sent", "accepted", "rejected"];
 
@@ -70,6 +75,8 @@ function convertToProject(
     name: q.projectName || client?.company || client?.name || "New Project",
     value: Math.round(total),
     location: "",
+    // Lets ProjectsBoard stamp the quotation once the project is created.
+    quotationId: q.id,
   };
   try {
     localStorage.setItem("sitehub:newProjectPrefill", JSON.stringify(payload));
@@ -79,12 +86,126 @@ function convertToProject(
   router.push("/projects?new=1");
 }
 
-export function QuotationsList({ items }: { items: QuotationListItem[] }) {
+/** The quotation a delete has been requested for, plus what the dialog shows. */
+interface PendingDelete {
+  id: string;
+  number: string;
+  status: QuotationStatus;
+  client: string;
+  total: number;
+}
+
+/**
+ * Deleting is permanent (line items cascade away), so drafts get a plain
+ * confirm while anything that has left the building — sent or rejected —
+ * requires typing the quotation number. Accepted quotes never reach here: the
+ * button is hidden, and the server action refuses them regardless.
+ */
+function DeleteQuotationDialog({
+  target,
+  onClose,
+  onDeleted,
+}: {
+  target: PendingDelete | null;
+  onClose: () => void;
+  onDeleted: () => void;
+}) {
+  const [typed, setTyped] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+
+  const mustType = !!target && target.status !== "draft";
+  const confirmed = !!target && (!mustType || typed.trim() === target.number);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!target || !confirmed) return;
+    setBusy(true);
+    setError(null);
+    const res = await deleteQuotationAction(target.id);
+    setBusy(false);
+    if (res.error) return setError(res.error);
+    onDeleted();
+  }
+
+  return (
+    <Dialog
+      open={!!target}
+      onClose={onClose}
+      title="Delete Quotation"
+      description="This permanently removes the quotation and all of its line items. It can't be undone."
+    >
+      <form onSubmit={submit} className="space-y-4">
+        {target && (
+          <dl className="space-y-1.5 rounded-md border border-border bg-secondary/40 px-3 py-2.5 text-sm">
+            <div className="flex justify-between gap-4">
+              <dt className="text-muted-foreground">Number</dt>
+              <dd className="font-medium">{target.number}</dd>
+            </div>
+            <div className="flex justify-between gap-4">
+              <dt className="text-muted-foreground">Client</dt>
+              <dd className="truncate font-medium">{target.client || "—"}</dd>
+            </div>
+            <div className="flex justify-between gap-4">
+              <dt className="text-muted-foreground">Total</dt>
+              <dd className="font-medium">{formatINR(target.total)}</dd>
+            </div>
+            <div className="flex justify-between gap-4">
+              <dt className="text-muted-foreground">Status</dt>
+              <dd>
+                <Badge variant={quotationStatusMeta[target.status].variant}>
+                  {quotationStatusMeta[target.status].label}
+                </Badge>
+              </dd>
+            </div>
+          </dl>
+        )}
+
+        {mustType && target && (
+          <div className="space-y-1.5">
+            <Label htmlFor="del-confirm">
+              This quotation was already {quotationStatusMeta[target.status].label.toLowerCase()}. Type{" "}
+              <span className="font-mono font-semibold">{target.number}</span> to confirm.
+            </Label>
+            <Input
+              id="del-confirm"
+              value={typed}
+              onChange={(e) => setTyped(e.target.value)}
+              placeholder={target.number}
+              autoComplete="off"
+              autoFocus
+            />
+          </div>
+        )}
+
+        {error && <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
+
+        <div className="flex justify-end gap-2 pt-2">
+          <Button type="button" variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" variant="destructive" disabled={busy || !confirmed}>
+            {busy ? "Deleting…" : "Delete Quotation"}
+          </Button>
+        </div>
+      </form>
+    </Dialog>
+  );
+}
+
+export function QuotationsList({
+  items,
+  canDelete = false,
+}: {
+  items: QuotationListItem[];
+  canDelete?: boolean;
+}) {
   const router = useRouter();
   const [query, setQuery] = React.useState("");
   const [status, setStatus] = React.useState<string>("all");
   const [updatingId, setUpdatingId] = React.useState<string | null>(null);
   const [statusError, setStatusError] = React.useState<{ id: string; message: string } | null>(null);
+  const [pendingDelete, setPendingDelete] = React.useState<PendingDelete | null>(null);
 
   async function changeStatus(id: string, next: QuotationStatus) {
     setUpdatingId(id);
@@ -201,9 +322,38 @@ export function QuotationsList({ items }: { items: QuotationListItem[] }) {
                       <Download /> Open / PDF
                     </Button>
                   </Link>
-                  {q.status === "accepted" && (
-                    <Button size="sm" onClick={() => convertToProject(router, q, client, total)}>
-                      <ArrowRightLeft /> Convert to Project
+                  {q.status === "accepted" &&
+                    (q.convertedProjectId ? (
+                      // Already converted — link to it instead of offering to
+                      // convert again, which would create a duplicate project.
+                      <Link href={`/projects/${q.convertedProjectId}`}>
+                        <Button size="sm" variant="secondary">
+                          <ExternalLink /> View Project
+                        </Button>
+                      </Link>
+                    ) : (
+                      <Button size="sm" onClick={() => convertToProject(router, q, client, total)}>
+                        <ArrowRightLeft /> Convert to Project
+                      </Button>
+                    ))}
+                  {canDelete && q.status !== "accepted" && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      aria-label={`Delete quotation ${q.number}`}
+                      title="Delete this quotation"
+                      onClick={() =>
+                        setPendingDelete({
+                          id: q.id,
+                          number: q.number,
+                          status: q.status as QuotationStatus,
+                          client: client?.company || client?.name || "",
+                          total,
+                        })
+                      }
+                      className="text-destructive hover:bg-destructive/10"
+                    >
+                      <Trash2 /> Delete
                     </Button>
                   )}
                 </div>
@@ -252,6 +402,17 @@ export function QuotationsList({ items }: { items: QuotationListItem[] }) {
           );
         })
       )}
+
+      {/* keyed per quotation so each open starts from a clean confirm field */}
+      <DeleteQuotationDialog
+        key={pendingDelete?.id ?? "none"}
+        target={pendingDelete}
+        onClose={() => setPendingDelete(null)}
+        onDeleted={() => {
+          setPendingDelete(null);
+          router.refresh();
+        }}
+      />
     </div>
   );
 }

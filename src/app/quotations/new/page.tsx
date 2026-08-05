@@ -51,10 +51,16 @@ export default function NewQuotationPage() {
   const [savedMsg, setSavedMsg] = React.useState<string | null>(null);
   const c = computeQuote(s);
 
+  // Id of the row this editor is bound to: from ?id= when re-opening a saved
+  // quote, or set on first save. A ref, not state — nothing renders from it,
+  // and saveDraft reads it at call time.
+  const quotationId = React.useRef<string | null>(null);
+
   // Load an existing quote when opened with ?id=, else generate a number.
   React.useEffect(() => {
     const id = new URLSearchParams(window.location.search).get("id");
     if (id) {
+      quotationId.current = id;
       getQuotationPayloadAction(id).then((payload) => {
         if (payload) setS(payload);
       });
@@ -109,9 +115,19 @@ export default function NewQuotationPage() {
     setSaving(true);
     setSavedMsg(null);
     try {
-      const res = await saveQuotationAction(s, c.grandTotal);
-      if (res.error) setSavedMsg(`Could not save: ${res.error}`);
-      else setSavedMsg("Saved to database ✓");
+      const existing = quotationId.current;
+      const res = await saveQuotationAction(s, c.grandTotal, existing);
+      if (res.error) {
+        setSavedMsg(`Could not save: ${res.error}`);
+      } else {
+        // Bind to the new row so the next save updates it instead of inserting
+        // a duplicate, and keep the URL reloadable.
+        if (res.id && !existing) {
+          quotationId.current = res.id;
+          window.history.replaceState({}, "", `?id=${res.id}`);
+        }
+        setSavedMsg(existing ? "Changes saved ✓" : "Saved to database ✓");
+      }
     } catch (e) {
       setSavedMsg(`Could not save: ${e instanceof Error ? e.message : "error"}`);
     } finally {
@@ -125,6 +141,9 @@ export default function NewQuotationPage() {
       value: Math.round(c.grandTotal),
       location: s.siteLocation || s.address || "",
       clientName: s.company || s.clientName,
+      // Only set once the quote has been saved — an unsaved quote has no row
+      // to link back to.
+      quotationId: quotationId.current ?? undefined,
     };
     try {
       localStorage.setItem("sitehub:newProjectPrefill", JSON.stringify(payload));

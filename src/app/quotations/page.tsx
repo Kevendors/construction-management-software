@@ -4,9 +4,13 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import { getQuotationsView } from "@/lib/data/commercial";
 import { QuotationsList } from "@/components/quotation/quotations-list";
+import { getAuthContext } from "@/lib/auth/context";
+import { isAdminRole } from "@/lib/auth/permissions";
 
 export default async function QuotationsPage() {
-  const views = await getQuotationsView();
+  const [views, ctx] = await Promise.all([getQuotationsView(), getAuthContext()]);
+  // No auth context = mock/demo mode, where the current user is a super_admin.
+  const canDelete = ctx ? isAdminRole(ctx.role) : true;
   return (
     <>
       <PageHeader
@@ -21,7 +25,7 @@ export default async function QuotationsPage() {
         }
       />
 
-      <QuotationsList items={views} />
+      <QuotationsList items={views} canDelete={canDelete} />
     </>
   );
 }

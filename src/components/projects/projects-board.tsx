@@ -13,6 +13,7 @@ import { Input, Label } from "@/components/ui/input";
 import { Dialog, Select } from "@/components/ui/dialog";
 import { useClients, useStore } from "@/lib/store/project-store";
 import { useRole } from "@/components/layout/role-provider";
+import { linkQuotationToProjectAction } from "@/app/quotations/actions";
 import { projectStatusMeta } from "@/lib/labels";
 import { formatINR } from "@/lib/utils";
 import type { Client, Project, ProjectStatus, TaskStatus } from "@/lib/types";
@@ -97,6 +98,8 @@ interface ProjectPrefill {
   name: string;
   value: number;
   location: string;
+  /** Set when the handoff came from "Convert to Project" on a saved quotation. */
+  quotationId?: string;
 }
 
 function NewProjectDialog({
@@ -157,6 +160,11 @@ function NewProjectDialog({
       geofenceLng: null,
       geofenceRadiusM: null,
     });
+    // Stamp the source quotation so it stops re-offering "Convert to Project".
+    // Best-effort: the project already exists, so a failure here isn't fatal.
+    if (project && prefill?.quotationId) {
+      await linkQuotationToProjectAction(prefill.quotationId, project.id);
+    }
     onClose();
     if (project) router.push(`/projects/${project.id}`);
   }

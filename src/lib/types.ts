@@ -162,6 +162,8 @@ export interface Quotation {
   status: "draft" | "sent" | "accepted" | "rejected";
   items: LineItem[];
   taxRate: number;
+  /** Project this quote was converted into; undefined until 0019 is applied. */
+  convertedProjectId?: string;
 }
 
 export interface BoqItem extends LineItem {
