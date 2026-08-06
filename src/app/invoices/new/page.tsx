@@ -9,7 +9,10 @@ import { Input, Label } from "@/components/ui/input";
 import { Select, Textarea } from "@/components/ui/dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { InvoiceDocument } from "@/components/invoice/invoice-document";
-import { computeInvoice, invoiceLineAmount, nextInvoiceNumber, type InvoiceLine, type InvoiceState } from "@/lib/invoice/compute";
+import { computeInvoice, getLumpsumMode, invoiceLineAmount, nextInvoiceNumber, type InvoiceLine, type InvoiceState, type LumpsumMode } from "@/lib/invoice/compute";
+import { ITEM_CATEGORIES, ITEM_MASTER } from "@/lib/quotation/item-master";
+import { DEFAULT_SIGNATURE } from "@/lib/quotation/company";
+import { fileToResizedDataUrl } from "@/lib/image";
 import { linkQuotationToInvoiceAction } from "@/app/quotations/actions";
 import { saveInvoiceAction, getInvoicePayloadAction } from "../actions";
 import { formatINR, todayISO } from "@/lib/utils";
@@ -52,6 +55,7 @@ export default function NewInvoicePage() {
   const sourceQuotationId = React.useRef<string | null>(null);
   const [saving, setSaving] = React.useState(false);
   const [savedMsg, setSavedMsg] = React.useState<string | null>(null);
+  const [pick, setPick] = React.useState("");
   const c = computeInvoice(s);
 
   React.useEffect(() => {
@@ -92,8 +96,46 @@ export default function NewInvoicePage() {
   function addLine() {
     setS((prev) => ({
       ...prev,
-      lines: [...prev.lines, { id: uid(), description: "", unit: "LS", qty: 1, rate: 0 }],
+      lines: [...prev.lines, { id: uid(), description: "", unit: "LS", qty: 1, rate: 0, lumpsumMode: "none" }],
     }));
+  }
+
+  /** Same item master the quotation builder uses — one catalogue for both. */
+  function addFromMaster(itemId: string) {
+    const m = ITEM_MASTER.find((i) => i.id === itemId);
+    if (!m) return;
+    setS((prev) => ({
+      ...prev,
+      lines: [
+        ...prev.lines,
+        {
+          id: uid(),
+          itemId: m.id,
+          description: m.description,
+          unit: m.unit,
+          usesSqft: m.usesSqft,
+          qty: 1,
+          sqft: m.usesSqft ? 100 : 1,
+          rate: 0,
+          specific: "",
+          lumpsumMode: m.unit === "LUMPSUM" ? "rate" : "none",
+        },
+      ],
+    }));
+    setPick("");
+  }
+
+  const sigRef = React.useRef<HTMLInputElement>(null);
+  async function handleSignature(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !file.type.startsWith("image/")) return;
+    try {
+      set("signatureUrl", await fileToResizedDataUrl(file, 600, 0.9));
+    } catch {
+      /* ignore decode errors */
+    } finally {
+      if (sigRef.current) sigRef.current.value = "";
+    }
   }
 
   async function saveInvoice() {
@@ -171,31 +213,79 @@ export default function NewInvoicePage() {
           <Card>
             <CardHeader className="flex-row items-center justify-between">
               <CardTitle className="text-base">Line Items</CardTitle>
-              <Button size="sm" variant="outline" onClick={addLine}><Plus /> Add Item</Button>
+              <div className="flex gap-2">
+                <Select value={pick} onChange={(e) => addFromMaster(e.target.value)} className="h-8 w-48 text-xs">
+                  <option value="">+ Add from item master…</option>
+                  {ITEM_CATEGORIES.map((cat) => (
+                    <optgroup key={cat} label={cat}>
+                      {ITEM_MASTER.filter((i) => i.category === cat).map((i) => (
+                        <option key={i.id} value={i.id}>{i.name}</option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </Select>
+                <Button size="sm" variant="outline" onClick={addLine}><Plus /> Custom</Button>
+              </div>
             </CardHeader>
             <CardContent className="space-y-3">
-              {s.lines.length === 0 && <p className="py-4 text-center text-sm text-muted-foreground">No items yet — click &quot;Add Item&quot;.</p>}
-              {s.lines.map((l, i) => (
+              {s.lines.length === 0 && <p className="py-4 text-center text-sm text-muted-foreground">No items yet — add from the master list.</p>}
+              {s.lines.map((l, i) => {
+                const lm = getLumpsumMode(l);
+                return (
                 <div key={l.id} className="rounded-lg border border-border p-3">
                   <div className="mb-2 flex items-start gap-2">
                     <span className="mt-2 text-xs font-medium text-muted-foreground">{i + 1}.</span>
-                    <Input value={l.description} onChange={(e) => updateLine(l.id, { description: e.target.value })} placeholder="Item / service description" className="flex-1" />
+                    <Textarea value={l.description} onChange={(e) => updateLine(l.id, { description: e.target.value })} placeholder="Item / service description" className="min-h-[48px] flex-1" />
                     <Button size="icon" variant="ghost" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => removeLine(l.id)}><Trash2 className="h-3.5 w-3.5" /></Button>
                   </div>
-                  <div className="grid grid-cols-4 gap-2">
+                  <div className="grid grid-cols-5 gap-2">
                     <Field label="Unit" small>
                       <Select value={l.unit} onChange={(e) => updateLine(l.id, { unit: e.target.value })} className="h-8 text-xs">
-                        {["SQFT", "SQM", "RFT", "RMT", "CUM", "KG", "MT", "NOS", "LS"].map((u) => <option key={u} value={u}>{u}</option>)}
+                        {["SQFT", "SQM", "RFT", "RMT", "FEET", "CUM", "KG", "MT", "BAG", "NOS", "POINT", "LS"].map((u) => <option key={u} value={u}>{u}</option>)}
                       </Select>
                     </Field>
-                    <Field label="Qty" small><Input type="number" value={l.qty} onChange={(e) => updateLine(l.id, { qty: Number(e.target.value) })} className="h-8 text-xs" /></Field>
-                    <Field label="Rate" small><Input type="number" value={l.rate} onChange={(e) => updateLine(l.id, { rate: Number(e.target.value) })} className="h-8 text-xs" /></Field>
+                    <Field label="Qty" small>
+                      {lm === "qty" ? (
+                        <div className="flex h-8 items-center rounded-md border border-input bg-secondary px-2 text-xs font-medium text-muted-foreground">Lumpsum</div>
+                      ) : (
+                        <Input type="number" value={l.qty} onChange={(e) => updateLine(l.id, { qty: Number(e.target.value) })} className="h-8 text-xs" />
+                      )}
+                    </Field>
+                    <Field label="Rate" small>
+                      {lm === "rate" ? (
+                        <div className="flex h-8 items-center rounded-md border border-input bg-secondary px-2 text-xs font-medium text-muted-foreground">Lumpsum</div>
+                      ) : (
+                        <Input type="number" value={l.rate} onChange={(e) => updateLine(l.id, { rate: Number(e.target.value) })} className="h-8 text-xs" />
+                      )}
+                    </Field>
+                    <Field label="Specific" small><Input value={l.specific ?? ""} onChange={(e) => updateLine(l.id, { specific: e.target.value })} className="h-8 text-xs" /></Field>
                     <Field label="Amount" small>
-                      <div className="flex h-8 items-center justify-end rounded-md bg-secondary px-2 text-xs font-medium tabular-nums">{formatINR(invoiceLineAmount(l))}</div>
+                      {lm === "amount" ? (
+                        <div className="flex h-8 items-center rounded-md border border-input bg-secondary px-2 text-xs font-medium text-muted-foreground">Lumpsum</div>
+                      ) : lm === "rate" ? (
+                        <Input type="number" value={l.rate || ""} placeholder="0" onChange={(e) => updateLine(l.id, { rate: Number(e.target.value) })} className="h-8 text-right text-xs" />
+                      ) : (
+                        <div className="flex h-8 items-center justify-end rounded-md bg-secondary px-2 text-xs font-medium tabular-nums">{formatINR(invoiceLineAmount(l))}</div>
+                      )}
                     </Field>
                   </div>
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                    <label htmlFor={`ilm-${l.id}`}>Lumpsum</label>
+                    <Select
+                      id={`ilm-${l.id}`}
+                      value={lm}
+                      onChange={(e) => updateLine(l.id, { lumpsumMode: e.target.value as LumpsumMode })}
+                      className="h-7 w-auto py-0 text-xs"
+                    >
+                      <option value="none">No — Qty × Rate</option>
+                      <option value="qty">In Qty — enter Rate</option>
+                      <option value="rate">In Rate — enter Amount</option>
+                      <option value="amount">In Amount — enter Rate</option>
+                    </Select>
+                  </div>
                 </div>
-              ))}
+                );
+              })}
             </CardContent>
           </Card>
 
@@ -209,10 +299,33 @@ export default function NewInvoicePage() {
                 </Select>
               </Field>
               <Field label="GST Rate %"><Input type="number" value={s.gstRate} onChange={(e) => set("gstRate", Number(e.target.value))} /></Field>
-              <Field label="Discount"><Input type="number" value={s.discount} onChange={(e) => set("discount", Number(e.target.value))} /></Field>
-              <div />
+              <Field label="Discount ₹"><Input type="number" value={s.discount} onChange={(e) => set("discount", Number(e.target.value))} /></Field>
+              <Field label="Additional Charge ₹"><Input type="number" value={s.additionalCharges ?? 0} onChange={(e) => set("additionalCharges", Number(e.target.value))} /></Field>
+              <Field label="Additional Charge Label" full><Input value={s.additionalLabel ?? ""} onChange={(e) => set("additionalLabel", e.target.value)} /></Field>
               <Field label="Terms & Conditions" full><Textarea value={s.terms} onChange={(e) => set("terms", e.target.value)} className="min-h-[100px]" /></Field>
               <Field label="Notes" full><Textarea value={s.notes} onChange={(e) => set("notes", e.target.value)} /></Field>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader><CardTitle className="text-base">Business Signature</CardTitle></CardHeader>
+            <CardContent>
+              <input ref={sigRef} type="file" accept="image/*" className="hidden" onChange={handleSignature} />
+              <div className="flex items-center gap-4">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={s.signatureUrl || DEFAULT_SIGNATURE} alt="Business signature" className="h-24 w-auto rounded border border-border bg-white object-contain px-2" />
+                <div className="flex flex-col gap-2">
+                  <span className="text-xs text-muted-foreground">
+                    {s.signatureUrl ? "Custom signature" : "Default Keyvendors signature"}
+                  </span>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="outline" onClick={() => sigRef.current?.click()}>Replace</Button>
+                    {s.signatureUrl && (
+                      <Button size="sm" variant="outline" className="text-destructive" onClick={() => set("signatureUrl", "")}>Use default</Button>
+                    )}
+                  </div>
+                </div>
+              </div>
             </CardContent>
           </Card>
         </div>

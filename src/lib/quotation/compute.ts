@@ -23,7 +23,9 @@ export interface QuoteLine {
   lumpsumMode: LumpsumMode;
 }
 
-type LumpsumLike = { lumpsumMode?: LumpsumMode; lumpsum?: boolean; unit: QuoteUnit };
+// `unit` is a plain string so invoice lines (whose units aren't restricted to
+// QuoteUnit) can be tested by the same helpers.
+type LumpsumLike = { lumpsumMode?: LumpsumMode; lumpsum?: boolean; unit: string };
 
 /** Resolve a line's lumpsum mode, tolerating legacy payloads. */
 export function getLumpsumMode(l: LumpsumLike): LumpsumMode {

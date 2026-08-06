@@ -1,5 +1,5 @@
-import { KEYVENDORS, OTHER_SERVICES } from "@/lib/quotation/company";
-import type { ComputedInvoice, InvoiceState } from "@/lib/invoice/compute";
+import { DEFAULT_SIGNATURE, KEYVENDORS, OTHER_SERVICES } from "@/lib/quotation/company";
+import { getLumpsumMode, type ComputedInvoice, type InvoiceState } from "@/lib/invoice/compute";
 
 const SALMON = "#e79b84";
 const inr = (n: number) =>
@@ -102,23 +102,34 @@ export function InvoiceDocument({ s, c }: { s: InvoiceState; c: ComputedInvoice 
             <th className="border border-slate-400 px-1 py-1 w-12">Unit</th>
             <th className="border border-slate-400 px-1 py-1 w-16">Qty</th>
             <th className="border border-slate-400 px-1 py-1 w-20 text-right">Rate</th>
+            <th className="border border-slate-400 px-1 py-1 w-16">Specific</th>
             <th className="border border-slate-400 px-1 py-1 w-24 text-right">Amount</th>
           </tr>
         </thead>
         <tbody>
-          {c.lines.map((l, i) => (
+          {c.lines.map((l, i) => {
+            const lm = getLumpsumMode(l);
+            return (
             <tr key={l.id} className="align-top">
               <td className="border border-slate-400 px-1 py-1 text-center">{i + 1}</td>
               <td className="border border-slate-400 px-2 py-1">{l.description}</td>
               <td className="border border-slate-400 px-1 py-1 text-center">{l.unit}</td>
-              <td className="border border-slate-400 px-1 py-1 text-center tabular-nums">{l.qty || ""}</td>
-              <td className="border border-slate-400 px-1 py-1 text-right tabular-nums">{l.rate ? inr(l.rate) : ""}</td>
-              <td className="border border-slate-400 px-1 py-1 text-right tabular-nums">{inr(l.amount)}</td>
+              <td className="border border-slate-400 px-1 py-1 text-center tabular-nums">
+                {lm === "qty" ? "Lumpsum" : l.qty || ""}
+              </td>
+              <td className="border border-slate-400 px-1 py-1 text-right tabular-nums">
+                {lm === "rate" ? "Lumpsum" : l.rate ? inr(l.rate) : ""}
+              </td>
+              <td className="border border-slate-400 px-1 py-1 text-center">{l.specific ?? ""}</td>
+              <td className="border border-slate-400 px-1 py-1 text-right tabular-nums">
+                {lm === "amount" ? "Lumpsum" : inr(l.amount)}
+              </td>
             </tr>
-          ))}
+            );
+          })}
           {c.lines.length === 0 && (
             <tr>
-              <td colSpan={6} className="border border-slate-400 px-2 py-6 text-center text-slate-400">No items added yet.</td>
+              <td colSpan={7} className="border border-slate-400 px-2 py-6 text-center text-slate-400">No items added yet.</td>
             </tr>
           )}
         </tbody>
@@ -132,6 +143,9 @@ export function InvoiceDocument({ s, c }: { s: InvoiceState; c: ComputedInvoice 
         <table className="w-full border-collapse">
           <tbody className="tabular-nums">
             <TRow label="Sub Total" value={inr(c.subtotal)} />
+            {c.additionalCharges > 0 && (
+              <TRow label={s.additionalLabel?.trim() || "Additional Charges"} value={inr(c.additionalCharges)} />
+            )}
             <TRow label="Discount" value={c.discount ? "- " + inr(c.discount) : "0"} />
             <TRow label="Taxable Amount" value={inr(c.finalAmount)} bold />
             {s.taxMode === "intra" ? (
@@ -160,7 +174,11 @@ export function InvoiceDocument({ s, c }: { s: InvoiceState; c: ComputedInvoice 
         <div className="flex flex-col justify-end px-3 py-2 text-center text-[10px]">
           <div className="mt-6 grid grid-cols-2 gap-3">
             <div className="border-t border-slate-400 pt-1">Client&apos;s Signature</div>
-            <div className="border-t border-slate-400 pt-1">For {KEYVENDORS.name}</div>
+            <div>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={s.signatureUrl || DEFAULT_SIGNATURE} alt="Business signature" className="mx-auto mb-1 h-24 w-full max-w-[220px] object-contain" />
+              <div className="border-t border-slate-400 pt-1">For {KEYVENDORS.name}</div>
+            </div>
           </div>
         </div>
       </div>

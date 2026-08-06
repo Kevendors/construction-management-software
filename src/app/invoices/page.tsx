@@ -1,31 +1,26 @@
 import Link from "next/link";
-import { Plus, IndianRupee, CheckCircle2, AlertCircle, FileText } from "lucide-react";
+import { Plus, IndianRupee, CheckCircle2, AlertCircle } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { StatCard } from "@/components/dashboard/stat-card";
-import { Badge } from "@/components/ui/badge";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { getInvoicesView } from "@/lib/data/commercial";
 import { lineTotalWithTax } from "@/lib/data/compute";
-import { invoiceStatusMeta } from "@/lib/labels";
 import { formatINR } from "@/lib/utils";
+import { InvoicesList } from "@/components/invoice/invoices-list";
+import { getAuthContext } from "@/lib/auth/context";
+import { isAdminRole } from "@/lib/auth/permissions";
 
 export default async function InvoicesPage() {
-  const rows = (await getInvoicesView()).map((v) => ({
+  const [views, ctx] = await Promise.all([getInvoicesView(), getAuthContext()]);
+  const rows = views.map((v) => ({
     ...v,
     total: lineTotalWithTax(v.invoice.items, v.invoice.taxRate),
   }));
   const totalRaised = rows.reduce((s, r) => s + r.total, 0);
   const totalReceived = rows.reduce((s, r) => s + r.invoice.received, 0);
   const outstanding = totalRaised - totalReceived;
+  // No auth context = mock/demo mode, where the current user is a super_admin.
+  const canDelete = ctx ? isAdminRole(ctx.role) : true;
 
   return (
     <>
@@ -47,62 +42,8 @@ export default async function InvoicesPage() {
         <StatCard label="Outstanding" value={formatINR(outstanding, { compact: true })} icon={AlertCircle} accent="destructive" />
       </div>
 
-      <Card>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Invoice</TableHead>
-                <TableHead>Project</TableHead>
-                <TableHead>Client</TableHead>
-                <TableHead>Date</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Total</TableHead>
-                <TableHead className="text-right">Received</TableHead>
-                <TableHead className="text-right">Doc</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.map(({ invoice: inv, total, project, client }) => {
-                const meta = invoiceStatusMeta[inv.status];
-                return (
-                  <TableRow key={inv.id}>
-                    <TableCell className="font-medium">{inv.number}</TableCell>
-                    <TableCell>
-                      {project && (
-                        <Link href={`/projects/${project.id}`} className="hover:underline">
-                          {project.code}
-                        </Link>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">{client?.company}</TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {new Date(inv.date).toLocaleDateString("en-IN", {
-                        day: "2-digit",
-                        month: "short",
-                        year: "numeric",
-                      })}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={meta.variant}>{meta.label}</Badge>
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">{formatINR(total)}</TableCell>
-                    <TableCell className="text-right tabular-nums">{formatINR(inv.received)}</TableCell>
-                    <TableCell className="text-right">
-                      <Link
-                        href={`/invoices/new?id=${inv.id}`}
-                        className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
-                      >
-                        <FileText className="h-4 w-4" /> Open
-                      </Link>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+      <InvoicesList items={views} canDelete={canDelete} />
+
     </>
   );
 }

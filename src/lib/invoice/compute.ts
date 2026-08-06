@@ -1,11 +1,25 @@
 import { amountInWords } from "../quotation/amount-in-words";
+import { getLumpsumMode, isLumpsum, type LumpsumMode } from "../quotation/compute";
 
+export type { LumpsumMode };
+
+/**
+ * Mirrors QuoteLine. Everything past `rate` is optional so invoices saved
+ * before these fields existed still parse — treat missing values as the
+ * plain "quantity × rate" line the builder used to produce.
+ */
 export interface InvoiceLine {
   id: string;
   description: string;
   unit: string;
   qty: number;
   rate: number;
+  itemId?: string | null;
+  usesSqft?: boolean;
+  sqft?: number;
+  /** Free-text note; shown in the document's "Specific" column. */
+  specific?: string;
+  lumpsumMode?: LumpsumMode;
 }
 
 export type TaxMode = "intra" | "inter";
@@ -28,11 +42,16 @@ export interface InvoiceState {
   taxMode: TaxMode;
   gstRate: number;
   discount: number;
+  /** Optional extra charge line (freight, site prep, …). Absent on old saves. */
+  additionalLabel?: string;
+  additionalCharges?: number;
   // Lines
   lines: InvoiceLine[];
   // Notes
   notes: string;
   terms: string;
+  /** Uploaded business signature (image data URL); empty/absent = none. */
+  signatureUrl?: string;
 }
 
 export interface ComputedInvoiceLine extends InvoiceLine {
@@ -42,6 +61,7 @@ export interface ComputedInvoiceLine extends InvoiceLine {
 export interface ComputedInvoice {
   lines: ComputedInvoiceLine[];
   subtotal: number;
+  additionalCharges: number;
   discount: number;
   finalAmount: number;
   gstRate: number;
@@ -58,9 +78,14 @@ export function nextInvoiceNumber(): string {
   return `INV-${new Date().getFullYear()}-${Date.now().toString(36).slice(-5).toUpperCase()}`;
 }
 
+/** Amount = Quantity × Rate, or just Rate for lump-sum lines. */
 export function invoiceLineAmount(l: InvoiceLine): number {
+  if (isLumpsum(l)) return l.rate || 0;
   return (l.rate || 0) * (l.qty || 0);
 }
+
+/** Re-exported so the invoice builder/document don't reach into the quote module. */
+export { getLumpsumMode, isLumpsum };
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -70,15 +95,20 @@ export function computeInvoice(s: InvoiceState): ComputedInvoice {
     amount: round2(invoiceLineAmount(l)),
   }));
   const subtotal = round2(lines.reduce((sum, l) => sum + l.amount, 0));
-  const discount = round2(Math.min(s.discount || 0, subtotal));
-  // GST is computed on the full subtotal per Indian GST law; discount is applied separately
-  const payableGst = round2((subtotal * (s.gstRate || 0)) / 100);
+  const additionalCharges = round2(s.additionalCharges || 0);
+  const discount = round2(Math.min(s.discount || 0, subtotal + additionalCharges));
+  // GST is computed on the full taxable supply value (before discount) per
+  // Indian GST law; the discount comes off the payable separately. Same
+  // treatment as computeQuote, so a converted quote totals identically.
+  const taxableBase = round2(subtotal + additionalCharges);
+  const payableGst = round2((taxableBase * (s.gstRate || 0)) / 100);
   const isIntra = s.taxMode === "intra";
-  const finalAmount = round2(subtotal - discount);
+  const finalAmount = round2(Math.max(0, subtotal - discount + additionalCharges));
   const grandTotal = round2(finalAmount + payableGst);
   return {
     lines,
     subtotal,
+    additionalCharges,
     discount,
     finalAmount,
     gstRate: s.gstRate || 0,
