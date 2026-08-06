@@ -1,8 +1,10 @@
 "use client";
 
+import * as React from "react";
 import Link from "next/link";
 import { ArrowLeft, MapPin, CalendarRange, User } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Select } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { OverviewTab } from "./overview-tab";
 import { TasksTab } from "./tasks-tab";
@@ -26,6 +28,13 @@ import {
 } from "@/lib/store/project-store";
 import { projectStatusMeta } from "@/lib/labels";
 import { formatINR } from "@/lib/utils";
+import type { ProjectStatus } from "@/lib/types";
+
+/** Lifecycle order, as offered in the header dropdown. */
+const PROJECT_STATUSES: ProjectStatus[] = ["planning", "ongoing", "on_hold", "completed"];
+
+/** Roles the 0002 'site' write policy lets update a project row. */
+const CAN_SET_STATUS = ["super_admin", "pm", "supervisor"];
 
 export function ProjectDetail({ projectId }: { projectId: string }) {
   return (
@@ -38,9 +47,19 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
 function ProjectDetailInner({ projectId }: { projectId: string }) {
   // Projects are loaded from Supabase into the store on mount (RLS-scoped to
   // the org); resolve this one by id once the load settles.
-  const { loading } = useStore();
+  const { loading, setProjectStatus } = useStore();
   const project = useProject(projectId);
   const clients = useClients();
+  const [savingStatus, setSavingStatus] = React.useState(false);
+  const [statusError, setStatusError] = React.useState<string | null>(null);
+
+  async function changeStatus(next: ProjectStatus) {
+    setSavingStatus(true);
+    setStatusError(null);
+    const err = await setProjectStatus(projectId, next);
+    setSavingStatus(false);
+    if (err) setStatusError(err);
+  }
   // The Team tab roster is the source of truth for people on a project —
   // show its Project Manager, not the legacy projects.pm_id label.
   const team = useProjectTeam(projectId);
@@ -49,6 +68,8 @@ function ProjectDetailInner({ projectId }: { projectId: string }) {
   const highCount = alerts.filter((a) => a.severity === "high").length;
   const { role } = useRole();
   const canSeeValue = role === "super_admin";
+  // No role at all = mock/demo mode, where the current user is a super_admin.
+  const canSetStatus = role === null || CAN_SET_STATUS.includes(role);
 
   if (loading && !project) {
     return (
@@ -100,9 +121,25 @@ function ProjectDetailInner({ projectId }: { projectId: string }) {
 
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs font-medium text-muted-foreground">{project.code}</span>
             <Badge variant={meta.variant}>{meta.label}</Badge>
+            {canSetStatus && (
+              <Select
+                aria-label={`Change status of ${project.name}`}
+                value={project.status}
+                disabled={savingStatus}
+                onChange={(e) => changeStatus(e.target.value as ProjectStatus)}
+                className="h-7 w-auto py-0 text-xs"
+              >
+                {PROJECT_STATUSES.map((sv) => (
+                  <option key={sv} value={sv}>
+                    Mark {projectStatusMeta[sv].label}
+                  </option>
+                ))}
+              </Select>
+            )}
+            {statusError && <span className="text-xs text-destructive">{statusError}</span>}
           </div>
           <h1 className="mt-1 text-2xl font-bold tracking-tight">{project.name}</h1>
           <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">

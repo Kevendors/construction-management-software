@@ -10,6 +10,7 @@ import {
   setProjectMemberRoleAction,
 } from "@/app/projects/team-actions";
 import { updateProjectGeofenceAction } from "@/app/projects/geofence-actions";
+import { updateProjectStatusAction } from "@/app/projects/status-actions";
 import {
   mapClient,
   mapExpense,
@@ -49,6 +50,7 @@ import type {
   LabourAttendance,
   Project,
   ProjectMember,
+  ProjectStatus,
   Role,
   SalesInvoice,
   SiteInstruction,
@@ -215,6 +217,7 @@ interface StoreValue extends StoreData {
     lng: number | null,
     radiusM: number | null
   ) => Promise<string | null>;
+  setProjectStatus: (projectId: string, status: ProjectStatus) => Promise<string | null>;
 }
 
 const StoreContext = React.createContext<StoreValue | null>(null);
@@ -782,6 +785,25 @@ export function ProjectStoreProvider({ children }: { children: React.ReactNode }
     [data.orgId, patch]
   );
 
+  /** Move a project through its lifecycle (header control on the detail page). */
+  const setProjectStatus = React.useCallback(
+    async (projectId: string, status: ProjectStatus): Promise<string | null> => {
+      const apply = (prev: StoreData): StoreData => ({
+        ...prev,
+        projects: prev.projects.map((p) => (p.id === projectId ? { ...p, status } : p)),
+      });
+      if (!live()) {
+        patch(apply);
+        return null;
+      }
+      const res = await updateProjectStatusAction(projectId, status);
+      if (res.error) return res.error;
+      patch(apply);
+      return null;
+    },
+    [patch]
+  );
+
   /** Super-admin-only: set/clear a project's site geo-fence (Settings tab). */
   const setProjectGeofence = React.useCallback(
     async (
@@ -827,6 +849,7 @@ export function ProjectStoreProvider({ children }: { children: React.ReactNode }
       setProjectMemberRole,
       removeProjectMember,
       setProjectGeofence,
+      setProjectStatus,
     }),
     [
       data,
