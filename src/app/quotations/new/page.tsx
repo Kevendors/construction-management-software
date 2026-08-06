@@ -10,7 +10,7 @@ import { Select, Textarea } from "@/components/ui/dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { QuotationDocument } from "@/components/quotation/quotation-document";
 import { ITEM_CATEGORIES, ITEM_MASTER } from "@/lib/quotation/item-master";
-import { computeQuote, getLumpsumMode, lineAmount, type QuoteLine, type QuoteState } from "@/lib/quotation/compute";
+import { computeQuote, getLumpsumMode, lineAmount, type LumpsumMode, type QuoteLine, type QuoteState } from "@/lib/quotation/compute";
 import { DEFAULT_SIGNATURE, DEFAULT_TERMS } from "@/lib/quotation/company";
 import { saveQuotationAction, getQuotationPayloadAction } from "../actions";
 import { fileToResizedDataUrl } from "@/lib/image";
@@ -236,7 +236,13 @@ export default function NewQuotationPage() {
                         {["SQFT", "SQM", "RFT", "RMT", "FEET", "CUM", "KG", "MT", "BAG", "NOS", "POINT"].map((u) => <option key={u} value={u}>{u}</option>)}
                       </Select>
                     </Field>
-                    <Field label="Qty" small><Input type="number" value={l.qty} onChange={(e) => updateLine(l.id, { qty: Number(e.target.value) })} className="h-8 text-xs" /></Field>
+                    <Field label="Qty" small>
+                      {lm === "qty" ? (
+                        <div className="flex h-8 items-center rounded-md border border-input bg-secondary px-2 text-xs font-medium text-muted-foreground">Lumpsum</div>
+                      ) : (
+                        <Input type="number" value={l.qty} onChange={(e) => updateLine(l.id, { qty: Number(e.target.value) })} className="h-8 text-xs" />
+                      )}
+                    </Field>
                     <Field label="Rate" small>
                       {lm === "rate" ? (
                         <div className="flex h-8 items-center rounded-md border border-input bg-secondary px-2 text-xs font-medium text-muted-foreground">Lumpsum</div>
@@ -255,15 +261,21 @@ export default function NewQuotationPage() {
                       )}
                     </Field>
                   </div>
-                  <div className="mt-2 flex flex-wrap gap-4 text-xs text-muted-foreground">
-                    <label className="flex items-center gap-1.5">
-                      <input type="checkbox" checked={lm === "rate"} disabled={lm === "amount"} onChange={(e) => updateLine(l.id, { lumpsumMode: e.target.checked ? "rate" : "none" })} />
-                      Lumpsum in Rate <span className="text-muted-foreground/70">(enter Amount)</span>
-                    </label>
-                    <label className="flex items-center gap-1.5">
-                      <input type="checkbox" checked={lm === "amount"} disabled={lm === "rate"} onChange={(e) => updateLine(l.id, { lumpsumMode: e.target.checked ? "amount" : "none" })} />
-                      Lumpsum in Amount <span className="text-muted-foreground/70">(enter Rate)</span>
-                    </label>
+                  {/* One select rather than mutually-exclusive checkboxes: the
+                      modes were never combinable, and there are now three. */}
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                    <label htmlFor={`lm-${l.id}`}>Lumpsum</label>
+                    <Select
+                      id={`lm-${l.id}`}
+                      value={lm}
+                      onChange={(e) => updateLine(l.id, { lumpsumMode: e.target.value as LumpsumMode })}
+                      className="h-7 w-auto py-0 text-xs"
+                    >
+                      <option value="none">No — Qty × Rate</option>
+                      <option value="qty">In Qty — enter Rate</option>
+                      <option value="rate">In Rate — enter Amount</option>
+                      <option value="amount">In Amount — enter Rate</option>
+                    </Select>
                   </div>
                 </div>
                 );

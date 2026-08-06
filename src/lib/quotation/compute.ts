@@ -1,8 +1,14 @@
 import type { QuoteUnit } from "./item-master";
 import { amountInWords } from "./amount-in-words";
 
-/** Where the "Lumpsum" label is shown; the other field holds the figure. */
-export type LumpsumMode = "none" | "rate" | "amount";
+/**
+ * Which column shows the "Lumpsum" label instead of a number.
+ *  - "qty":    quantity isn't measurable; the Rate is typed and becomes the Amount
+ *  - "rate":   the figure is typed into Amount
+ *  - "amount": the figure is typed into Rate
+ * In every case the line's amount is that single typed figure — see lineAmount.
+ */
+export type LumpsumMode = "none" | "qty" | "rate" | "amount";
 
 export interface QuoteLine {
   id: string;
