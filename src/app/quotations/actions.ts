@@ -48,15 +48,25 @@ export async function saveQuotationAction(
   let clientId: string | null = null;
   const company = (state.company || state.clientName || "").trim();
   if (company) {
-    const { data: existing } = await supabase
-      .from("clients")
-      .select("id")
-      .eq("org_id", orgId)
-      .ilike("company", company)
-      .limit(1)
-      .maybeSingle();
-    if (existing) {
-      clientId = existing.id as string;
+    // Match on company OR name. Quotes that fill in only a contact name are
+    // stored with company = null, so a company-only lookup never matched them
+    // and every save minted another duplicate client. Two sequential queries
+    // rather than .or(), whose comma syntax breaks on names containing
+    // commas, parentheses or ampersands.
+    const findBy = async (column: "company" | "name") => {
+      const { data } = await supabase
+        .from("clients")
+        .select("id")
+        .eq("org_id", orgId)
+        .ilike(column, company)
+        .limit(1)
+        .maybeSingle();
+      return (data?.id as string | undefined) ?? null;
+    };
+    const existingId = (await findBy("company")) ?? (await findBy("name"));
+
+    if (existingId) {
+      clientId = existingId;
     } else {
       const { data: created, error } = await supabase
         .from("clients")

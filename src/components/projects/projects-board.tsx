@@ -200,7 +200,9 @@ function NewProjectDialog({
           <Select id="p-client" value={clientId} onChange={(e) => setClientId(e.target.value)}>
             {clients.map((c) => (
               <option key={c.id} value={c.id}>
-                {c.company}
+                {/* Same fallback the clients list uses — company is optional,
+                    and without this those rows render as blank options. */}
+                {c.company || c.name || "Unnamed client"}
               </option>
             ))}
           </Select>
