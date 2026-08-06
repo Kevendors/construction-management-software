@@ -174,6 +174,23 @@ export async function linkQuotationToProjectAction(
 }
 
 /**
+ * Record which invoice a quotation was billed as. Same contract as
+ * linkQuotationToProjectAction: best-effort, and a no-op before 0021.
+ */
+export async function linkQuotationToInvoiceAction(
+  quotationId: string,
+  invoiceId: string
+): Promise<SaveResult> {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("quotations")
+    .update({ converted_invoice_id: invoiceId })
+    .eq("id", quotationId);
+  if (error && error.code !== "42703") return { error: error.message };
+  return { id: quotationId };
+}
+
+/**
  * Super-admin-only: permanently delete a quotation. `quotation_items` go with
  * it via the FK cascade, and nothing else in the schema references quotations,
  * so no rows are orphaned.

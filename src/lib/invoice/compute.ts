@@ -53,6 +53,11 @@ export interface ComputedInvoice {
   words: string;
 }
 
+/** INV-<year>-<base36 tail of the clock>, shared by the builder and converters. */
+export function nextInvoiceNumber(): string {
+  return `INV-${new Date().getFullYear()}-${Date.now().toString(36).slice(-5).toUpperCase()}`;
+}
+
 export function invoiceLineAmount(l: InvoiceLine): number {
   return (l.rate || 0) * (l.qty || 0);
 }

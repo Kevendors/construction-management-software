@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowRightLeft, Download, ExternalLink, Search, Trash2, X } from "lucide-react";
+import { ArrowRightLeft, Download, ExternalLink, ReceiptText, Search, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -24,9 +24,11 @@ import { formatINR } from "@/lib/utils";
 import type { Client, Quotation } from "@/lib/types";
 import {
   deleteQuotationAction,
+  getQuotationPayloadAction,
   updateQuotationStatusAction,
   type QuotationStatus,
 } from "@/app/quotations/actions";
+import { quoteStateToInvoiceState } from "@/lib/quotation/to-invoice";
 
 const QUOTATION_STATUSES: QuotationStatus[] = ["draft", "sent", "accepted", "rejected"];
 
@@ -206,6 +208,31 @@ export function QuotationsList({
   const [updatingId, setUpdatingId] = React.useState<string | null>(null);
   const [statusError, setStatusError] = React.useState<{ id: string; message: string } | null>(null);
   const [pendingDelete, setPendingDelete] = React.useState<PendingDelete | null>(null);
+  const [converting, setConverting] = React.useState<string | null>(null);
+
+  /**
+   * The list only holds saved line items, not the builder state, so fetch the
+   * quote's payload and map it before handing off to the invoice builder. The
+   * invoice is only written once the user reviews and saves it.
+   */
+  async function convertToInvoice(quotationId: string) {
+    setConverting(quotationId);
+    const payload = await getQuotationPayloadAction(quotationId);
+    setConverting(null);
+    if (!payload) {
+      window.alert("This quotation has no saved details to convert. Open it, save it, then try again.");
+      return;
+    }
+    try {
+      localStorage.setItem(
+        "sitehub:newInvoicePrefill",
+        JSON.stringify({ state: quoteStateToInvoiceState(payload), quotationId })
+      );
+    } catch {
+      /* ignore (quota/private-browsing) */
+    }
+    router.push("/invoices/new");
+  }
 
   async function changeStatus(id: string, next: QuotationStatus) {
     setUpdatingId(id);
@@ -334,6 +361,23 @@ export function QuotationsList({
                     ) : (
                       <Button size="sm" onClick={() => convertToProject(router, q, client, total)}>
                         <ArrowRightLeft /> Convert to Project
+                      </Button>
+                    ))}
+                  {q.status === "accepted" &&
+                    (q.convertedInvoiceId ? (
+                      <Link href={`/invoices/new?id=${q.convertedInvoiceId}`}>
+                        <Button size="sm" variant="secondary">
+                          <ExternalLink /> View Invoice
+                        </Button>
+                      </Link>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={converting === q.id}
+                        onClick={() => convertToInvoice(q.id)}
+                      >
+                        <ReceiptText /> {converting === q.id ? "Preparing…" : "Convert to Invoice"}
                       </Button>
                     ))}
                   {canDelete && q.status !== "accepted" && (

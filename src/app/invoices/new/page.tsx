@@ -9,7 +9,8 @@ import { Input, Label } from "@/components/ui/input";
 import { Select, Textarea } from "@/components/ui/dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { InvoiceDocument } from "@/components/invoice/invoice-document";
-import { computeInvoice, invoiceLineAmount, type InvoiceLine, type InvoiceState } from "@/lib/invoice/compute";
+import { computeInvoice, invoiceLineAmount, nextInvoiceNumber, type InvoiceLine, type InvoiceState } from "@/lib/invoice/compute";
+import { linkQuotationToInvoiceAction } from "@/app/quotations/actions";
 import { saveInvoiceAction, getInvoicePayloadAction } from "../actions";
 import { formatINR, todayISO } from "@/lib/utils";
 
@@ -46,6 +47,9 @@ export default function NewInvoicePage() {
   const router = useRouter();
   const [s, setS] = React.useState<InvoiceState>(emptyState);
   const [invoiceId, setInvoiceId] = React.useState<string | null>(null);
+  // Quotation this invoice came from, so it can be stamped once saved and stop
+  // offering "Convert to Invoice". A ref: nothing renders from it.
+  const sourceQuotationId = React.useRef<string | null>(null);
   const [saving, setSaving] = React.useState(false);
   const [savedMsg, setSavedMsg] = React.useState<string | null>(null);
   const c = computeInvoice(s);
@@ -59,11 +63,21 @@ export default function NewInvoicePage() {
       });
       return;
     }
-    setS((prev) =>
-      prev.number
-        ? prev
-        : { ...prev, number: `INV-${new Date().getFullYear()}-${Date.now().toString(36).slice(-5).toUpperCase()}` }
-    );
+    // Handed over by "Convert to Invoice" on a quotation. Consumed once, then
+    // cleared, exactly like the New Project prefill.
+    try {
+      const raw = localStorage.getItem("sitehub:newInvoicePrefill");
+      if (raw) {
+        localStorage.removeItem("sitehub:newInvoicePrefill");
+        const pre = JSON.parse(raw) as { state: InvoiceState; quotationId?: string };
+        sourceQuotationId.current = pre.quotationId ?? null;
+        setS(pre.state);
+        return;
+      }
+    } catch {
+      /* ignore malformed/unavailable storage and fall through to a blank invoice */
+    }
+    setS((prev) => (prev.number ? prev : { ...prev, number: nextInvoiceNumber() }));
   }, []);
 
   function set<K extends keyof InvoiceState>(k: K, v: InvoiceState[K]) {
@@ -93,6 +107,12 @@ export default function NewInvoicePage() {
         if (res.id && res.id !== invoiceId) {
           setInvoiceId(res.id);
           window.history.replaceState(null, "", `/invoices/new?id=${res.id}`);
+          // Stamp the source quotation once, on the first save. Best-effort:
+          // the invoice exists either way, so a failure here isn't fatal.
+          if (sourceQuotationId.current) {
+            await linkQuotationToInvoiceAction(sourceQuotationId.current, res.id);
+            sourceQuotationId.current = null;
+          }
         }
       }
     } catch (e) {

@@ -164,6 +164,8 @@ export interface Quotation {
   taxRate: number;
   /** Project this quote was converted into; undefined until 0019 is applied. */
   convertedProjectId?: string;
+  /** Invoice this quote was billed as; undefined until 0021 is applied. */
+  convertedInvoiceId?: string;
 }
 
 export interface BoqItem extends LineItem {
