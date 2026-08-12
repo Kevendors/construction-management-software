@@ -182,10 +182,22 @@ export function InvoicesList({
   const [statusError, setStatusError] = React.useState<{ id: string; message: string } | null>(null);
   const [pendingDelete, setPendingDelete] = React.useState<PendingDelete | null>(null);
 
-  async function changeStatus(id: string, next: InvoiceStatus) {
+  /**
+   * Marking an invoice paid while money is still outstanding is almost always
+   * meant as "it's been settled", so offer to record the balance too. Declining
+   * still changes the label — that's the deliberate override.
+   */
+  async function changeStatus(id: string, next: InvoiceStatus, outstanding: number) {
+    let settle = false;
+    if (next === "paid" && outstanding > 0) {
+      settle = window.confirm(
+        `Mark this invoice paid and record the outstanding ${formatINR(outstanding)} as received?\n\n` +
+          `Cancel to change the label only, leaving the received amount as it is.`
+      );
+    }
     setUpdatingId(id);
     setStatusError(null);
-    const res = await updateInvoiceStatusAction(id, next);
+    const res = await updateInvoiceStatusAction(id, next, settle);
     setUpdatingId(null);
     if (res.error) {
       setStatusError({ id, message: res.error });
@@ -271,7 +283,7 @@ export function InvoicesList({
                       aria-label={`Change status of ${inv.number}`}
                       value={inv.status}
                       disabled={updatingId === inv.id}
-                      onChange={(e) => changeStatus(inv.id, e.target.value as InvoiceStatus)}
+                      onChange={(e) => changeStatus(inv.id, e.target.value as InvoiceStatus, outstanding)}
                       className="h-7 w-auto py-0 text-xs"
                     >
                       {INVOICE_STATUSES.map((sv) => (
@@ -341,7 +353,7 @@ export function InvoicesList({
                   <TableBody>
                     {inv.items.map((it) => (
                       <TableRow key={it.id}>
-                        <TableCell className="font-medium">{it.description}</TableCell>
+                        <TableCell className="whitespace-pre-wrap font-medium">{it.description}</TableCell>
                         <TableCell className="text-right tabular-nums">
                           {it.qty} {it.unit}
                         </TableCell>

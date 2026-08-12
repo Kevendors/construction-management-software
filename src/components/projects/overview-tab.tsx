@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Plus, Receipt, IndianRupee, Wallet, Users, ArrowRight } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -22,12 +23,12 @@ import { CostCodePie } from "@/components/charts/cost-code-pie";
 import {
   AddAttendanceDialog,
   AddExpenseDialog,
-  AddInvoiceDialog,
   RecordPaymentDialog,
 } from "./project-dialogs";
 import { Dialog } from "@/components/ui/dialog";
 import { boqValue, lineTotalWithTax, taskProgressPercent } from "@/lib/mock/selectors";
 import {
+  useClients,
   useProject,
   useProjectAttendance,
   useProjectExpenses,
@@ -35,6 +36,7 @@ import {
   useProjectTasks,
   useProjectTransactions,
 } from "@/lib/store/project-store";
+import { nextInvoiceNumber, type InvoiceState } from "@/lib/invoice/compute";
 import { taskStatusMeta, approvalMeta } from "@/lib/labels";
 import { useRole } from "@/components/layout/role-provider";
 import { formatINR } from "@/lib/utils";
@@ -61,11 +63,40 @@ export function OverviewTab({ projectId }: { projectId: string }) {
   const attendance = useProjectAttendance(projectId);
   const pettyExpenses = useProjectExpenses(projectId);
 
+  const router = useRouter();
+  const clients = useClients();
+
   const [expenseOpen, setExpenseOpen] = React.useState(false);
-  const [invoiceOpen, setInvoiceOpen] = React.useState(false);
   const [paymentOpen, setPaymentOpen] = React.useState(false);
   const [attendanceOpen, setAttendanceOpen] = React.useState(false);
   const [detail, setDetail] = React.useState<null | "completion" | "tasks" | "invoices">(null);
+
+  /**
+   * Raise a real invoice for this project: pre-fill the builder with the
+   * project and its client, then hand off the same way "Convert to Invoice"
+   * does. This replaces a quick dialog that wrote a stub invoice with a single
+   * "Project billing" line and no builder payload.
+   */
+  function newInvoice() {
+    const client = clients.find((c) => c.id === project?.clientId) ?? null;
+    const state: Partial<InvoiceState> = {
+      clientName: client?.name ?? "",
+      company: client?.company ?? "",
+      address: client?.address ?? "",
+      clientGstin: client?.gst ?? "",
+      contact: client?.phone ?? "",
+      email: client?.email ?? "",
+      siteLocation: project?.location ?? "",
+      projectName: project?.name ?? "",
+      number: nextInvoiceNumber(),
+    };
+    try {
+      localStorage.setItem("sitehub:newInvoicePrefill", JSON.stringify({ state }));
+    } catch {
+      /* ignore (quota/private-browsing) */
+    }
+    router.push("/invoices/new");
+  }
 
   const tasks = allTasks.filter((t) => t.parentId === null);
   const counts = allTasks.reduce(
@@ -107,7 +138,6 @@ export function OverviewTab({ projectId }: { projectId: string }) {
     { label: "BOQ", value: boqValue(projectId) },
   ];
 
-  const nextInvoiceNumber = `INV-2026-${100 + invoices.length + 1}`;
 
   return (
     <div className="space-y-4">
@@ -118,7 +148,7 @@ export function OverviewTab({ projectId }: { projectId: string }) {
         </Button>
         {!isSupervisor && (
           <>
-            <Button size="sm" variant="outline" onClick={() => setInvoiceOpen(true)}>
+            <Button size="sm" variant="outline" onClick={newInvoice}>
               <Receipt /> Add Invoice
             </Button>
             <Button size="sm" variant="outline" onClick={() => setPaymentOpen(true)}>
@@ -381,13 +411,6 @@ export function OverviewTab({ projectId }: { projectId: string }) {
       </Card>
 
       <AddExpenseDialog projectId={projectId} open={expenseOpen} onClose={() => setExpenseOpen(false)} />
-      <AddInvoiceDialog
-        projectId={projectId}
-        clientId={project?.clientId ?? ""}
-        open={invoiceOpen}
-        onClose={() => setInvoiceOpen(false)}
-        nextNumber={nextInvoiceNumber}
-      />
       <RecordPaymentDialog projectId={projectId} open={paymentOpen} onClose={() => setPaymentOpen(false)} />
       <AddAttendanceDialog projectId={projectId} open={attendanceOpen} onClose={() => setAttendanceOpen(false)} />
 

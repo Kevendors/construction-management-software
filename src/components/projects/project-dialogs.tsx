@@ -11,8 +11,6 @@ import { lineTotalWithTax } from "@/lib/mock/selectors";
 import { formatINR, todayISO } from "@/lib/utils";
 
 const today = () => new Date().toISOString().slice(0, 10);
-const addDays = (d: string, n: number) =>
-  new Date(+new Date(d) + n * 86400000).toISOString().slice(0, 10);
 
 export function AddExpenseDialog({
   projectId,
@@ -81,90 +79,6 @@ export function AddExpenseDialog({
         <div className="flex justify-end gap-2 pt-2">
           <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
           <Button type="submit">Add Expense</Button>
-        </div>
-      </form>
-    </Dialog>
-  );
-}
-
-export function AddInvoiceDialog({
-  projectId,
-  clientId,
-  open,
-  onClose,
-  nextNumber,
-}: {
-  projectId: string;
-  clientId: string;
-  open: boolean;
-  onClose: () => void;
-  nextNumber: string;
-}) {
-  const { addInvoice } = useStore();
-  const [number, setNumber] = React.useState(nextNumber);
-  const [date, setDate] = React.useState(today());
-  const [amount, setAmount] = React.useState("");
-  const [taxRate, setTaxRate] = React.useState("18");
-  const [received, setReceived] = React.useState("0");
-
-  React.useEffect(() => {
-    if (open) setNumber(nextNumber);
-  }, [open, nextNumber]);
-
-  function submit(e: React.FormEvent) {
-    e.preventDefault();
-    const amt = Number(amount);
-    if (!amt) return;
-    const tax = Number(taxRate) || 0;
-    const rec = Number(received) || 0;
-    const total = amt + (amt * tax) / 100;
-    const status = rec <= 0 ? "sent" : rec >= total ? "paid" : "partial";
-    addInvoice({
-      number: number.trim() || nextNumber,
-      projectId,
-      clientId,
-      date,
-      dueDate: addDays(date, 30),
-      items: [{ id: "li-1", description: "Project billing", qty: 1, unit: "LS", rate: amt }],
-      taxRate: tax,
-      received: rec,
-      status,
-    });
-    setAmount("");
-    setReceived("0");
-    onClose();
-  }
-
-  return (
-    <Dialog open={open} onClose={onClose} title="Add Invoice" description="Updates the Sales Invoices card live.">
-      <form onSubmit={submit} className="space-y-4">
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1.5">
-            <Label htmlFor="i-number">Invoice #</Label>
-            <Input id="i-number" value={number} onChange={(e) => setNumber(e.target.value)} />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="i-date">Date</Label>
-            <Input id="i-date" type="date" value={date} max={todayISO()} onChange={(e) => setDate(e.target.value)} />
-          </div>
-        </div>
-        <div className="grid grid-cols-3 gap-3">
-          <div className="space-y-1.5">
-            <Label htmlFor="i-amount">Amount (₹)</Label>
-            <Input id="i-amount" type="number" value={amount} onChange={(e) => setAmount(e.target.value)} autoFocus required />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="i-tax">Tax %</Label>
-            <Input id="i-tax" type="number" value={taxRate} onChange={(e) => setTaxRate(e.target.value)} />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="i-received">Received (₹)</Label>
-            <Input id="i-received" type="number" value={received} onChange={(e) => setReceived(e.target.value)} />
-          </div>
-        </div>
-        <div className="flex justify-end gap-2 pt-2">
-          <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
-          <Button type="submit">Add Invoice</Button>
         </div>
       </form>
     </Dialog>

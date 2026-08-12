@@ -146,14 +146,38 @@ export type InvoiceStatus = "draft" | "sent" | "partial" | "paid" | "overdue";
 
 const INVOICE_STATUSES: InvoiceStatus[] = ["draft", "sent", "partial", "paid", "overdue"];
 
-/** Update an invoice's status (RLS-scoped — the org check happens in the policy). */
+/**
+ * Update an invoice's status (RLS-scoped — the org check happens in the policy).
+ *
+ * Pass `settleReceived` when marking an invoice paid to also record the
+ * outstanding balance as received. Without it a manual "Mark Paid" leaves the
+ * invoice reading Paid against ₹0 received, which is how INV-620 ended up
+ * showing a full outstanding balance under a Paid badge. The total is computed
+ * here from the stored line items rather than trusted from the client.
+ */
 export async function updateInvoiceStatusAction(
   id: string,
-  status: InvoiceStatus
+  status: InvoiceStatus,
+  settleReceived = false
 ): Promise<SaveResult> {
   if (!INVOICE_STATUSES.includes(status)) return { error: "Unknown invoice status." };
   const supabase = await createClient();
-  const { error } = await supabase.from("sales_invoices").update({ status }).eq("id", id);
+
+  const update: { status: InvoiceStatus; received?: number } = { status };
+  if (settleReceived && status === "paid") {
+    const { data: inv } = await supabase
+      .from("sales_invoices")
+      .select("tax_rate, invoice_items(qty, rate)")
+      .eq("id", id)
+      .maybeSingle();
+    if (inv) {
+      const row = inv as unknown as { tax_rate: number | null; invoice_items?: { qty: number; rate: number }[] };
+      const sub = (row.invoice_items ?? []).reduce((s, it) => s + Number(it.qty) * Number(it.rate), 0);
+      update.received = Math.round(sub * (1 + Number(row.tax_rate ?? 0) / 100) * 100) / 100;
+    }
+  }
+
+  const { error } = await supabase.from("sales_invoices").update(update).eq("id", id);
   if (error) return { error: error.message };
   await logActivity({
     action: "updated",
@@ -207,9 +231,64 @@ export async function deleteInvoiceAction(id: string): Promise<SaveResult> {
   return { id };
 }
 
-/** Load a saved invoice's full builder state for re-opening / editing. */
+/**
+ * Load a saved invoice's builder state for re-opening / editing.
+ *
+ * Invoices raised outside the builder — the project Overview quick-add, seeds,
+ * anything predating the payload column — have no payload. Returning null for
+ * those made the builder open a *blank* form against a real invoice id, and
+ * saving then overwrote the row: number reset to "—" and every line item
+ * deleted. So fall back to rebuilding the state from the invoice's own columns
+ * and line items.
+ */
 export async function getInvoicePayloadAction(id: string): Promise<InvoiceState | null> {
   const supabase = await createClient();
-  const { data } = await supabase.from("sales_invoices").select("payload").eq("id", id).maybeSingle();
-  return (data?.payload as InvoiceState | undefined) ?? null;
+  const { data } = await supabase
+    .from("sales_invoices")
+    .select(
+      "payload, number, date, due_date, tax_rate, invoice_items(id, description, qty, unit, rate), clients(name, company, email, phone, address, gst), projects(name)"
+    )
+    .eq("id", id)
+    .maybeSingle();
+  if (!data) return null;
+
+  const payload = data.payload as InvoiceState | undefined;
+  if (payload) return payload;
+
+  const row = data as unknown as {
+    number: string | null;
+    date: string;
+    due_date: string | null;
+    tax_rate: number | null;
+    invoice_items?: { id: string; description: string; qty: number; unit: string | null; rate: number }[];
+    clients?: { name?: string; company?: string; email?: string; phone?: string; address?: string; gst?: string } | null;
+    projects?: { name?: string } | null;
+  };
+
+  return {
+    clientName: row.clients?.name ?? "",
+    company: row.clients?.company ?? "",
+    address: row.clients?.address ?? "",
+    siteLocation: "",
+    clientGstin: row.clients?.gst ?? "",
+    contact: row.clients?.phone ?? "",
+    email: row.clients?.email ?? "",
+    number: row.number ?? "",
+    date: row.date,
+    dueDate: row.due_date ?? "",
+    projectName: row.projects?.name ?? "",
+    taxMode: "intra",
+    gstRate: Number(row.tax_rate ?? 0),
+    discount: 0,
+    lines: (row.invoice_items ?? []).map((it) => ({
+      id: it.id,
+      description: it.description,
+      unit: it.unit ?? "LS",
+      qty: Number(it.qty) || 0,
+      rate: Number(it.rate) || 0,
+      lumpsumMode: "none" as const,
+    })),
+    notes: "",
+    terms: "",
+  };
 }

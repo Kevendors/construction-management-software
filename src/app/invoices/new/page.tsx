@@ -73,9 +73,12 @@ export default function NewInvoicePage() {
       const raw = localStorage.getItem("sitehub:newInvoicePrefill");
       if (raw) {
         localStorage.removeItem("sitehub:newInvoicePrefill");
-        const pre = JSON.parse(raw) as { state: InvoiceState; quotationId?: string };
+        const pre = JSON.parse(raw) as { state: Partial<InvoiceState>; quotationId?: string };
         sourceQuotationId.current = pre.quotationId ?? null;
-        setS(pre.state);
+        // Merged, not replaced: a quotation hands over a complete state, while
+        // "Add Invoice" on a project sends only the client/project fields and
+        // relies on these defaults for terms, GST mode and due date.
+        setS((prev) => ({ ...prev, ...pre.state }));
         return;
       }
     } catch {
