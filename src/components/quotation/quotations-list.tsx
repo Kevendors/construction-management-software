@@ -415,7 +415,7 @@ export function QuotationsList({
                   <TableBody>
                     {q.items.map((it) => (
                       <TableRow key={it.id}>
-                        <TableCell className="font-medium">{it.description}</TableCell>
+                        <TableCell className="whitespace-pre-wrap font-medium">{it.description}</TableCell>
                         <TableCell className="text-right tabular-nums">
                           {it.qty} {it.unit}
                         </TableCell>

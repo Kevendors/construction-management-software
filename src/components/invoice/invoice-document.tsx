@@ -112,7 +112,8 @@ export function InvoiceDocument({ s, c }: { s: InvoiceState; c: ComputedInvoice 
             return (
             <tr key={l.id} className="align-top">
               <td className="border border-slate-400 px-1 py-1 text-center">{i + 1}</td>
-              <td className="border border-slate-400 px-2 py-1">{l.description}</td>
+              {/* pre-wrap keeps typed line breaks — same as the quotation doc */}
+              <td className="whitespace-pre-wrap border border-slate-400 px-2 py-1">{l.description}</td>
               <td className="border border-slate-400 px-1 py-1 text-center">{l.unit}</td>
               <td className="border border-slate-400 px-1 py-1 text-center tabular-nums">
                 {lm === "qty" ? "Lumpsum" : l.qty || ""}
