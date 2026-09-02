@@ -57,6 +57,29 @@ export default function NewInvoicePage() {
   const [saving, setSaving] = React.useState(false);
   const [savedMsg, setSavedMsg] = React.useState<string | null>(null);
   const [pick, setPick] = React.useState("");
+
+  // Line ids ticked for a bulk lumpsum change. Held by id, not index, so
+  // adding or removing a line can't shift the selection onto the wrong row.
+  const [selected, setSelected] = React.useState<Set<string>>(new Set());
+  const allSelected = s.lines.length > 0 && s.lines.every((l) => selected.has(l.id));
+
+  function toggleSelected(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+  function toggleSelectAll() {
+    setSelected(allSelected ? new Set() : new Set(s.lines.map((l) => l.id)));
+  }
+  function applyLumpsumToSelected(mode: LumpsumMode) {
+    setS((prev) => ({
+      ...prev,
+      lines: prev.lines.map((l) => (selected.has(l.id) ? { ...l, lumpsumMode: mode } : l)),
+    }));
+  }
   const c = computeInvoice(s);
 
   React.useEffect(() => {
@@ -238,11 +261,45 @@ export default function NewInvoicePage() {
                   Tip: select text in a description and press <kbd className="rounded border border-border px-1">Ctrl</kbd>+<kbd className="rounded border border-border px-1">B</kbd> to bold it, or wrap it in **asterisks**. Line breaks are kept as typed.
                 </p>
               )}
+              {s.lines.length > 0 && (
+                <div className="flex flex-wrap items-center gap-3 rounded-md border border-border bg-secondary/40 px-3 py-2 text-xs">
+                  <label className="flex items-center gap-1.5">
+                    <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} />
+                    Select all
+                  </label>
+                  <span className="text-muted-foreground">
+                    {selected.size} selected
+                  </span>
+                  <Select
+                    aria-label="Set lumpsum mode for the selected lines"
+                    value=""
+                    disabled={selected.size === 0}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      if (v) applyLumpsumToSelected(v as LumpsumMode);
+                    }}
+                    className="h-7 w-auto py-0 text-xs"
+                  >
+                    <option value="">Set Lumpsum to…</option>
+                    <option value="none">No — Qty × Rate</option>
+                    <option value="qty">In Qty — enter Rate</option>
+                    <option value="rate">In Rate — enter Amount</option>
+                    <option value="amount">In Amount — enter Rate</option>
+                  </Select>
+                </div>
+              )}
               {s.lines.map((l, i) => {
                 const lm = getLumpsumMode(l);
                 return (
                 <div key={l.id} className="rounded-lg border border-border p-3">
                   <div className="mb-2 flex items-start gap-2">
+                    <input
+                      type="checkbox"
+                      aria-label={`Select item ${i + 1}`}
+                      checked={selected.has(l.id)}
+                      onChange={() => toggleSelected(l.id)}
+                      className="mt-2.5"
+                    />
                     <span className="mt-2 text-xs font-medium text-muted-foreground">{i + 1}.</span>
                     <Textarea
                       value={l.description}
