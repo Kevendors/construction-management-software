@@ -20,6 +20,7 @@ import {
 import { lineSubtotal, lineTotalWithTax } from "@/lib/data/compute";
 import { invoiceStatusMeta } from "@/lib/labels";
 import { formatINR } from "@/lib/utils";
+import { richText } from "@/lib/quotation/rich-text";
 import type { Client, Project, SalesInvoice } from "@/lib/types";
 import {
   deleteInvoiceAction,
@@ -353,7 +354,7 @@ export function InvoicesList({
                   <TableBody>
                     {inv.items.map((it) => (
                       <TableRow key={it.id}>
-                        <TableCell className="whitespace-pre-wrap font-medium">{it.description}</TableCell>
+                        <TableCell className="whitespace-pre-wrap font-medium">{richText(it.description)}</TableCell>
                         <TableCell className="text-right tabular-nums">
                           {it.qty} {it.unit}
                         </TableCell>

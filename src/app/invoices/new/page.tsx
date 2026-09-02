@@ -16,6 +16,7 @@ import { fileToResizedDataUrl } from "@/lib/image";
 import { linkQuotationToInvoiceAction } from "@/app/quotations/actions";
 import { saveInvoiceAction, getInvoicePayloadAction } from "../actions";
 import { formatINR, todayISO } from "@/lib/utils";
+import { toggleBoldInTextarea } from "@/lib/quotation/rich-text";
 
 const today = () => new Date().toISOString().slice(0, 10);
 const plusDays = (n: number) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
@@ -232,13 +233,34 @@ export default function NewInvoicePage() {
             </CardHeader>
             <CardContent className="space-y-3">
               {s.lines.length === 0 && <p className="py-4 text-center text-sm text-muted-foreground">No items yet — add from the master list.</p>}
+              {s.lines.length > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Tip: select text in a description and press <kbd className="rounded border border-border px-1">Ctrl</kbd>+<kbd className="rounded border border-border px-1">B</kbd> to bold it, or wrap it in **asterisks**. Line breaks are kept as typed.
+                </p>
+              )}
               {s.lines.map((l, i) => {
                 const lm = getLumpsumMode(l);
                 return (
                 <div key={l.id} className="rounded-lg border border-border p-3">
                   <div className="mb-2 flex items-start gap-2">
                     <span className="mt-2 text-xs font-medium text-muted-foreground">{i + 1}.</span>
-                    <Textarea value={l.description} onChange={(e) => updateLine(l.id, { description: e.target.value })} placeholder="Item / service description" className="min-h-[48px] flex-1" />
+                    <Textarea
+                      value={l.description}
+                      onChange={(e) => updateLine(l.id, { description: e.target.value })}
+                      onKeyDown={(e) => {
+                        // Ctrl/Cmd+B wraps the selection in ** **, the same
+                        // markup the document renders bold.
+                        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "b") {
+                          const next = toggleBoldInTextarea(e.currentTarget);
+                          if (next !== null) {
+                            e.preventDefault();
+                            updateLine(l.id, { description: next });
+                          }
+                        }
+                      }}
+                      placeholder="Item / service description"
+                      className="min-h-[48px] flex-1"
+                    />
                     <Button size="icon" variant="ghost" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => removeLine(l.id)}><Trash2 className="h-3.5 w-3.5" /></Button>
                   </div>
                   <div className="grid grid-cols-5 gap-2">

@@ -1,5 +1,6 @@
 import { DEFAULT_SIGNATURE, KEYVENDORS, KEYVENDORS_LINKS, OTHER_SERVICES } from "@/lib/quotation/company";
 import { getLumpsumMode, type ComputedLine, type ComputedQuote, type QuoteState } from "@/lib/quotation/compute";
+import { richText } from "@/lib/quotation/rich-text";
 
 const SALMON = "#e79b84";
 const inr = (n: number) =>
@@ -135,7 +136,7 @@ export function QuotationDocument({ s, c }: { s: QuoteState; c: ComputedQuote })
               <td className="border border-slate-400 px-1 py-1 text-center">{i + 1}</td>
               {/* pre-wrap keeps the line breaks typed into the description box,
                   so lettered sub-points stay on their own lines in print */}
-              <td className="whitespace-pre-wrap border border-slate-400 px-2 py-1">{l.description}</td>
+              <td className="whitespace-pre-wrap border border-slate-400 px-2 py-1">{richText(l.description)}</td>
               <td className="border border-slate-400 px-1 py-1 text-center">{l.unit}</td>
               <td className="border border-slate-400 px-1 py-1 text-center tabular-nums">{displayQty(l)}</td>
               <td className="border border-slate-400 px-1 py-1 text-center tabular-nums">

@@ -1,5 +1,6 @@
 import { DEFAULT_SIGNATURE, KEYVENDORS, OTHER_SERVICES } from "@/lib/quotation/company";
 import { getLumpsumMode, type ComputedInvoice, type InvoiceState } from "@/lib/invoice/compute";
+import { richText } from "@/lib/quotation/rich-text";
 
 const SALMON = "#e79b84";
 const inr = (n: number) =>
@@ -113,7 +114,7 @@ export function InvoiceDocument({ s, c }: { s: InvoiceState; c: ComputedInvoice 
             <tr key={l.id} className="align-top">
               <td className="border border-slate-400 px-1 py-1 text-center">{i + 1}</td>
               {/* pre-wrap keeps typed line breaks — same as the quotation doc */}
-              <td className="whitespace-pre-wrap border border-slate-400 px-2 py-1">{l.description}</td>
+              <td className="whitespace-pre-wrap border border-slate-400 px-2 py-1">{richText(l.description)}</td>
               <td className="border border-slate-400 px-1 py-1 text-center">{l.unit}</td>
               <td className="border border-slate-400 px-1 py-1 text-center tabular-nums">
                 {lm === "qty" ? "Lumpsum" : l.qty || ""}

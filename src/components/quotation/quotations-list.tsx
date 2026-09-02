@@ -29,6 +29,7 @@ import {
   type QuotationStatus,
 } from "@/app/quotations/actions";
 import { quoteStateToInvoiceState } from "@/lib/quotation/to-invoice";
+import { richText } from "@/lib/quotation/rich-text";
 
 const QUOTATION_STATUSES: QuotationStatus[] = ["draft", "sent", "accepted", "rejected"];
 
@@ -415,7 +416,7 @@ export function QuotationsList({
                   <TableBody>
                     {q.items.map((it) => (
                       <TableRow key={it.id}>
-                        <TableCell className="whitespace-pre-wrap font-medium">{it.description}</TableCell>
+                        <TableCell className="whitespace-pre-wrap font-medium">{richText(it.description)}</TableCell>
                         <TableCell className="text-right tabular-nums">
                           {it.qty} {it.unit}
                         </TableCell>
