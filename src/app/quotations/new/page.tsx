@@ -272,6 +272,7 @@ export default function NewQuotationPage() {
                     <option value="">Set Lumpsum to…</option>
                     <option value="none">No — Qty × Rate</option>
                     <option value="qty">In Qty — enter Rate</option>
+                    <option value="qty_rate">In Qty + Rate — enter Amount</option>
                     <option value="rate">In Rate — enter Amount</option>
                     <option value="amount">In Amount — enter Rate</option>
                   </Select>
@@ -316,14 +317,14 @@ export default function NewQuotationPage() {
                       </Select>
                     </Field>
                     <Field label="Qty" small>
-                      {lm === "qty" ? (
+                      {lm === "qty" || lm === "qty_rate" ? (
                         <div className="flex h-8 items-center rounded-md border border-input bg-secondary px-2 text-xs font-medium text-muted-foreground">Lumpsum</div>
                       ) : (
                         <Input type="number" value={l.qty} onChange={(e) => updateLine(l.id, { qty: Number(e.target.value) })} className="h-8 text-xs" />
                       )}
                     </Field>
                     <Field label="Rate" small>
-                      {lm === "rate" ? (
+                      {lm === "rate" || lm === "qty_rate" ? (
                         <div className="flex h-8 items-center rounded-md border border-input bg-secondary px-2 text-xs font-medium text-muted-foreground">Lumpsum</div>
                       ) : (
                         <Input type="number" value={l.rate} placeholder={lm === "amount" ? "0" : undefined} onChange={(e) => updateLine(l.id, { rate: Number(e.target.value) })} className="h-8 text-xs" />
@@ -333,7 +334,7 @@ export default function NewQuotationPage() {
                     <Field label="Amount" small>
                       {lm === "amount" ? (
                         <div className="flex h-8 items-center rounded-md border border-input bg-secondary px-2 text-xs font-medium text-muted-foreground">Lumpsum</div>
-                      ) : lm === "rate" ? (
+                      ) : lm === "rate" || lm === "qty_rate" ? (
                         <Input type="number" value={l.rate || ""} placeholder="0" onChange={(e) => updateLine(l.id, { rate: Number(e.target.value) })} className="h-8 text-right text-xs" />
                       ) : (
                         <div className="flex h-8 items-center justify-end rounded-md bg-secondary px-2 text-xs font-medium tabular-nums">{formatINR(lineAmount(l))}</div>
@@ -352,6 +353,7 @@ export default function NewQuotationPage() {
                     >
                       <option value="none">No — Qty × Rate</option>
                       <option value="qty">In Qty — enter Rate</option>
+                    <option value="qty_rate">In Qty + Rate — enter Amount</option>
                       <option value="rate">In Rate — enter Amount</option>
                       <option value="amount">In Amount — enter Rate</option>
                     </Select>

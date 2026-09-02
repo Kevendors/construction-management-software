@@ -8,7 +8,7 @@ import { amountInWords } from "./amount-in-words";
  *  - "amount": the figure is typed into Rate
  * In every case the line's amount is that single typed figure — see lineAmount.
  */
-export type LumpsumMode = "none" | "qty" | "rate" | "amount";
+export type LumpsumMode = "none" | "qty" | "rate" | "amount" | "qty_rate";
 
 export interface QuoteLine {
   id: string;

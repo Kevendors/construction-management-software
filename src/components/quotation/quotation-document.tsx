@@ -30,7 +30,8 @@ function Bar({ children }: { children: React.ReactNode }) {
 }
 
 function displayQty(l: ComputedLine) {
-  if (getLumpsumMode(l) === "qty") return "Lumpsum";
+  const lm = getLumpsumMode(l);
+  if (lm === "qty" || lm === "qty_rate") return "Lumpsum";
   const q = l.qty || 0;
   return q ? new Intl.NumberFormat("en-IN").format(q) : "";
 }
@@ -140,7 +141,7 @@ export function QuotationDocument({ s, c }: { s: QuoteState; c: ComputedQuote })
               <td className="border border-slate-400 px-1 py-1 text-center">{l.unit}</td>
               <td className="border border-slate-400 px-1 py-1 text-center tabular-nums">{displayQty(l)}</td>
               <td className="border border-slate-400 px-1 py-1 text-center tabular-nums">
-                {lm === "rate" ? "Lumpsum" : l.rate ? inr(l.rate) : ""}
+                {lm === "rate" || lm === "qty_rate" ? "Lumpsum" : l.rate ? inr(l.rate) : ""}
               </td>
               <td className="border border-slate-400 px-1 py-1 text-center">{l.specific}</td>
               <td className="border border-slate-400 px-1 py-1 text-right tabular-nums">

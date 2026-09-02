@@ -117,10 +117,10 @@ export function InvoiceDocument({ s, c }: { s: InvoiceState; c: ComputedInvoice 
               <td className="whitespace-pre-wrap border border-slate-400 px-2 py-1">{richText(l.description)}</td>
               <td className="border border-slate-400 px-1 py-1 text-center">{l.unit}</td>
               <td className="border border-slate-400 px-1 py-1 text-center tabular-nums">
-                {lm === "qty" ? "Lumpsum" : l.qty || ""}
+                {lm === "qty" || lm === "qty_rate" ? "Lumpsum" : l.qty || ""}
               </td>
               <td className="border border-slate-400 px-1 py-1 text-right tabular-nums">
-                {lm === "rate" ? "Lumpsum" : l.rate ? inr(l.rate) : ""}
+                {lm === "rate" || lm === "qty_rate" ? "Lumpsum" : l.rate ? inr(l.rate) : ""}
               </td>
               <td className="border border-slate-400 px-1 py-1 text-center">{l.specific ?? ""}</td>
               <td className="border border-slate-400 px-1 py-1 text-right tabular-nums">
