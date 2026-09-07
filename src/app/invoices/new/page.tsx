@@ -348,7 +348,19 @@ export default function NewInvoicePage() {
                       ) : lm === "rate" || lm === "qty_rate" ? (
                         <Input type="number" value={l.rate || ""} placeholder="0" onChange={(e) => updateLine(l.id, { rate: Number(e.target.value) })} className="h-8 text-right text-xs" />
                       ) : (
-                        <div className="flex h-8 items-center justify-end rounded-md bg-secondary px-2 text-xs font-medium tabular-nums">{formatINR(invoiceLineAmount(l))}</div>
+                        // Editable even on a plain qty x rate line: typing a figure here
+                        // bills the line as a lump sum outright, so an item with no
+                        // measurable quantity needs no trip to the Lumpsum dropdown.
+                        <Input
+                          type="number"
+                          value={invoiceLineAmount(l) || ""}
+                          placeholder="0"
+                          title="Type an amount to bill this line as a lump sum"
+                          onChange={(e) =>
+                            updateLine(l.id, { rate: Number(e.target.value), lumpsumMode: "qty_rate" })
+                          }
+                          className="h-8 text-right text-xs"
+                        />
                       )}
                     </Field>
                   </div>
