@@ -284,6 +284,7 @@ export default function NewInvoicePage() {
                     <option value="none">No — Qty × Rate</option>
                     <option value="qty">In Qty — enter Rate</option>
                     <option value="qty_rate">In Qty + Rate — enter Amount</option>
+                    <option value="amount_only">Amount only — Qty &amp; Rate blank</option>
                     <option value="rate">In Rate — enter Amount</option>
                     <option value="amount">In Amount — enter Rate</option>
                   </Select>
@@ -330,6 +331,8 @@ export default function NewInvoicePage() {
                     <Field label="Qty" small>
                       {lm === "qty" || lm === "qty_rate" ? (
                         <div className="flex h-8 items-center rounded-md border border-input bg-secondary px-2 text-xs font-medium text-muted-foreground">Lumpsum</div>
+                      ) : lm === "amount_only" ? (
+                        <div className="h-8 rounded-md border border-input bg-secondary" aria-hidden />
                       ) : (
                         <Input type="number" value={l.qty} onChange={(e) => updateLine(l.id, { qty: Number(e.target.value) })} className="h-8 text-xs" />
                       )}
@@ -337,6 +340,8 @@ export default function NewInvoicePage() {
                     <Field label="Rate" small>
                       {lm === "rate" || lm === "qty_rate" ? (
                         <div className="flex h-8 items-center rounded-md border border-input bg-secondary px-2 text-xs font-medium text-muted-foreground">Lumpsum</div>
+                      ) : lm === "amount_only" ? (
+                        <div className="h-8 rounded-md border border-input bg-secondary" aria-hidden />
                       ) : (
                         <Input type="number" value={l.rate} onChange={(e) => updateLine(l.id, { rate: Number(e.target.value) })} className="h-8 text-xs" />
                       )}
@@ -357,7 +362,7 @@ export default function NewInvoicePage() {
                           placeholder="0"
                           title="Type an amount to bill this line as a lump sum"
                           onChange={(e) =>
-                            updateLine(l.id, { rate: Number(e.target.value), lumpsumMode: "qty_rate" })
+                            updateLine(l.id, { rate: Number(e.target.value), lumpsumMode: "amount_only" })
                           }
                           className="h-8 text-right text-xs"
                         />
@@ -375,6 +380,7 @@ export default function NewInvoicePage() {
                       <option value="none">No — Qty × Rate</option>
                       <option value="qty">In Qty — enter Rate</option>
                     <option value="qty_rate">In Qty + Rate — enter Amount</option>
+                    <option value="amount_only">Amount only — Qty &amp; Rate blank</option>
                       <option value="rate">In Rate — enter Amount</option>
                       <option value="amount">In Amount — enter Rate</option>
                     </Select>
