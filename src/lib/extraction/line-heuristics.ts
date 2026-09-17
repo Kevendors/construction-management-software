@@ -218,10 +218,11 @@ export function extractLinesFromText(rawLines: string[]): LineExtractionResult {
   return { lines, lowConfidence, gstRate, discount };
 }
 
-const GSTIN_PATTERN = /\b\d{2}[A-Z]{5}\d{4}[A-Z]\d[A-Z\d]Z[A-Z\d]\b/;
+// 15 chars: 2-digit state + 10-char PAN (5 letters, 4 digits, 1 letter) + 1-digit entity code + literal "Z" + 1 alphanumeric checksum.
+const GSTIN_PATTERN = /\b\d{2}[A-Z]{5}\d{4}[A-Z]\dZ[A-Z\d]\b/;
 const EMAIL_PATTERN = /[\w.+-]+@[\w-]+\.[A-Za-z.]{2,}/;
 const PHONE_PATTERN = /(?:\+?91[-\s]?)?\b[6-9]\d{9}\b/;
-const QUOTE_NUMBER_LINE = /\b(?:quotation|quote|ref(?:erence)?)\s*(?:no\.?|number|#)?\s*[:\-]?\s*([A-Za-z0-9\-/]{3,})/i;
+const QUOTE_NUMBER_LINE = /\b(?:quotation|quote|ref(?:erence)?)\s*(?:no\.?|number|#|:)\s*[:\-]?\s*([A-Za-z0-9\-/]{3,})/i;
 const DATE_TOKEN = /\b(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})\b/;
 
 /** Best-effort ISO date from a DD/MM/YYYY-style token (the app's own convention). */
