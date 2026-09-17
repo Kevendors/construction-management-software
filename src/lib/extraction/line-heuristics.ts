@@ -29,6 +29,18 @@ const STOP_MARKERS = /\b(sub\s*-?total|grand\s*total|total\s*amount|amount\s*in\
 const TABLE_HEADER_MARKERS = /\b(description|particulars|s\.?\s*no\.?|qty|quantity|rate|amount)\b/i;
 const GST_LINE = /\bg\.?s\.?t\.?\b.{0,15}?(\d{1,2}(?:\.\d+)?)\s*%/i;
 const DISCOUNT_LINE = /\bdiscount\b.{0,15}?(?:rs\.?|inr|₹)?\s*([\d,]+(?:\.\d+)?)/i;
+// A "GST 18%" / "Discount ₹5,000" line, or one already handled by
+// scanGstAndDiscount above — must not also fall through to parseItemLine and
+// become a fake line item (this app has no per-line GST field; see rows.ts's
+// identically-motivated SUMMARY_ROW for the Excel/paste path).
+const SUMMARY_LINE = /^\s*(gst|igst|cgst|sgst|tax|discount)\b/i;
+// Document metadata (title, "Client: X  GSTIN: Y", "Quotation No: X  Date: Y")
+// carries digit-like substrings (a GSTIN, a quote number, a date) that would
+// otherwise satisfy parseItemLine's "trailing numbers" check and become a
+// bogus priced item — extractHeaderFields reads these fields from the full
+// text separately, so a line clearly shaped like one is dropped here instead.
+const GSTIN_INLINE = /\b\d{2}[A-Z]{5}\d{4}[A-Z]\dZ[A-Z\d]\b/;
+const HEADER_LABEL_LINE = /^\s*(client(\s*name)?|company|quotation\s*(no\.?|number)?|quote\s*(no\.?|number)?|ref(?:erence)?\s*(no\.?|number)?|date|valid\s*till|site\s*location)\s*[:\-]/i;
 
 const NUMBER_TOKEN = /\d[\d,]*\.?\d*/g;
 const LEADING_SERIAL = /^\s*(\d{1,3})[.)]\s+/;
@@ -201,6 +213,8 @@ export function extractLinesFromText(rawLines: string[]): LineExtractionResult {
     // no real figures to extract and would otherwise be buffered as if it
     // were part of the first item's description — skip it explicitly.
     if (TABLE_HEADER_MARKERS.test(text) && numberTokens(text).length === 0) continue;
+
+    if (SUMMARY_LINE.test(text) || HEADER_LABEL_LINE.test(text) || GSTIN_INLINE.test(text)) continue;
 
     const result = parseItemLine(text, lines.length);
     if (!result.line) {
