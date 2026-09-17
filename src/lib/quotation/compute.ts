@@ -14,7 +14,9 @@ export interface QuoteLine {
   id: string;
   itemId: string | null;
   description: string;
-  unit: QuoteUnit;
+  // "" is a deliberate third state — this item genuinely has no unit — not
+  // just an unset default; every other value comes from QuoteUnit's list.
+  unit: QuoteUnit | "";
   usesSqft: boolean;
   rate: number; // per-unit rate, or (in either lumpsum mode) the lump-sum figure
   qty: number;
