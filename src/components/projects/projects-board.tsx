@@ -100,6 +100,8 @@ interface ProjectPrefill {
   location: string;
   /** Set when the handoff came from "Convert to Project" on a saved quotation. */
   quotationId?: string;
+  /** The quotation's own client, so the dialog doesn't fall back to clients[0]. */
+  clientId?: string;
 }
 
 function NewProjectDialog({
@@ -131,7 +133,7 @@ function NewProjectDialog({
   React.useEffect(() => {
     if (!open) return;
     setCode(nextCode);
-    setClientId((c) => c || clients[0]?.id || "");
+    setClientId((c) => c || prefill?.clientId || clients[0]?.id || "");
     if (prefill) {
       setName(prefill.name);
       setValue(String(prefill.value));

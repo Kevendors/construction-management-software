@@ -80,6 +80,8 @@ function convertToProject(
     location: "",
     // Lets ProjectsBoard stamp the quotation once the project is created.
     quotationId: q.id,
+    // Without this the dialog's Client field falls back to clients[0].
+    clientId: client?.id,
   };
   try {
     localStorage.setItem("sitehub:newProjectPrefill", JSON.stringify(payload));

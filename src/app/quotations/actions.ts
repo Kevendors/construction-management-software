@@ -27,6 +27,32 @@ export interface SaveResult {
   error?: string;
 }
 
+/**
+ * Resolve a client id from a company/name string — the same company-then-name
+ * match saveQuotationAction uses when saving. Lets "Convert to Project" open
+ * the dialog on the quote's own client instead of defaulting to whichever
+ * client the dialog would otherwise fall back to.
+ */
+export async function findClientIdByNameAction(company: string): Promise<string | null> {
+  const trimmed = company.trim();
+  if (!trimmed) return null;
+  const supabase = await createClient();
+  const orgId = await currentOrgId(supabase);
+  if (!orgId) return null;
+
+  const findBy = async (column: "company" | "name") => {
+    const { data } = await supabase
+      .from("clients")
+      .select("id")
+      .eq("org_id", orgId)
+      .ilike(column, trimmed)
+      .limit(1)
+      .maybeSingle();
+    return (data?.id as string | undefined) ?? null;
+  };
+  return (await findBy("company")) ?? (await findBy("name"));
+}
+
 export interface QuotationSource {
   filePath: string;
   fileName: string;

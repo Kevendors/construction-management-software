@@ -13,7 +13,7 @@ import { PasteRowsDialog } from "@/components/quotation/paste-rows-dialog";
 import { ITEM_CATEGORIES, ITEM_MASTER } from "@/lib/quotation/item-master";
 import { computeQuote, getLumpsumMode, lineAmount, type LumpsumMode, type QuoteLine, type QuoteState } from "@/lib/quotation/compute";
 import { DEFAULT_SIGNATURE, DEFAULT_TERMS } from "@/lib/quotation/company";
-import { saveQuotationAction, getQuotationPayloadAction } from "../actions";
+import { saveQuotationAction, getQuotationPayloadAction, findClientIdByNameAction } from "../actions";
 import { getQuotationSourceAction } from "../upload-actions";
 import { fileToResizedDataUrl } from "@/lib/image";
 import { formatINR, todayISO } from "@/lib/utils";
@@ -212,12 +212,13 @@ export default function NewQuotationPage() {
     }
   }
 
-  function convertToProject() {
+  async function convertToProject() {
+    const clientId = await findClientIdByNameAction(s.company || s.clientName || "");
     const payload = {
       name: s.quoteName || s.company || s.clientName || "New Project",
       value: Math.round(c.grandTotal),
       location: s.siteLocation || s.address || "",
-      clientName: s.company || s.clientName,
+      clientId: clientId ?? undefined,
       // Only set once the quote has been saved — an unsaved quote has no row
       // to link back to.
       quotationId: quotationId.current ?? undefined,
