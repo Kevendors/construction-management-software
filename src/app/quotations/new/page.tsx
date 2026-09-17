@@ -179,6 +179,17 @@ export default function NewQuotationPage() {
       lines: [...prev.lines, { id: uid(), itemId: null, description: "", unit: "SQFT", usesSqft: false, rate: 0, qty: 1, sqft: 1, specific: "", lumpsumMode: "none" }],
     }));
   }
+  /** Inserts a blank custom line right after `id`, for slotting an item into the middle of the list. */
+  function insertLineAfter(id: string) {
+    setS((prev) => {
+      const idx = prev.lines.findIndex((l) => l.id === id);
+      if (idx === -1) return prev;
+      const newLine: QuoteLine = { id: uid(), itemId: null, description: "", unit: "SQFT", usesSqft: false, rate: 0, qty: 1, sqft: 1, specific: "", lumpsumMode: "none" };
+      const lines = [...prev.lines];
+      lines.splice(idx + 1, 0, newLine);
+      return { ...prev, lines };
+    });
+  }
   const [pasteOpen, setPasteOpen] = React.useState(false);
   function addPastedLines(newLines: QuoteLine[]) {
     setS((prev) => ({ ...prev, lines: [...prev.lines, ...newLines] }));
@@ -410,6 +421,7 @@ export default function NewQuotationPage() {
                       placeholder="Item / service description"
                       className="min-h-[48px] flex-1"
                     />
+                    <Button size="icon" variant="ghost" className="h-7 w-7 text-muted-foreground hover:text-foreground" title="Insert item below" onClick={() => insertLineAfter(l.id)}><Plus className="h-3.5 w-3.5" /></Button>
                     <Button size="icon" variant="ghost" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => removeLine(l.id)}><Trash2 className="h-3.5 w-3.5" /></Button>
                   </div>
                   <div className="grid grid-cols-5 gap-2">
