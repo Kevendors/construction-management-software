@@ -52,6 +52,8 @@ export interface InvoiceState {
   terms: string;
   /** Uploaded business signature (image data URL); empty/absent = none. */
   signatureUrl?: string;
+  /** Proforma vs Tax Invoice — drives the document title. Fixed at creation. */
+  isProforma?: boolean;
 }
 
 export interface ComputedInvoiceLine extends InvoiceLine {
@@ -76,6 +78,11 @@ export interface ComputedInvoice {
 /** INV-<year>-<base36 tail of the clock>, shared by the builder and converters. */
 export function nextInvoiceNumber(): string {
   return `INV-${new Date().getFullYear()}-${Date.now().toString(36).slice(-5).toUpperCase()}`;
+}
+
+/** Same shape as nextInvoiceNumber, prefixed so a PI number reads distinctly. */
+export function nextProformaNumber(): string {
+  return `PI-${new Date().getFullYear()}-${Date.now().toString(36).slice(-5).toUpperCase()}`;
 }
 
 /** Amount = Quantity × Rate, or just Rate for lump-sum lines. */

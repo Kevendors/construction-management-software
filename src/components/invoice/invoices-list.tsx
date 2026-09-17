@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FileText, Search, Trash2, X } from "lucide-react";
+import { ArrowRightLeft, FileText, Search, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -23,6 +23,7 @@ import { formatINR } from "@/lib/utils";
 import { richText } from "@/lib/quotation/rich-text";
 import type { Client, Project, SalesInvoice } from "@/lib/types";
 import {
+  convertProformaToTaxInvoiceAction,
   deleteInvoiceAction,
   updateInvoiceStatusAction,
   type InvoiceStatus,
@@ -182,6 +183,20 @@ export function InvoicesList({
   const [updatingId, setUpdatingId] = React.useState<string | null>(null);
   const [statusError, setStatusError] = React.useState<{ id: string; message: string } | null>(null);
   const [pendingDelete, setPendingDelete] = React.useState<PendingDelete | null>(null);
+  const [converting, setConverting] = React.useState<string | null>(null);
+  const [convertError, setConvertError] = React.useState<{ id: string; message: string } | null>(null);
+
+  async function convertToTaxInvoice(id: string) {
+    setConverting(id);
+    setConvertError(null);
+    const res = await convertProformaToTaxInvoiceAction(id);
+    setConverting(null);
+    if (res.error) {
+      setConvertError({ id, message: res.error });
+      return;
+    }
+    router.refresh();
+  }
 
   /**
    * Marking an invoice paid while money is still outstanding is almost always
@@ -210,7 +225,8 @@ export function InvoicesList({
   const filtered = React.useMemo(() => {
     const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
     return items.filter((it) => {
-      if (status !== "all" && it.invoice.status !== status) return false;
+      if (status === "proforma" && !it.invoice.isProforma) return false;
+      else if (status !== "all" && status !== "proforma" && it.invoice.status !== status) return false;
       if (!terms.length) return true;
       const hay = haystack(it);
       return terms.every((t) => hay.includes(t));
@@ -248,6 +264,7 @@ export function InvoicesList({
           className="sm:w-44"
         >
           <option value="all">All statuses</option>
+          <option value="proforma">Proforma only</option>
           {INVOICE_STATUSES.map((sv) => (
             <option key={sv} value={sv}>
               {invoiceStatusMeta[sv].label}
@@ -280,6 +297,7 @@ export function InvoicesList({
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-semibold">{inv.number}</span>
                     <Badge variant={meta.variant}>{meta.label}</Badge>
+                    {inv.isProforma && <Badge variant="info">Proforma</Badge>}
                     <Select
                       aria-label={`Change status of ${inv.number}`}
                       value={inv.status}
@@ -295,6 +313,9 @@ export function InvoicesList({
                     </Select>
                     {statusError?.id === inv.id && (
                       <span className="text-xs text-destructive">{statusError.message}</span>
+                    )}
+                    {convertError?.id === inv.id && (
+                      <span className="text-xs text-destructive">{convertError.message}</span>
                     )}
                   </div>
                   <p className="mt-0.5 text-sm text-muted-foreground">
@@ -319,6 +340,15 @@ export function InvoicesList({
                       <FileText /> Open / PDF
                     </Button>
                   </Link>
+                  {inv.isProforma && (
+                    <Button
+                      size="sm"
+                      disabled={converting === inv.id}
+                      onClick={() => convertToTaxInvoice(inv.id)}
+                    >
+                      <ArrowRightLeft /> {converting === inv.id ? "Converting…" : "Convert to Tax Invoice"}
+                    </Button>
+                  )}
                   {canDelete && !UNDELETABLE.includes(inv.status) && (
                     <Button
                       size="sm"

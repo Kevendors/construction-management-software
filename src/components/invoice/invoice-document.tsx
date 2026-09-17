@@ -36,7 +36,7 @@ export function InvoiceDocument({ s, c }: { s: InvoiceState; c: ComputedInvoice 
     >
       {/* Title banner */}
       <div className="py-2 text-center text-2xl font-extrabold tracking-wide text-white" style={{ background: SALMON }}>
-        Tax Invoice
+        {s.isProforma ? "Proforma Invoice" : "Tax Invoice"}
       </div>
 
       {/* Header: From (left) + Date/Details (right) */}
@@ -91,7 +91,7 @@ export function InvoiceDocument({ s, c }: { s: InvoiceState; c: ComputedInvoice 
         {!s.clientName && !s.company && <p className="text-slate-400">Client details...</p>}
       </div>
 
-      <div className="py-1.5 text-center text-sm font-bold">Tax Invoice</div>
+      <div className="py-1.5 text-center text-sm font-bold">{s.isProforma ? "Proforma Invoice" : "Tax Invoice"}</div>
       {s.projectName && <div className="border-y border-slate-300 px-3 py-1 text-center font-semibold">{s.projectName}</div>}
 
       {/* Items table */}

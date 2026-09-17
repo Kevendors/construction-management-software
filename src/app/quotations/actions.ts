@@ -27,6 +27,13 @@ export interface SaveResult {
   error?: string;
 }
 
+export interface QuotationSource {
+  filePath: string;
+  fileName: string;
+  /** Dotted field paths the extractor flagged as uncertain (see 0023). */
+  lowConfidence?: string[];
+}
+
 /**
  * Persist a quotation (full state in payload + structured columns + line items).
  *
@@ -34,11 +41,14 @@ export interface SaveResult {
  * inserts a new row, which is how one quote ended up saved several times under
  * the same number. Status is deliberately left untouched on update so re-saving
  * an already-sent or accepted quote doesn't silently knock it back to draft.
+ * `source` is written only on insert — see the param note below.
  */
 export async function saveQuotationAction(
   state: QuoteState,
   grandTotal: number,
-  existingId?: string | null
+  existingId?: string | null,
+  /** Set only on first save of an uploaded quotation — never touched on update, like status. */
+  source?: QuotationSource
 ): Promise<SaveResult> {
   const supabase = await createClient();
   const orgId = await currentOrgId(supabase);
@@ -118,7 +128,21 @@ export async function saveQuotationAction(
   } else {
     const { data: quote, error: qErr } = await supabase
       .from("quotations")
-      .insert({ org_id: orgId, status: "draft", ...fields })
+      .insert({
+        org_id: orgId,
+        status: "draft",
+        ...fields,
+        ...(source
+          ? {
+              source: "upload",
+              source_file_path: source.filePath,
+              source_file_name: source.fileName,
+              extraction_review: source.lowConfidence?.length
+                ? { lowConfidence: source.lowConfidence }
+                : null,
+            }
+          : {}),
+      })
       .select("id")
       .single();
     if (qErr) return { error: qErr.message };

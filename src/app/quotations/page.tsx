@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Plus } from "lucide-react";
+import { Plus, Upload } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import { getQuotationsView } from "@/lib/data/commercial";
@@ -17,11 +17,18 @@ export default async function QuotationsPage() {
         title="Quotations"
         description="Proposals & estimates — convert accepted quotes to projects"
         action={
-          <Link href="/quotations/new">
-            <Button>
-              <Plus /> New Quotation
-            </Button>
-          </Link>
+          <>
+            <Link href="/quotations/upload">
+              <Button variant="outline">
+                <Upload /> Upload Quotation
+              </Button>
+            </Link>
+            <Link href="/quotations/new">
+              <Button>
+                <Plus /> New Quotation
+              </Button>
+            </Link>
+          </>
         }
       />
 

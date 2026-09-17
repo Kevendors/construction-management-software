@@ -27,10 +27,15 @@ export interface SaveResult {
   error?: string;
 }
 
-/** Create or update an invoice (full builder state in payload + line items). */
+/**
+ * Create or update an invoice (full builder state in payload + line items).
+ * Pass `isProforma: true` to raise it as a Proforma Invoice instead of a Tax
+ * Invoice — only read on insert, like status, so it can't flip on a later edit.
+ */
 export async function saveInvoiceAction(
   state: InvoiceState,
-  existingId?: string | null
+  existingId?: string | null,
+  isProforma = false
 ): Promise<SaveResult> {
   const supabase = await createClient();
   const orgId = await currentOrgId(supabase);
@@ -109,9 +114,18 @@ export async function saveInvoiceAction(
     invoiceId = existingId;
     await supabase.from("invoice_items").delete().eq("invoice_id", invoiceId);
   } else {
+    // is_proforma is only included when true — omitting it on every ordinary
+    // invoice means normal invoice creation keeps working even before
+    // migration 0024 (which adds the column) is applied; only "Convert to PI"
+    // depends on it, and that's a brand-new action anyway.
     const { data, error } = await supabase
       .from("sales_invoices")
-      .insert({ ...base, status: "draft" as const, received: 0 })
+      .insert({
+        ...base,
+        status: "draft" as const,
+        received: 0,
+        ...(isProforma ? { is_proforma: true } : {}),
+      })
       .select("id")
       .single();
     if (error) return { error: error.message };
@@ -252,8 +266,22 @@ export async function getInvoicePayloadAction(id: string): Promise<InvoiceState 
     .maybeSingle();
   if (!data) return null;
 
+  // Separate, failure-tolerant query for is_proforma (migration 0024) — kept
+  // out of the main select above so an unapplied migration can't turn this
+  // whole query into an error and blank out an invoice's payload, the exact
+  // data-loss bug already fixed once for invoices without a payload.
+  const { data: proformaRow, error: proformaErr } = await supabase
+    .from("sales_invoices")
+    .select("is_proforma")
+    .eq("id", id)
+    .maybeSingle();
+  const dbIsProforma = proformaErr ? undefined : (proformaRow as { is_proforma?: boolean } | null)?.is_proforma;
+
   const payload = data.payload as InvoiceState | undefined;
-  if (payload) return payload;
+  // Prefer the DB column when 0024 is applied; otherwise fall back to
+  // whatever the saved payload itself says (set by saveInvoiceAction).
+  const isProforma = dbIsProforma ?? payload?.isProforma ?? false;
+  if (payload) return { ...payload, isProforma };
 
   const row = data as unknown as {
     number: string | null;
@@ -290,5 +318,84 @@ export async function getInvoicePayloadAction(id: string): Promise<InvoiceState 
     })),
     notes: "",
     terms: "",
+    isProforma,
   };
+}
+
+/**
+ * Turn a Proforma Invoice into a real Tax Invoice: a new sales_invoices row
+ * with the same payload/items and is_proforma=false, linked back via
+ * proforma_source_id (0024) so the pair stays visible from either side.
+ *
+ * If the quotation this PI came from is still pointing at it
+ * (quotations.converted_invoice_id), that pointer is moved to the new Tax
+ * Invoice — so "View Invoice" on the quotation always follows through to
+ * the current billing document rather than a superseded PI.
+ */
+export async function convertProformaToTaxInvoiceAction(proformaId: string): Promise<SaveResult> {
+  const supabase = await createClient();
+  const { data: pi, error: findErr } = await supabase
+    .from("sales_invoices")
+    .select("payload, number, client_id, project_id, date, due_date, tax_rate, org_id, is_proforma")
+    .eq("id", proformaId)
+    .maybeSingle();
+  if (findErr) return { error: findErr.message };
+  if (!pi) return { error: "That proforma invoice no longer exists." };
+  if (pi.is_proforma === false) return { error: "This is already a Tax Invoice." };
+
+  const payload = pi.payload as InvoiceState | null;
+  const nextNumber = payload?.number
+    ? payload.number.replace(/^PI-/, "INV-")
+    : `INV-${new Date().getFullYear()}-${Date.now().toString(36).slice(-5).toUpperCase()}`;
+
+  const { data: created, error: insErr } = await supabase
+    .from("sales_invoices")
+    .insert({
+      org_id: pi.org_id,
+      number: nextNumber,
+      client_id: pi.client_id,
+      project_id: pi.project_id,
+      date: pi.date,
+      due_date: pi.due_date,
+      tax_rate: pi.tax_rate,
+      status: "draft" as const,
+      received: 0,
+      is_proforma: false,
+      proforma_source_id: proformaId,
+      payload: payload ? { ...payload, number: nextNumber, isProforma: false } : null,
+    })
+    .select("id")
+    .single();
+  if (insErr) return { error: insErr.message };
+  const invoiceId = created.id as string;
+
+  const { data: items } = await supabase.from("invoice_items").select("*").eq("invoice_id", proformaId);
+  if (items?.length) {
+    await supabase.from("invoice_items").insert(
+      items.map((it) => ({
+        org_id: pi.org_id,
+        invoice_id: invoiceId,
+        description: it.description,
+        qty: it.qty,
+        unit: it.unit,
+        rate: it.rate,
+      }))
+    );
+  }
+
+  // Best-effort: move the source quotation's "converted to" pointer onto the
+  // Tax Invoice. Silently skipped if 0021/0024 aren't applied or nothing
+  // points here — this is a convenience link, not the source of truth.
+  await supabase
+    .from("quotations")
+    .update({ converted_invoice_id: invoiceId })
+    .eq("converted_invoice_id", proformaId);
+
+  await logActivity({
+    action: "created",
+    entityType: "invoice",
+    entityId: invoiceId,
+    summary: `Converted proforma ${pi.number} to Tax Invoice ${nextNumber}`,
+  });
+  return { id: invoiceId };
 }

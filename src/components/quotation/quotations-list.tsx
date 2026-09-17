@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowRightLeft, Download, ExternalLink, ReceiptText, Search, Trash2, X } from "lucide-react";
+import { ArrowRightLeft, Download, ExternalLink, FileClock, ReceiptText, Search, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -216,7 +216,7 @@ export function QuotationsList({
    * quote's payload and map it before handing off to the invoice builder. The
    * invoice is only written once the user reviews and saves it.
    */
-  async function convertToInvoice(quotationId: string) {
+  async function convertToInvoice(quotationId: string, proforma: boolean) {
     setConverting(quotationId);
     const payload = await getQuotationPayloadAction(quotationId);
     setConverting(null);
@@ -227,7 +227,7 @@ export function QuotationsList({
     try {
       localStorage.setItem(
         "sitehub:newInvoicePrefill",
-        JSON.stringify({ state: quoteStateToInvoiceState(payload), quotationId })
+        JSON.stringify({ state: quoteStateToInvoiceState(payload, proforma), quotationId })
       );
     } catch {
       /* ignore (quota/private-browsing) */
@@ -319,6 +319,11 @@ export function QuotationsList({
                   <div className="flex items-center gap-2">
                     <span className="font-semibold">{q.number}</span>
                     <Badge variant={meta.variant}>{meta.label}</Badge>
+                    {q.source === "upload" && (
+                      <Badge variant="muted" title={q.sourceFileName ? `Uploaded from ${q.sourceFileName}` : "Uploaded"}>
+                        Uploaded
+                      </Badge>
+                    )}
                     <Select
                       aria-label={`Change status of ${q.number}`}
                       value={q.status}
@@ -366,20 +371,33 @@ export function QuotationsList({
                     ))}
                   {q.status === "accepted" &&
                     (q.convertedInvoiceId ? (
+                      // One quote becomes at most one invoice document (PI or
+                      // Tax Invoice) — opening it shows which, and a PI can be
+                      // turned into a Tax Invoice from the Invoices list.
                       <Link href={`/invoices/new?id=${q.convertedInvoiceId}`}>
                         <Button size="sm" variant="secondary">
                           <ExternalLink /> View Invoice
                         </Button>
                       </Link>
                     ) : (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={converting === q.id}
-                        onClick={() => convertToInvoice(q.id)}
-                      >
-                        <ReceiptText /> {converting === q.id ? "Preparing…" : "Convert to Invoice"}
-                      </Button>
+                      <>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={converting === q.id}
+                          onClick={() => convertToInvoice(q.id, false)}
+                        >
+                          <ReceiptText /> {converting === q.id ? "Preparing…" : "Convert to Invoice"}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={converting === q.id}
+                          onClick={() => convertToInvoice(q.id, true)}
+                        >
+                          <FileClock /> {converting === q.id ? "Preparing…" : "Convert to PI"}
+                        </Button>
+                      </>
                     ))}
                   {canDelete && q.status !== "accepted" && (
                     <Button

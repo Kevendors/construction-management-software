@@ -166,6 +166,9 @@ export interface Quotation {
   convertedProjectId?: string;
   /** Invoice this quote was billed as; undefined until 0021 is applied. */
   convertedInvoiceId?: string;
+  /** "upload" when created from an external file; undefined until 0023 is applied. */
+  source?: "builder" | "upload";
+  sourceFileName?: string;
 }
 
 export interface BoqItem extends LineItem {
@@ -189,6 +192,10 @@ export interface SalesInvoice {
   taxRate: number;
   received: number;
   status: "draft" | "sent" | "partial" | "paid" | "overdue";
+  /** Proforma vs Tax Invoice; undefined until 0024 is applied (treated as false). */
+  isProforma?: boolean;
+  /** The proforma this Tax Invoice was converted from, if any. */
+  proformaSourceId?: string;
 }
 
 export interface Transaction {

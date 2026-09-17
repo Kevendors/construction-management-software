@@ -1,5 +1,5 @@
 import { type QuoteState } from "./compute";
-import { nextInvoiceNumber, type InvoiceLine, type InvoiceState } from "../invoice/compute";
+import { nextInvoiceNumber, nextProformaNumber, type InvoiceLine, type InvoiceState } from "../invoice/compute";
 
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 
@@ -11,7 +11,7 @@ const iso = (d: Date) => d.toISOString().slice(0, 10);
  * near-straight copy, and computeInvoice applies tax exactly as computeQuote
  * does, so the grand totals match without any reshaping.
  */
-export function quoteStateToInvoiceState(q: QuoteState): InvoiceState {
+export function quoteStateToInvoiceState(q: QuoteState, proforma = false): InvoiceState {
   const lines: InvoiceLine[] = q.lines.map((l) => ({
     id: l.id,
     itemId: l.itemId,
@@ -34,7 +34,7 @@ export function quoteStateToInvoiceState(q: QuoteState): InvoiceState {
     contact: q.contact,
     email: q.email,
     // A fresh invoice number — reusing the quotation's would collide with it.
-    number: nextInvoiceNumber(),
+    number: proforma ? nextProformaNumber() : nextInvoiceNumber(),
     date: iso(new Date()),
     dueDate: iso(new Date(Date.now() + 30 * 86400000)),
     projectName: q.quoteName,
@@ -47,5 +47,6 @@ export function quoteStateToInvoiceState(q: QuoteState): InvoiceState {
     notes: q.notes,
     terms: q.terms,
     signatureUrl: q.signatureUrl,
+    isProforma: proforma,
   };
 }

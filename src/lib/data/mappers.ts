@@ -84,6 +84,9 @@ export interface QuotationRow {
   converted_project_id?: string | null;
   /** Absent until migration 0021 adds the column. */
   converted_invoice_id?: string | null;
+  /** Absent until migration 0023 adds the column. */
+  source?: string | null;
+  source_file_name?: string | null;
 }
 
 export interface InvoiceRow {
@@ -97,6 +100,9 @@ export interface InvoiceRow {
   received: number;
   status: SalesInvoice["status"];
   invoice_items?: LineItemRow[];
+  /** Absent until migration 0024 adds the column. */
+  is_proforma?: boolean | null;
+  proforma_source_id?: string | null;
 }
 
 export interface BoqRow {
@@ -198,6 +204,8 @@ export const mapQuotation = (r: QuotationRow): Quotation => ({
   items: (r.quotation_items ?? []).map(mapLineItem),
   convertedProjectId: r.converted_project_id ?? undefined,
   convertedInvoiceId: r.converted_invoice_id ?? undefined,
+  source: r.source === "upload" ? "upload" : undefined,
+  sourceFileName: r.source_file_name ?? undefined,
 });
 
 export const mapInvoice = (r: InvoiceRow): SalesInvoice => ({
@@ -211,6 +219,8 @@ export const mapInvoice = (r: InvoiceRow): SalesInvoice => ({
   received: Number(r.received),
   status: r.status,
   items: (r.invoice_items ?? []).map(mapLineItem),
+  isProforma: r.is_proforma ?? undefined,
+  proformaSourceId: r.proforma_source_id ?? undefined,
 });
 
 export const mapBoq = (r: BoqRow): Boq => ({

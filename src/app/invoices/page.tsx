@@ -16,8 +16,11 @@ export default async function InvoicesPage() {
     ...v,
     total: lineTotalWithTax(v.invoice.items, v.invoice.taxRate),
   }));
-  const totalRaised = rows.reduce((s, r) => s + r.total, 0);
-  const totalReceived = rows.reduce((s, r) => s + r.invoice.received, 0);
+  // Proforma invoices aren't real receivables — exclude them from the
+  // headline totals so a PI doesn't inflate what's actually been billed.
+  const billedRows = rows.filter((r) => !r.invoice.isProforma);
+  const totalRaised = billedRows.reduce((s, r) => s + r.total, 0);
+  const totalReceived = billedRows.reduce((s, r) => s + r.invoice.received, 0);
   const outstanding = totalRaised - totalReceived;
   // No auth context = mock/demo mode, where the current user is a super_admin.
   const canDelete = ctx ? isAdminRole(ctx.role) : true;

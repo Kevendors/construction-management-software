@@ -2,17 +2,19 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Plus, Printer, Save, Trash2, ArrowRightLeft } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ClipboardPaste, FileText, Plus, Printer, Save, Trash2, ArrowRightLeft, X } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 import { Select, Textarea } from "@/components/ui/dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { QuotationDocument } from "@/components/quotation/quotation-document";
+import { PasteRowsDialog } from "@/components/quotation/paste-rows-dialog";
 import { ITEM_CATEGORIES, ITEM_MASTER } from "@/lib/quotation/item-master";
 import { computeQuote, getLumpsumMode, lineAmount, type LumpsumMode, type QuoteLine, type QuoteState } from "@/lib/quotation/compute";
 import { DEFAULT_SIGNATURE, DEFAULT_TERMS } from "@/lib/quotation/company";
 import { saveQuotationAction, getQuotationPayloadAction } from "../actions";
+import { getQuotationSourceAction } from "../upload-actions";
 import { fileToResizedDataUrl } from "@/lib/image";
 import { formatINR, todayISO } from "@/lib/utils";
 import { toggleBoldInTextarea } from "@/lib/quotation/rich-text";
@@ -80,7 +82,18 @@ export default function NewQuotationPage() {
   // and saveDraft reads it at call time.
   const quotationId = React.useRef<string | null>(null);
 
-  // Load an existing quote when opened with ?id=, else generate a number.
+  // Source file this quote was uploaded from, and the extractor's own
+  // uncertainty about the data it read. pendingSource is only sent on the
+  // first save of a freshly-uploaded quote (see saveDraft) — once saved, the
+  // file info is re-fetched by id like any other saved quotation.
+  const pendingSource = React.useRef<{ path: string; name: string } | null>(null);
+  const [lowConfidence, setLowConfidence] = React.useState<string[]>([]);
+  const [bannerDismissed, setBannerDismissed] = React.useState(false);
+  const [extractionNotice, setExtractionNotice] = React.useState<string | null>(null);
+  const [sourceFile, setSourceFile] = React.useState<{ name: string; url: string | null } | null>(null);
+
+  // Load an existing quote when opened with ?id=, a freshly-uploaded quote
+  // waiting for review, or (neither) start a blank one with a generated number.
   React.useEffect(() => {
     const id = new URLSearchParams(window.location.search).get("id");
     if (id) {
@@ -88,7 +101,39 @@ export default function NewQuotationPage() {
       getQuotationPayloadAction(id).then((payload) => {
         if (payload) setS(payload);
       });
+      getQuotationSourceAction(id).then((info) => {
+        if (info.sourceFileName) setSourceFile({ name: info.sourceFileName, url: info.fileUrl });
+        if (info.lowConfidence.length) setLowConfidence(info.lowConfidence);
+      });
       return;
+    }
+
+    // Handed over by the Upload Quotation flow. Consumed once, then cleared,
+    // same mechanism as the other prefill handoffs in this app.
+    try {
+      const raw = localStorage.getItem("sitehub:newQuotationPrefill");
+      if (raw) {
+        localStorage.removeItem("sitehub:newQuotationPrefill");
+        const pre = JSON.parse(raw) as {
+          state?: QuoteState;
+          lowConfidence?: string[];
+          sourceFile?: { path: string; name: string; url: string | null };
+          extractionNotice?: string;
+        };
+        if (pre.state) setS(pre.state);
+        if (pre.lowConfidence?.length) setLowConfidence(pre.lowConfidence);
+        if (pre.extractionNotice) setExtractionNotice(pre.extractionNotice);
+        if (pre.sourceFile) {
+          pendingSource.current = { path: pre.sourceFile.path, name: pre.sourceFile.name };
+          setSourceFile({ name: pre.sourceFile.name, url: pre.sourceFile.url });
+        }
+        if (!pre.state?.number) {
+          setS((prev) => (prev.number ? prev : { ...prev, number: `KV-${Math.floor(Math.random() * 900) + 100}` }));
+        }
+        return;
+      }
+    } catch {
+      /* ignore malformed/unavailable storage and fall through to a blank quote */
     }
     setS((prev) => (prev.number ? prev : { ...prev, number: `KV-${Math.floor(Math.random() * 900) + 100}` }));
   }, []);
@@ -134,13 +179,20 @@ export default function NewQuotationPage() {
       lines: [...prev.lines, { id: uid(), itemId: null, description: "", unit: "SQFT", usesSqft: false, rate: 0, qty: 1, sqft: 1, specific: "", lumpsumMode: "none" }],
     }));
   }
+  const [pasteOpen, setPasteOpen] = React.useState(false);
+  function addPastedLines(newLines: QuoteLine[]) {
+    setS((prev) => ({ ...prev, lines: [...prev.lines, ...newLines] }));
+  }
 
   async function saveDraft() {
     setSaving(true);
     setSavedMsg(null);
     try {
       const existing = quotationId.current;
-      const res = await saveQuotationAction(s, c.grandTotal, existing);
+      const src = !existing && pendingSource.current
+        ? { filePath: pendingSource.current.path, fileName: pendingSource.current.name, lowConfidence }
+        : undefined;
+      const res = await saveQuotationAction(s, c.grandTotal, existing, src);
       if (res.error) {
         setSavedMsg(`Could not save: ${res.error}`);
       } else {
@@ -149,6 +201,7 @@ export default function NewQuotationPage() {
         if (res.id && !existing) {
           quotationId.current = res.id;
           window.history.replaceState({}, "", `?id=${res.id}`);
+          pendingSource.current = null; // recorded on the row now
         }
         setSavedMsg(existing ? "Changes saved ✓" : "Saved to database ✓");
       }
@@ -200,6 +253,52 @@ export default function NewQuotationPage() {
         </div>
       </div>
 
+      {/* Uploaded-quotation context: where it came from, and what still needs a
+          human eye. Never auto-converted — this is the review step itself. */}
+      {sourceFile && (
+        <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-secondary/40 px-3 py-2 text-xs print:hidden">
+          <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          <span className="text-muted-foreground">Uploaded from</span>
+          {sourceFile.url ? (
+            <a href={sourceFile.url} target="_blank" rel="noreferrer" className="font-medium text-primary hover:underline">
+              {sourceFile.name}
+            </a>
+          ) : (
+            <span className="font-medium">{sourceFile.name}</span>
+          )}
+        </div>
+      )}
+
+      {extractionNotice && (
+        <div className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2.5 text-sm text-amber-900 print:hidden">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <p>{extractionNotice}</p>
+        </div>
+      )}
+
+      {lowConfidence.length > 0 && !bannerDismissed && (
+        <div className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2.5 text-sm text-amber-900 print:hidden">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <div className="flex-1">
+            <p className="font-medium">
+              {lowConfidence.length} field{lowConfidence.length === 1 ? "" : "s"} need checking before you save.
+            </p>
+            <p className="mt-1 text-amber-800">
+              The automatic reader wasn&apos;t confident about: {lowConfidence.join(", ")}. Its best guess is
+              already filled in below — please verify against the uploaded file.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setBannerDismissed(true)}
+            aria-label="Dismiss"
+            className="shrink-0 rounded p-0.5 text-amber-700 hover:text-amber-900"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 gap-4 print:hidden xl:grid-cols-2">
         {/* ---------------- editor ---------------- */}
         <div className="space-y-4">
@@ -241,6 +340,7 @@ export default function NewQuotationPage() {
                   ))}
                 </Select>
                 <Button size="sm" variant="outline" onClick={addCustom}><Plus /> Custom</Button>
+                <Button size="sm" variant="outline" onClick={() => setPasteOpen(true)}><ClipboardPaste /> Paste from Excel</Button>
               </div>
             </CardHeader>
             <CardContent className="space-y-3">
@@ -437,6 +537,8 @@ export default function NewQuotationPage() {
       <div className="hidden print:block">
         <QuotationDocument s={s} c={c} />
       </div>
+
+      <PasteRowsDialog open={pasteOpen} onClose={() => setPasteOpen(false)} onAdd={addPastedLines} />
     </div>
   );
 }

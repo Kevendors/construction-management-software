@@ -169,7 +169,7 @@ export default function NewInvoicePage() {
     setSaving(true);
     setSavedMsg(null);
     try {
-      const res = await saveInvoiceAction(s, invoiceId);
+      const res = await saveInvoiceAction(s, invoiceId, s.isProforma);
       if (res.error) setSavedMsg(`Could not save: ${res.error}`);
       else {
         setSavedMsg("Saved to database ✓");
