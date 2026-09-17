@@ -37,6 +37,22 @@ export interface HeaderMatch {
 
 export const cellText = (cell: unknown): string => (cell === undefined || cell === null ? "" : String(cell).trim());
 
+/**
+ * Numeric value of a cell that may carry a ₹/Rs./$ symbol, thousands commas,
+ * or surrounding whitespace (e.g. "₹5,500", "Rs. 5,500.50", " 5500 "). Finds
+ * the first digit run rather than stripping-and-Number()ing the whole
+ * string — a bare currency symbol makes Number() return NaN, which had been
+ * silently reading every such cell as 0.
+ */
+export function parseNumericCell(text: string): number {
+  const m = /\d[\d,]*\.?\d*/.exec(text);
+  if (!m) return 0;
+  return Number(m[0].replace(/,/g, "")) || 0;
+}
+
+/** A row that states GST/tax/discount rather than an item — must not become a fake line item. */
+const SUMMARY_ROW = /^\s*(gst|igst|cgst|sgst|tax|discount)\b/i;
+
 /** Scan the first `maxRows` rows for one that looks like the item table's header. */
 export function findHeaderRow(rows: unknown[][], maxRows: number): HeaderMatch | null {
   const scanLimit = Math.min(rows.length, maxRows);
@@ -76,15 +92,21 @@ export function readItemRows(
     const description = columns.description !== undefined ? cellText(row[columns.description]) : "";
     if (!description) continue; // blank description row — skip rather than stop; a spacer row is common
     if (STOP_MARKERS.test(description)) break;
+    // A "GST 18%" / "Discount ₹5,000" row: this app has no per-line GST field
+    // (one rate applies to the whole quotation, same as the builder's own
+    // Charges & Tax section), so a row like this is skipped rather than
+    // becoming a bogus item — never break here, since real items are known
+    // to appear after a Discount line in some layouts.
+    if (SUMMARY_ROW.test(description)) continue;
 
     const path = `lines[${lines.length}]`;
     const qtyText = columns.qty !== undefined ? cellText(row[columns.qty]) : "";
     const rateText = columns.rate !== undefined ? cellText(row[columns.rate]) : "";
     const amountText = columns.amount !== undefined ? cellText(row[columns.amount]) : "";
 
-    let qty = Number(qtyText.replace(/,/g, "")) || 0;
-    let rate = Number(rateText.replace(/,/g, "")) || 0;
-    const amount = Number(amountText.replace(/,/g, "")) || 0;
+    let qty = parseNumericCell(qtyText);
+    let rate = parseNumericCell(rateText);
+    const amount = parseNumericCell(amountText);
 
     if (columns.qty === undefined || !qtyText) {
       // No quantity column, or this row's cell is blank — a rate-only /
