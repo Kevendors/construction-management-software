@@ -194,6 +194,13 @@ export function extractLinesFromText(rawLines: string[]): LineExtractionResult {
   let gstRate: number | undefined;
   let discount: number | undefined;
   let pastItemTable = false;
+  // Whether we've reached the item table yet — either its own header row was
+  // recognised, or at least one real item has already been parsed. Before
+  // this point a no-number line is document front matter (a title, a
+  // one-line "Estimate for ABC Site" heading, …), not a multi-line item
+  // heading, and must be dropped rather than buffered — otherwise it silently
+  // prepends itself onto the first item's description on every upload.
+  let inItemArea = false;
 
   for (const raw of rawLines) {
     const text = raw.trim();
@@ -212,15 +219,19 @@ export function extractLinesFromText(rawLines: string[]): LineExtractionResult {
     // The table's own header row ("Description | Qty | Rate | Amount") has
     // no real figures to extract and would otherwise be buffered as if it
     // were part of the first item's description — skip it explicitly.
-    if (TABLE_HEADER_MARKERS.test(text) && numberTokens(text).length === 0) continue;
+    if (TABLE_HEADER_MARKERS.test(text) && numberTokens(text).length === 0) {
+      inItemArea = true;
+      continue;
+    }
 
     if (SUMMARY_LINE.test(text) || HEADER_LABEL_LINE.test(text) || GSTIN_INLINE.test(text)) continue;
 
     const result = parseItemLine(text, lines.length);
     if (!result.line) {
-      pendingDescription.push(text);
+      if (inItemArea) pendingDescription.push(text);
       continue;
     }
+    inItemArea = true;
     if (pendingDescription.length > 0) {
       result.line.description = [...pendingDescription, result.line.description].filter(Boolean).join("\n");
       pendingDescription.length = 0;
