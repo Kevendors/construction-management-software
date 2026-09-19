@@ -34,7 +34,11 @@ const ALL: ModuleKey[] = [
 // appending keeps each role's landingPath (first entry) unchanged.
 export const ROLE_MODULES: Record<Role, ModuleKey[]> = {
   super_admin: ALL,
-  pm: ["dashboard", "analytics", "projects", "design", "clients", "quotations", "invoices", "material", "subcon", "expenses", "equipment", "activity", "transactions", "attendance"],
+  // Narrowed 2026-09-19 (user decision) from the former broad company-wide
+  // list down to exactly supervisor's — pm keeps its extra project-write
+  // grants (status-actions.ts, file-actions.ts, …) but no longer sees the
+  // commercial/company-wide modules a supervisor never had either.
+  pm: ["projects", "expenses", "attendance"],
   supervisor: ["projects", "expenses", "attendance"], // site-only: projects (Updates/DPRs/Attendance live in the project) + petty expenses
   accountant: ["dashboard", "analytics", "clients", "quotations", "invoices", "expenses", "transactions", "attendance"],
   hr: ["dashboard", "payroll", "team", "attendance"],
