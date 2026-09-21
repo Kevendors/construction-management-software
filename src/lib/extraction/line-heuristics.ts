@@ -1,5 +1,6 @@
 import { findUnit } from "./units";
 import type { ExtractedLine, ExtractedQuote } from "./schema";
+import { KEYVENDORS } from "@/lib/quotation/company";
 
 /**
  * Turns unstructured text (grouped PDF text lines, or raw OCR output split on
@@ -246,9 +247,37 @@ export function extractLinesFromText(rawLines: string[]): LineExtractionResult {
 // 15 chars: 2-digit state + 10-char PAN (5 letters, 4 digits, 1 letter) + 1-digit entity code + literal "Z" + 1 alphanumeric checksum.
 const GSTIN_PATTERN = /\b\d{2}[A-Z]{5}\d{4}[A-Z]\dZ[A-Z\d]\b/;
 const EMAIL_PATTERN = /[\w.+-]+@[\w-]+\.[A-Za-z.]{2,}/;
-const PHONE_PATTERN = /(?:\+?91[-\s]?)?\b[6-9]\d{9}\b/;
+// Allows the common "98101 55579" / "98101-55579" split, not just 10
+// contiguous digits.
+const PHONE_PATTERN = /(?:\+?91[-\s]?)?\b[6-9]\d{4}[-\s]?\d{5}\b/;
 const QUOTE_NUMBER_LINE = /\b(?:quotation|quote|ref(?:erence)?)\s*(?:no\.?|number|#|:)\s*[:\-]?\s*([A-Za-z0-9\-/]{3,})/i;
 const DATE_TOKEN = /\b(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})\b/;
+
+// Every quotation this app generates carries Keyvendors' own contact block
+// (the "FROM" letterhead) ahead of the client's own details further down the
+// page — so the naive "first match in the document" a re-upload of one of
+// our own exported quotations would otherwise grab is almost always *our*
+// GSTIN/phone/email, not the client's.
+const SELF_PHONE_DIGITS = new Set(KEYVENDORS.phones.split(",").map((p) => p.replace(/\D/g, "")));
+function isSelfPhone(match: string): boolean {
+  return SELF_PHONE_DIGITS.has(match.replace(/\D/g, ""));
+}
+function isSelfEmail(match: string): boolean {
+  return match.toLowerCase() === KEYVENDORS.email.toLowerCase();
+}
+function isSelfGstin(match: string): boolean {
+  return match.toUpperCase() === KEYVENDORS.gstin.toUpperCase();
+}
+
+/** First regex match in `text` for which `isSelf` is false, scanning past any self-matches. */
+function firstNonSelfMatch(pattern: RegExp, text: string, isSelf: (match: string) => boolean): string | null {
+  const re = new RegExp(pattern.source, pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`);
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text))) {
+    if (!isSelf(m[0])) return m[0];
+  }
+  return null;
+}
 
 /** Best-effort ISO date from a DD/MM/YYYY-style token (the app's own convention). */
 function toIsoDate(day: string, month: string, year: string): string | null {
@@ -270,14 +299,14 @@ export function extractHeaderFields(fullText: string): Partial<ExtractedQuote> &
   const out: Partial<ExtractedQuote> = {};
   const low: string[] = [];
 
-  const gstin = GSTIN_PATTERN.exec(fullText);
-  if (gstin) out.clientGstin = gstin[0];
+  const gstin = firstNonSelfMatch(GSTIN_PATTERN, fullText, isSelfGstin);
+  if (gstin) out.clientGstin = gstin;
 
-  const email = EMAIL_PATTERN.exec(fullText);
-  if (email) out.email = email[0];
+  const email = firstNonSelfMatch(EMAIL_PATTERN, fullText, isSelfEmail);
+  if (email) out.email = email;
 
-  const phone = PHONE_PATTERN.exec(fullText);
-  if (phone) out.contact = phone[0];
+  const phone = firstNonSelfMatch(PHONE_PATTERN, fullText, isSelfPhone);
+  if (phone) out.contact = phone;
 
   const quoteNo = QUOTE_NUMBER_LINE.exec(fullText);
   if (quoteNo) out.number = quoteNo[1];
