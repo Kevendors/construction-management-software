@@ -1,4 +1,4 @@
-import { findUnit } from "./units";
+import { findUnit, normalizeUnit } from "./units";
 import type { ExtractedLine, ExtractedQuote } from "./schema";
 import { KEYVENDORS } from "@/lib/quotation/company";
 
@@ -86,12 +86,15 @@ function parseItemLine(raw: string, lineIndex: number): LineParseResult {
   const unit = findUnit(noSerial);
   let numbers = numberTokens(noSerial);
 
-  // A lone small number sitting right at the start of the line, with no unit
-  // anywhere and no other figures, reads as an S.No column joined onto the
-  // description ("5 PCC:") rather than a real rate — a genuine rate almost
-  // never stands alone at position 0 with no unit in sight. Drop it so the
-  // line falls through to the "no figures" heading/description case below.
-  if (numbers.length === 1 && !unit && numbers[0].start <= 2 && numbers[0].value < 1000) {
+  // A lone small number sitting right at the start of the line, with no other
+  // figures, reads as an S.No column joined onto the description ("5 PCC:")
+  // rather than a real rate — a genuine rate this heuristic targets always
+  // trails the description, never leads it. A unit token elsewhere on the
+  // same line doesn't change that: "1 Excavation for foundation CUM" is the
+  // same S.No+description+unit fragment (its qty/rate live on a separate
+  // line the table-to-text flattening split off), not a real one-figure
+  // rate — a real single-figure rate practically never sits at position 0.
+  if (numbers.length === 1 && numbers[0].start <= 2 && numbers[0].value < 1000) {
     numbers = [];
   }
 
@@ -158,7 +161,7 @@ function parseItemLine(raw: string, lineIndex: number): LineParseResult {
   return {
     line: {
       description,
-      unit: unit ?? "NOS",
+      unit: unit ? normalizeUnit(unit) : "NOS",
       qty,
       rate,
       specific: "",
