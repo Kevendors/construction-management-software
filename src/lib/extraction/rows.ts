@@ -108,15 +108,30 @@ export function readItemRows(
     let rate = parseNumericCell(rateText);
     const amount = parseNumericCell(amountText);
 
-    if (columns.qty === undefined || !qtyText) {
-      // No quantity column, or this row's cell is blank — a rate-only /
-      // lump-sum-shaped row. Fall back to the amount if that's all we have.
+    // The Amount column, when the sheet has one, is the user's own stated
+    // total for the row — never recalculated from Qty×Rate, and never
+    // backfilled from Rate when it's blank (an explicitly blank Amount cell
+    // means ₹0, matching the source file exactly, even if Rate carries a
+    // figure — e.g. a lump-sum price written in the Rate column instead of
+    // Amount). Qty×Rate is only trusted when it already agrees with the
+    // stated Amount, so a normal, well-formed row keeps its real breakdown.
+    if (columns.amount !== undefined) {
+      const computed = qty * rate;
+      const amountStated = amountText !== "";
+      const agrees = amountStated && Math.abs(computed - amount) < 0.5;
+      if (!agrees) {
+        qty = 1;
+        rate = amount; // 0 when the cell is genuinely blank — not derived from Rate/Qty
+        if (!amountStated) lowConfidence.push(`${path}.rate`);
+      } else if (!qtyText) {
+        lowConfidence.push(`${path}.qty`);
+      }
+    } else if (columns.qty === undefined || !qtyText) {
+      // No Amount column and no quantity either — nothing to fall back to.
       qty = 1;
-      if (!rate && amount) rate = amount;
       lowConfidence.push(`${path}.qty`);
     }
-    if (columns.rate === undefined || !rateText) {
-      if (!rate && amount && qty) rate = amount / qty;
+    if (columns.amount === undefined && (columns.rate === undefined || !rateText)) {
       lowConfidence.push(`${path}.rate`);
     }
 
