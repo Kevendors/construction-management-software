@@ -446,7 +446,7 @@ export default function NewQuotationPage() {
                       ) : lm === "amount_only" ? (
                         <div className="h-8 rounded-md border border-input bg-secondary" aria-hidden />
                       ) : (
-                        <Input type="number" value={l.rate} placeholder={lm === "amount" ? "0" : undefined} onChange={(e) => updateLine(l.id, { rate: Number(e.target.value) })} className="h-8 text-xs" />
+                        <Input type="number" value={l.rate || ""} placeholder="0" onChange={(e) => updateLine(l.id, { rate: Number(e.target.value) })} className="h-8 text-xs" />
                       )}
                     </Field>
                     <Field label="Specific" small><Input value={l.specific} onChange={(e) => updateLine(l.id, { specific: e.target.value })} className="h-8 text-xs" /></Field>
