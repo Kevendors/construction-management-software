@@ -332,6 +332,32 @@ export interface PurchaseOrder {
   paymentTerms: string;
 }
 
+export type PurchaseBillStatus = "draft" | "sent" | "partial" | "paid";
+
+export interface PurchaseBillItem {
+  id: string;
+  description: string;
+  materialItemId: string | null;
+  qty: number;
+  unit: string;
+  rate: number;
+}
+
+/** A material supplier's own bill to us — the accounts-payable mirror of SalesInvoice. */
+export interface PurchaseBill {
+  id: string;
+  number: string;
+  supplierId: string;
+  projectId: string;
+  sourcePoId: string | null;
+  date: string;
+  dueDate: string;
+  status: PurchaseBillStatus;
+  taxRate: number;
+  paid: number;
+  items: PurchaseBillItem[];
+}
+
 export interface GoodsReceiptLine {
   poItemId: string;
   qtyReceived: number;

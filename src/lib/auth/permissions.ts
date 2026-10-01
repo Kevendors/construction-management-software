@@ -9,6 +9,7 @@ export type ModuleKey =
   | "clients"
   | "quotations"
   | "invoices"
+  | "purchases"
   | "material"
   | "subcon"
   | "payroll"
@@ -21,7 +22,7 @@ export type ModuleKey =
 
 const ALL: ModuleKey[] = [
   "dashboard", "analytics", "projects", "design", "clients", "quotations",
-  "invoices", "material", "subcon", "payroll", "expenses", "equipment", "team", "activity", "transactions",
+  "invoices", "purchases", "material", "subcon", "payroll", "expenses", "equipment", "team", "activity", "transactions",
   "attendance",
 ];
 
@@ -40,7 +41,11 @@ export const ROLE_MODULES: Record<Role, ModuleKey[]> = {
   // commercial/company-wide modules a supervisor never had either.
   pm: ["projects", "expenses", "attendance"],
   supervisor: ["projects", "expenses", "attendance"], // site-only: projects (Updates/DPRs/Attendance live in the project) + petty expenses
-  accountant: ["dashboard", "analytics", "clients", "quotations", "invoices", "expenses", "transactions", "attendance"],
+  // "purchases" added 2026-10-01: accountant manages accounts payable
+  // (Purchase Bills) but has no Material-module access to see the Purchase
+  // Orders they get converted from — that half of the tab stays empty for
+  // them unless a super_admin also grants memberships.can_view_purchase_orders.
+  accountant: ["dashboard", "analytics", "clients", "quotations", "invoices", "purchases", "expenses", "transactions", "attendance"],
   hr: ["dashboard", "payroll", "team", "attendance"],
   staff: ["projects", "expenses", "attendance"],
   architect: ["projects", "design", "attendance"],
@@ -76,6 +81,7 @@ export const MODULE_ROUTES: Record<ModuleKey, string> = {
   clients: "/clients",
   quotations: "/quotations",
   invoices: "/invoices",
+  purchases: "/purchases",
   material: "/material",
   subcon: "/subcon",
   payroll: "/payroll",
@@ -93,6 +99,7 @@ export function pathModule(pathname: string): ModuleKey | null {
   const prefixes: [string, ModuleKey][] = [
     ["/analytics", "analytics"], ["/projects", "projects"], ["/design", "design"],
     ["/clients", "clients"], ["/quotations", "quotations"], ["/invoices", "invoices"],
+    ["/purchases", "purchases"],
     ["/material", "material"], ["/subcon", "subcon"], ["/payroll", "payroll"],
     ["/expenses", "expenses"], ["/equipment", "equipment"], ["/team", "team"],
     ["/activity", "activity"], ["/transactions", "transactions"],

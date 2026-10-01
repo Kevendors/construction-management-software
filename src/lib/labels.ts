@@ -8,6 +8,7 @@ import type {
   Ownership,
   POStatus,
   ProjectStatus,
+  PurchaseBillStatus,
   RAStatus,
   SalarySlipStatus,
   Shift,
@@ -107,6 +108,13 @@ export const poStatusMeta: Record<POStatus, { label: string; variant: Variant }>
   sent: { label: "Sent", variant: "info" },
   received: { label: "Received", variant: "success" },
   closed: { label: "Closed", variant: "outline" },
+};
+
+export const purchaseBillStatusMeta: Record<PurchaseBillStatus, { label: string; variant: Variant }> = {
+  draft: { label: "Draft", variant: "muted" },
+  sent: { label: "Sent", variant: "info" },
+  partial: { label: "Partial", variant: "warning" },
+  paid: { label: "Paid", variant: "success" },
 };
 
 export const woStatusMeta: Record<WOStatus, { label: string; variant: Variant }> = {

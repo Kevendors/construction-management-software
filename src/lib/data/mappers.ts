@@ -17,6 +17,8 @@ import type {
   PoItem,
   Project,
   ProjectMember,
+  PurchaseBill,
+  PurchaseBillItem,
   PurchaseOrder,
   Quotation,
   RaBill,
@@ -432,6 +434,52 @@ export const mapPurchaseOrder = (r: PurchaseOrderRow): PurchaseOrder => ({
   terms: r.terms ?? "",
   paymentTerms: r.payment_terms ?? "",
   items: (r.po_items ?? []).map(mapPoItem),
+});
+
+export interface PurchaseBillItemRow {
+  id: string;
+  description: string;
+  material_item_id: string | null;
+  qty: number;
+  unit: string | null;
+  rate: number;
+}
+
+export const mapPurchaseBillItem = (r: PurchaseBillItemRow): PurchaseBillItem => ({
+  id: r.id,
+  description: r.description,
+  materialItemId: r.material_item_id,
+  qty: Number(r.qty),
+  unit: r.unit ?? "",
+  rate: Number(r.rate),
+});
+
+export interface PurchaseBillRow {
+  id: string;
+  number: string;
+  supplier_id: string | null;
+  project_id: string | null;
+  source_po_id: string | null;
+  date: string;
+  due_date: string | null;
+  status: PurchaseBill["status"];
+  tax_rate: number;
+  paid: number;
+  purchase_bill_items?: PurchaseBillItemRow[];
+}
+
+export const mapPurchaseBill = (r: PurchaseBillRow): PurchaseBill => ({
+  id: r.id,
+  number: r.number,
+  supplierId: r.supplier_id ?? "",
+  projectId: r.project_id ?? "",
+  sourcePoId: r.source_po_id,
+  date: r.date,
+  dueDate: r.due_date ?? "",
+  status: r.status,
+  taxRate: Number(r.tax_rate),
+  paid: Number(r.paid),
+  items: (r.purchase_bill_items ?? []).map(mapPurchaseBillItem),
 });
 
 export interface MaterialUsageRow {
