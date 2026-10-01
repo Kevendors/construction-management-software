@@ -102,32 +102,34 @@ create table if not exists public.purchase_bill_items (
 alter table public.purchase_bills enable row level security;
 alter table public.purchase_bill_items enable row level security;
 
--- Read: any org member (same as sales_invoices / purchase_orders read policy).
+-- purchase_bills is treated as a Commercial-domain table (an AP document,
+-- not a Material-domain one) — read/write role sets copied verbatim from
+-- 0002_rbac.sql's own 'commercial' group (quotations/sales_invoices/
+-- transactions), NOT from purchase_orders' own per-user-grant/project-scoped
+-- model (0013/0014), which exists specifically to mask PO pricing from broad
+-- visibility — a different, stricter concern than a payable-tracking bill.
 drop policy if exists purchase_bills_read on public.purchase_bills;
 create policy purchase_bills_read on public.purchase_bills
-  for select using (is_org_member(org_id));
+  for select using (is_org_member(org_id) and has_role(org_id, array['super_admin', 'pm', 'accountant']));
 
 drop policy if exists purchase_bill_items_read on public.purchase_bill_items;
 create policy purchase_bill_items_read on public.purchase_bill_items
-  for select using (is_org_member(org_id));
+  for select using (is_org_member(org_id) and has_role(org_id, array['super_admin', 'pm', 'accountant']));
 
--- Write: super_admin, accountant, or whichever roles already have the
--- purchase_orders write policy's role set (mirrors 0013's PO grant group) —
--- re-using has_role so this never drifts from the PO write policy by hand.
 drop policy if exists purchase_bills_write on public.purchase_bills;
 create policy purchase_bills_write on public.purchase_bills
   for all using (
-    has_role(org_id, array['super_admin', 'accountant', 'pm', 'site_engineer'])
+    is_org_member(org_id) and has_role(org_id, array['super_admin', 'accountant'])
   ) with check (
-    has_role(org_id, array['super_admin', 'accountant', 'pm', 'site_engineer'])
+    is_org_member(org_id) and has_role(org_id, array['super_admin', 'accountant'])
   );
 
 drop policy if exists purchase_bill_items_write on public.purchase_bill_items;
 create policy purchase_bill_items_write on public.purchase_bill_items
   for all using (
-    has_role(org_id, array['super_admin', 'accountant', 'pm', 'site_engineer'])
+    is_org_member(org_id) and has_role(org_id, array['super_admin', 'accountant'])
   ) with check (
-    has_role(org_id, array['super_admin', 'accountant', 'pm', 'site_engineer'])
+    is_org_member(org_id) and has_role(org_id, array['super_admin', 'accountant'])
   );
 
 create index if not exists purchase_bills_org_idx on public.purchase_bills (org_id);
@@ -135,24 +137,17 @@ create index if not exists purchase_bills_source_po_idx on public.purchase_bills
 create index if not exists purchase_bill_items_bill_idx on public.purchase_bill_items (bill_id);
 ```
 
-- [ ] **Step 2: Check the write-policy role list against this project's live `purchase_orders` policy before applying**
+- [ ] **Step 2: Role list already verified against the live migrations** — `0013_purchase_order_grants.sql`
+  replaced `purchase_orders`' own read policy with a per-user grant (`can_view_purchase_orders`
+  + project membership, via `can_view_pos()`/0014), specifically to mask PO pricing from broad
+  visibility; its write policy is untouched from `0002_rbac.sql`'s `material` group
+  (`super_admin, pm`). `purchase_bills` deliberately does **not** reuse that per-user-grant model —
+  it's an AP/payable document, closer to `0002_rbac.sql`'s `commercial` group
+  (`quotations`/`sales_invoices`/`transactions`: read `super_admin, pm, accountant`, write
+  `super_admin, accountant`) — which is exactly what Step 1's SQL above already encodes. No
+  further correction needed before handing it to the user.
 
-Run this against the live DB (I can do this myself via the service-role REST API — no user
-action needed) to see the exact role array the existing PO write policy uses, so Step 1's
-`purchase_bills_write`/`purchase_bill_items_write` role list matches it exactly (the list above —
-`super_admin, accountant, pm, site_engineer` — is a best guess from `Role` in `src/lib/types.ts`
-and must be corrected to whatever `0013_purchase_order_grants.sql` actually wrote):
-
-```bash
-curl -s "$URL/rest/v1/rpc/pg_get_policydef" ... # or simply open
-# supabase/migrations/0013_purchase_order_grants.sql and 0014_purchase_orders_project_scoped.sql
-# in this repo and copy their exact role array into Step 1 before handing the SQL to the user.
-```
-
-Read both files directly (`Read` tool) — do not guess. Update Step 1's SQL to match exactly, then
-proceed.
-
-- [ ] **Step 3: Hand the corrected SQL to the user**
+- [ ] **Step 3: Hand the SQL to the user**
 
 Tell them, in plain numbered steps (same format used earlier in this project for migrations
 0023/0024): go to supabase.com → log in → open the project → SQL Editor → New query → paste the
@@ -887,46 +882,21 @@ git commit -m "feat: add getPurchaseBillsBoard server read"
   `ModuleKey` and route-guarded by the middleware (which derives from `pathModule`/`ROLE_MODULES`
   automatically — no middleware.ts edit needed, same as every other module).
 
-- [ ] **Step 1: Read `supabase/migrations/0013_purchase_order_grants.sql` and
-  `0014_purchase_orders_project_scoped.sql`** to find the *exact* role list the existing
-  `purchase_orders` RLS write policy grants, so Task 1 Step 2's SQL and this task's
-  `ROLE_MODULES` entry both match the same roles (don't invent a different list here from the one
-  used in Task 1).
+- [ ] **Step 1: Nav/RLS alignment already decided** — `purchase_bills`' RLS (Task 1) grants read to
+  `super_admin, pm, accountant` and write to `super_admin, accountant`, matching `0002_rbac.sql`'s
+  `commercial` group, **not** `material`'s per-user-grant model. But `pm`'s `ROLE_MODULES` was
+  deliberately narrowed to exactly `supervisor`'s list (`projects, expenses, attendance`) on
+  2026-09-19 — a specific, recent user decision — so even though RLS would technically permit `pm`
+  to read `purchase_bills`, **do not add `"purchases"` to `pm`'s nav list**; that would silently
+  re-widen a narrowing the user asked for by name. Add `"purchases"` to exactly: `super_admin`
+  (via `ALL`) and `accountant`. Re-read the *current* `ROLE_MODULES` object fresh before editing —
+  it has changed repeatedly this session — and don't add `"purchases"` to any other role without
+  checking back with the user first, since none was discussed in the brainstorming session beyond
+  accountant.
 
-- [ ] **Step 2: Add `"purchases"` to `ModuleKey` and `ALL`** in `src/lib/auth/permissions.ts`:
-
-```typescript
-export type ModuleKey =
-  | "dashboard"
-  | "analytics"
-  | "projects"
-  | "design"
-  | "clients"
-  | "quotations"
-  | "invoices"
-  | "purchases"
-  | "material"
-  // ...rest unchanged
-```
-
-Add `"purchases"` into the `ALL` array (used by `super_admin`) and into `ROLE_MODULES.material`'s
-list — wait, `material` isn't a role, it's a module; actually add `"purchases"` to the
-`ROLE_MODULES` entry for every role that currently lists `"material"`, **plus** `accountant`
-(who currently has no `"material"`):
-
-```typescript
-export const ROLE_MODULES: Record<Role, ModuleKey[]> = {
-  super_admin: ALL,
-  pm: [...existing pm list, "purchases"],       // pm already has material-adjacent write access
-  accountant: [..."transactions", "purchases", "attendance"],  // NEW: accountant gets purchases, didn't have material
-  // every other role unchanged unless it already lists "material" — add "purchases" next to it there too
-};
-```
-
-Read the *current* `ROLE_MODULES` object in the file before editing (do not guess at its current
-contents — it has changed since 0021/0024/the 2026-09-19 PM narrowing; re-read it fresh) and add
-`"purchases"` to exactly: `super_admin` (via `ALL`), every role whose list already contains
-`"material"`, and `accountant`.
+- [ ] **Step 2: Add `"purchases"` to `ModuleKey` and `ALL`** in `src/lib/auth/permissions.ts`,
+  then add `"purchases"` to `accountant`'s `ROLE_MODULES` entry only (plus `super_admin` gets it
+  automatically via `ALL`).
 
 - [ ] **Step 3: Add the route mapping** to `MODULE_ROUTES`:
 
