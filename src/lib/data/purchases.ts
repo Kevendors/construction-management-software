@@ -3,6 +3,7 @@ import "server-only";
 import type { PurchaseBill } from "@/lib/types";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createClient as createSupabase } from "@/lib/supabase/server";
+import { getVisibleProjectIds, filterByProjectIds } from "./team";
 import { mapPurchaseBill, type PurchaseBillRow } from "./mappers";
 
 export interface PurchaseBillsBoard {
@@ -23,5 +24,10 @@ export async function getPurchaseBillsBoard(): Promise<PurchaseBillsBoard> {
     if (error.code === "42P01" || error.code === "PGRST205") return { bills: [] };
     throw error;
   }
-  return { bills: (data as PurchaseBillRow[]).map(mapPurchaseBill) };
+  const bills = (data as PurchaseBillRow[]).map(mapPurchaseBill);
+  // Same project-scoped visibility every other commercial module applies
+  // (invoices, quotations, transactions, …) — a non-admin only sees bills
+  // for projects they're assigned to; unallocated bills stay visible.
+  const visible = await getVisibleProjectIds();
+  return { bills: filterByProjectIds(bills, visible, (b) => b.projectId) };
 }
