@@ -58,6 +58,8 @@ export interface QuotationSource {
   fileName: string;
   /** Dotted field paths the extractor flagged as uncertain (see 0023). */
   lowConfidence?: string[];
+  /** "boq" when the uploaded file was a client-supplied Bill of Quantities, not a quotation. */
+  docType?: "quotation" | "boq";
 }
 
 /**
@@ -160,7 +162,7 @@ export async function saveQuotationAction(
         ...fields,
         ...(source
           ? {
-              source: "upload",
+              source: source.docType === "boq" ? "boq" : "upload",
               source_file_path: source.filePath,
               source_file_name: source.fileName,
               extraction_review: source.lowConfidence?.length

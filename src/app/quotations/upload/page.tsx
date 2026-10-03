@@ -49,11 +49,14 @@ async function extractLocally(file: File): Promise<ExtractedQuote> {
  * still leaves the source attached and the user can fill in the quotation
  * by hand.
  */
+type DocType = "quotation" | "boq";
+
 export default function UploadQuotationPage() {
   const router = useRouter();
   const [stage, setStage] = React.useState<Stage>("idle");
   const [error, setError] = React.useState<string | null>(null);
   const [dragging, setDragging] = React.useState(false);
+  const [docType, setDocType] = React.useState<DocType>("quotation");
   const inputRef = React.useRef<HTMLInputElement>(null);
 
   async function handleFile(file: File) {
@@ -101,6 +104,7 @@ export default function UploadQuotationPage() {
           lowConfidence: extracted?.lowConfidence ?? [],
           sourceFile: { path, name: file.name, url: fileUrl },
           extractionNotice,
+          docType,
         })
       );
     } catch {
@@ -131,10 +135,32 @@ export default function UploadQuotationPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            Attach a quotation prepared outside SiteHub as a PDF, Excel, or CSV file. Client
-            details and line items are extracted automatically where possible, entirely on your
-            device — you&apos;ll review and correct everything before it&apos;s saved.
+            Attach a quotation prepared outside SiteHub, or a Bill of Quantities the client sent
+            you, as a PDF, Excel, or CSV file. Details and line items are extracted automatically
+            where possible, entirely on your device — you&apos;ll review and correct everything
+            before it&apos;s saved.
           </p>
+
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant={docType === "quotation" ? "default" : "outline"}
+              size="sm"
+              disabled={stage !== "idle" && stage !== "error"}
+              onClick={() => setDocType("quotation")}
+            >
+              Quotation
+            </Button>
+            <Button
+              type="button"
+              variant={docType === "boq" ? "default" : "outline"}
+              size="sm"
+              disabled={stage !== "idle" && stage !== "error"}
+              onClick={() => setDocType("boq")}
+            >
+              Bill of Quantities (BOQ)
+            </Button>
+          </div>
 
           <input
             ref={inputRef}
@@ -163,7 +189,7 @@ export default function UploadQuotationPage() {
               <>
                 <UploadCloud className="h-8 w-8 animate-pulse text-muted-foreground" />
                 <p className="text-sm font-medium">
-                  {stage === "uploading" ? "Uploading…" : "Reading the quotation…"}
+                  {stage === "uploading" ? "Uploading…" : `Reading the ${docType === "boq" ? "BOQ" : "quotation"}…`}
                 </p>
                 <p className="text-xs text-muted-foreground">
                   {stage === "extracting" && "A scanned PDF can take a minute or more — it's being read on your device."}

@@ -86,11 +86,12 @@ export default function NewQuotationPage() {
   // uncertainty about the data it read. pendingSource is only sent on the
   // first save of a freshly-uploaded quote (see saveDraft) — once saved, the
   // file info is re-fetched by id like any other saved quotation.
-  const pendingSource = React.useRef<{ path: string; name: string } | null>(null);
+  const pendingSource = React.useRef<{ path: string; name: string; docType: "quotation" | "boq" } | null>(null);
   const [lowConfidence, setLowConfidence] = React.useState<string[]>([]);
   const [bannerDismissed, setBannerDismissed] = React.useState(false);
   const [extractionNotice, setExtractionNotice] = React.useState<string | null>(null);
   const [sourceFile, setSourceFile] = React.useState<{ name: string; url: string | null } | null>(null);
+  const [sourceDocType, setSourceDocType] = React.useState<"quotation" | "boq">("quotation");
 
   // Load an existing quote when opened with ?id=, a freshly-uploaded quote
   // waiting for review, or (neither) start a blank one with a generated number.
@@ -104,6 +105,7 @@ export default function NewQuotationPage() {
       getQuotationSourceAction(id).then((info) => {
         if (info.sourceFileName) setSourceFile({ name: info.sourceFileName, url: info.fileUrl });
         if (info.lowConfidence.length) setLowConfidence(info.lowConfidence);
+        setSourceDocType(info.docType);
       });
       return;
     }
@@ -119,13 +121,16 @@ export default function NewQuotationPage() {
           lowConfidence?: string[];
           sourceFile?: { path: string; name: string; url: string | null };
           extractionNotice?: string;
+          docType?: "quotation" | "boq";
         };
         if (pre.state) setS(pre.state);
         if (pre.lowConfidence?.length) setLowConfidence(pre.lowConfidence);
         if (pre.extractionNotice) setExtractionNotice(pre.extractionNotice);
         if (pre.sourceFile) {
-          pendingSource.current = { path: pre.sourceFile.path, name: pre.sourceFile.name };
+          const docType = pre.docType === "boq" ? "boq" : "quotation";
+          pendingSource.current = { path: pre.sourceFile.path, name: pre.sourceFile.name, docType };
           setSourceFile({ name: pre.sourceFile.name, url: pre.sourceFile.url });
+          setSourceDocType(docType);
         }
         if (!pre.state?.number) {
           setS((prev) => (prev.number ? prev : { ...prev, number: `KV-${Math.floor(Math.random() * 900) + 100}` }));
@@ -201,7 +206,7 @@ export default function NewQuotationPage() {
     try {
       const existing = quotationId.current;
       const src = !existing && pendingSource.current
-        ? { filePath: pendingSource.current.path, fileName: pendingSource.current.name, lowConfidence }
+        ? { filePath: pendingSource.current.path, fileName: pendingSource.current.name, lowConfidence, docType: pendingSource.current.docType }
         : undefined;
       const res = await saveQuotationAction(s, c.grandTotal, existing, src);
       if (res.error) {
@@ -270,7 +275,7 @@ export default function NewQuotationPage() {
       {sourceFile && (
         <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-secondary/40 px-3 py-2 text-xs print:hidden">
           <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-          <span className="text-muted-foreground">Uploaded from</span>
+          <span className="text-muted-foreground">{sourceDocType === "boq" ? "BOQ received from" : "Uploaded from"}</span>
           {sourceFile.url ? (
             <a href={sourceFile.url} target="_blank" rel="noreferrer" className="font-medium text-primary hover:underline">
               {sourceFile.name}

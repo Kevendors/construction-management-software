@@ -104,6 +104,8 @@ export interface QuotationSourceInfo {
   sourceFileName: string | null;
   fileUrl: string | null;
   lowConfidence: string[];
+  /** "boq" when this quotation was built from a client-supplied Bill of Quantities. */
+  docType: "quotation" | "boq";
 }
 
 const EMPTY_SOURCE: QuotationSourceInfo = {
@@ -111,6 +113,7 @@ const EMPTY_SOURCE: QuotationSourceInfo = {
   sourceFileName: null,
   fileUrl: null,
   lowConfidence: [],
+  docType: "quotation",
 };
 
 /**
@@ -122,7 +125,7 @@ export async function getQuotationSourceAction(id: string): Promise<QuotationSou
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("quotations")
-    .select("source_file_path, source_file_name, extraction_review")
+    .select("source, source_file_path, source_file_name, extraction_review")
     .eq("id", id)
     .maybeSingle();
   if (error || !data?.source_file_path) return EMPTY_SOURCE;
@@ -136,5 +139,6 @@ export async function getQuotationSourceAction(id: string): Promise<QuotationSou
     sourceFileName: (data.source_file_name as string | null) ?? null,
     fileUrl: signed?.signedUrl ?? null,
     lowConfidence: review?.lowConfidence ?? [],
+    docType: data.source === "boq" ? "boq" : "quotation",
   };
 }
