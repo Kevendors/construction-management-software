@@ -10,11 +10,12 @@ import { Select, Textarea } from "@/components/ui/dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { QuotationDocument } from "@/components/quotation/quotation-document";
 import { PasteRowsDialog } from "@/components/quotation/paste-rows-dialog";
-import { ITEM_CATEGORIES, ITEM_MASTER } from "@/lib/quotation/item-master";
+import { ITEM_CATEGORIES, ITEM_MASTER, type MasterItem } from "@/lib/quotation/item-master";
 import { computeQuote, getLumpsumMode, lineAmount, type LumpsumMode, type QuoteLine, type QuoteState } from "@/lib/quotation/compute";
 import { DEFAULT_SIGNATURE, DEFAULT_TERMS } from "@/lib/quotation/company";
 import { saveQuotationAction, getQuotationPayloadAction, findClientIdByNameAction } from "../actions";
 import { getQuotationSourceAction } from "../upload-actions";
+import { listOrgItemMasterAction, syncCustomItemsToMasterAction } from "@/app/item-master/actions";
 import { fileToResizedDataUrl } from "@/lib/image";
 import { formatINR, todayISO } from "@/lib/utils";
 import { toggleBoldInTextarea } from "@/lib/quotation/rich-text";
@@ -93,6 +94,22 @@ export default function NewQuotationPage() {
   const [sourceFile, setSourceFile] = React.useState<{ name: string; url: string | null } | null>(null);
   const [sourceDocType, setSourceDocType] = React.useState<"quotation" | "boq">("quotation");
 
+  // This org's own additions to the item master (typed-and-saved custom
+  // items from past quotations/invoices) — merged with the built-in
+  // ITEM_MASTER list below so they show up in the same dropdown.
+  const [customMaster, setCustomMaster] = React.useState<MasterItem[]>([]);
+  const allMaster = React.useMemo(() => [...ITEM_MASTER, ...customMaster], [customMaster]);
+  const allCategories = React.useMemo(() => {
+    const set = new Set(ITEM_CATEGORIES);
+    for (const item of customMaster) {
+      if (item.category) set.add(item.category);
+    }
+    return Array.from(set);
+  }, [customMaster]);
+  React.useEffect(() => {
+    listOrgItemMasterAction().then(setCustomMaster);
+  }, []);
+
   // Load an existing quote when opened with ?id=, a freshly-uploaded quote
   // waiting for review, or (neither) start a blank one with a generated number.
   React.useEffect(() => {
@@ -167,13 +184,25 @@ export default function NewQuotationPage() {
     setS((prev) => ({ ...prev, lines: prev.lines.filter((l) => l.id !== id) }));
   }
   function addFromMaster(itemId: string) {
-    const m = ITEM_MASTER.find((i) => i.id === itemId);
+    const m = allMaster.find((i) => i.id === itemId);
     if (!m) return;
     setS((prev) => ({
       ...prev,
       lines: [
         ...prev.lines,
-        { id: uid(), itemId: m.id, description: m.description, unit: m.unit, usesSqft: m.usesSqft, rate: 0, qty: 1, sqft: m.usesSqft ? 100 : 1, specific: "", lumpsumMode: m.unit === "LUMPSUM" ? "rate" : "none" },
+        {
+          id: uid(),
+          itemId: m.id,
+          description: m.description,
+          unit: m.unit,
+          usesSqft: m.usesSqft,
+          rate: 0,
+          qty: 1,
+          sqft: m.usesSqft ? 100 : 1,
+          specific: "",
+          lumpsumMode: m.unit === "LUMPSUM" ? "rate" : "none",
+          masterCategory: m.category,
+        },
       ],
     }));
     setPick("");
@@ -181,7 +210,22 @@ export default function NewQuotationPage() {
   function addCustom() {
     setS((prev) => ({
       ...prev,
-      lines: [...prev.lines, { id: uid(), itemId: null, description: "", unit: "SQFT", usesSqft: false, rate: 0, qty: 1, sqft: 1, specific: "", lumpsumMode: "none" }],
+      lines: [
+        ...prev.lines,
+        {
+          id: uid(),
+          itemId: null,
+          description: "",
+          unit: "SQFT",
+          usesSqft: false,
+          rate: 0,
+          qty: 1,
+          sqft: 1,
+          specific: "",
+          lumpsumMode: "none",
+          masterCategory: "Civil & Misc",
+        },
+      ],
     }));
   }
   /** Inserts a blank custom line right after `id`, for slotting an item into the middle of the list. */
@@ -189,7 +233,19 @@ export default function NewQuotationPage() {
     setS((prev) => {
       const idx = prev.lines.findIndex((l) => l.id === id);
       if (idx === -1) return prev;
-      const newLine: QuoteLine = { id: uid(), itemId: null, description: "", unit: "SQFT", usesSqft: false, rate: 0, qty: 1, sqft: 1, specific: "", lumpsumMode: "none" };
+      const newLine: QuoteLine = {
+        id: uid(),
+        itemId: null,
+        description: "",
+        unit: "SQFT",
+        usesSqft: false,
+        rate: 0,
+        qty: 1,
+        sqft: 1,
+        specific: "",
+        lumpsumMode: "none",
+        masterCategory: "Civil & Misc",
+      };
       const lines = [...prev.lines];
       lines.splice(idx + 1, 0, newLine);
       return { ...prev, lines };
@@ -219,6 +275,37 @@ export default function NewQuotationPage() {
           window.history.replaceState({}, "", `?id=${res.id}`);
           pendingSource.current = null; // recorded on the row now
         }
+
+        // Sync custom items to the org's item master so they are reusable in the dropdown
+        const customLines = s.lines.filter((l) => !l.itemId && l.description.trim());
+        if (customLines.length > 0) {
+          syncCustomItemsToMasterAction(
+            customLines.map((l) => ({
+              description: l.description,
+              category: l.masterCategory || "Civil & Misc",
+              unit: l.unit || "NOS",
+              usesSqft: Boolean(l.usesSqft),
+            }))
+          )
+            .then((idMap) => {
+              if (Object.keys(idMap).length > 0) {
+                setS((prev) => ({
+                  ...prev,
+                  lines: prev.lines.map((l) => {
+                    if (!l.itemId && l.description.trim()) {
+                      const key = l.description.trim().toLowerCase();
+                      const matchedId = idMap[key];
+                      if (matchedId) return { ...l, itemId: matchedId };
+                    }
+                    return l;
+                  }),
+                }));
+                listOrgItemMasterAction().then(setCustomMaster);
+              }
+            })
+            .catch(() => {});
+        }
+
         setSavedMsg(existing ? "Changes saved ✓" : "Saved to database ✓");
       }
     } catch (e) {
@@ -348,13 +435,19 @@ export default function NewQuotationPage() {
               <div className="flex gap-2">
                 <Select value={pick} onChange={(e) => addFromMaster(e.target.value)} className="h-8 w-48 text-xs">
                   <option value="">+ Add from item master…</option>
-                  {ITEM_CATEGORIES.map((cat) => (
-                    <optgroup key={cat} label={cat}>
-                      {ITEM_MASTER.filter((i) => i.category === cat).map((i) => (
-                        <option key={i.id} value={i.id}>{i.name}</option>
-                      ))}
-                    </optgroup>
-                  ))}
+                  {allCategories.map((cat) => {
+                    const items = allMaster.filter((i) => i.category === cat);
+                    if (!items.length) return null;
+                    return (
+                      <optgroup key={cat} label={cat}>
+                        {items.map((i) => (
+                          <option key={i.id} value={i.id}>
+                            {i.name}
+                          </option>
+                        ))}
+                      </optgroup>
+                    );
+                  })}
                 </Select>
                 <Button size="sm" variant="outline" onClick={addCustom}><Plus /> Custom</Button>
                 <Button size="sm" variant="outline" onClick={() => setPasteOpen(true)}><ClipboardPaste /> Paste from Excel</Button>
@@ -479,21 +572,40 @@ export default function NewQuotationPage() {
                   </div>
                   {/* One select rather than mutually-exclusive checkboxes: the
                       modes were never combinable, and there are now three. */}
-                  <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                    <label htmlFor={`lm-${l.id}`}>Lumpsum</label>
-                    <Select
-                      id={`lm-${l.id}`}
-                      value={lm}
-                      onChange={(e) => updateLine(l.id, { lumpsumMode: e.target.value as LumpsumMode })}
-                      className="h-7 w-auto py-0 text-xs"
-                    >
-                      <option value="none">No — Qty × Rate</option>
-                      <option value="qty">In Qty — enter Rate</option>
-                    <option value="qty_rate">In Qty + Rate — enter Amount</option>
-                    <option value="amount_only">Amount only — Qty &amp; Rate blank</option>
-                      <option value="rate">In Rate — enter Amount</option>
-                      <option value="amount">In Amount — enter Rate</option>
-                    </Select>
+                  <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                    <div className="flex items-center gap-1.5">
+                      <label htmlFor={`lm-${l.id}`}>Lumpsum</label>
+                      <Select
+                        id={`lm-${l.id}`}
+                        value={lm}
+                        onChange={(e) => updateLine(l.id, { lumpsumMode: e.target.value as LumpsumMode })}
+                        className="h-7 w-auto py-0 text-xs"
+                      >
+                        <option value="none">No — Qty × Rate</option>
+                        <option value="qty">In Qty — enter Rate</option>
+                        <option value="qty_rate">In Qty + Rate — enter Amount</option>
+                        <option value="amount_only">Amount only — Qty &amp; Rate blank</option>
+                        <option value="rate">In Rate — enter Amount</option>
+                        <option value="amount">In Amount — enter Rate</option>
+                      </Select>
+                    </div>
+                    {!l.itemId && (
+                      <div className="flex items-center gap-1.5">
+                        <label htmlFor={`cat-${l.id}`}>Category</label>
+                        <Select
+                          id={`cat-${l.id}`}
+                          value={l.masterCategory || "Civil & Misc"}
+                          onChange={(e) => updateLine(l.id, { masterCategory: e.target.value })}
+                          className="h-7 w-auto py-0 text-xs"
+                        >
+                          {ITEM_CATEGORIES.map((cat) => (
+                            <option key={cat} value={cat}>
+                              {cat}
+                            </option>
+                          ))}
+                        </Select>
+                      </div>
+                    )}
                   </div>
                 </div>
                 );

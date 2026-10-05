@@ -10,11 +10,12 @@ import { Select, Textarea } from "@/components/ui/dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { InvoiceDocument } from "@/components/invoice/invoice-document";
 import { computeInvoice, getLumpsumMode, invoiceLineAmount, nextInvoiceNumber, type InvoiceLine, type InvoiceState, type LumpsumMode } from "@/lib/invoice/compute";
-import { ITEM_CATEGORIES, ITEM_MASTER } from "@/lib/quotation/item-master";
+import { ITEM_CATEGORIES, ITEM_MASTER, type MasterItem } from "@/lib/quotation/item-master";
 import { DEFAULT_SIGNATURE } from "@/lib/quotation/company";
 import { fileToResizedDataUrl } from "@/lib/image";
 import { linkQuotationToInvoiceAction } from "@/app/quotations/actions";
 import { saveInvoiceAction, getInvoicePayloadAction } from "../actions";
+import { listOrgItemMasterAction, syncCustomItemsToMasterAction } from "@/app/item-master/actions";
 import { formatINR, todayISO } from "@/lib/utils";
 import { toggleBoldInTextarea } from "@/lib/quotation/rich-text";
 
@@ -57,6 +58,19 @@ export default function NewInvoicePage() {
   const [saving, setSaving] = React.useState(false);
   const [savedMsg, setSavedMsg] = React.useState<string | null>(null);
   const [pick, setPick] = React.useState("");
+
+  const [customMaster, setCustomMaster] = React.useState<MasterItem[]>([]);
+  const allMaster = React.useMemo(() => [...ITEM_MASTER, ...customMaster], [customMaster]);
+  const allCategories = React.useMemo(() => {
+    const set = new Set(ITEM_CATEGORIES);
+    for (const item of customMaster) {
+      if (item.category) set.add(item.category);
+    }
+    return Array.from(set);
+  }, [customMaster]);
+  React.useEffect(() => {
+    listOrgItemMasterAction().then(setCustomMaster);
+  }, []);
 
   // Line ids ticked for a bulk lumpsum change. Held by id, not index, so
   // adding or removing a line can't shift the selection onto the wrong row.
@@ -123,13 +137,25 @@ export default function NewInvoicePage() {
   function addLine() {
     setS((prev) => ({
       ...prev,
-      lines: [...prev.lines, { id: uid(), description: "", unit: "LS", qty: 1, rate: 0, lumpsumMode: "none" }],
+      lines: [
+        ...prev.lines,
+        {
+          id: uid(),
+          itemId: null,
+          description: "",
+          unit: "LS",
+          qty: 1,
+          rate: 0,
+          lumpsumMode: "none",
+          masterCategory: "Civil & Misc",
+        },
+      ],
     }));
   }
 
   /** Same item master the quotation builder uses — one catalogue for both. */
   function addFromMaster(itemId: string) {
-    const m = ITEM_MASTER.find((i) => i.id === itemId);
+    const m = allMaster.find((i) => i.id === itemId);
     if (!m) return;
     setS((prev) => ({
       ...prev,
@@ -146,6 +172,7 @@ export default function NewInvoicePage() {
           rate: 0,
           specific: "",
           lumpsumMode: m.unit === "LUMPSUM" ? "rate" : "none",
+          masterCategory: m.category,
         },
       ],
     }));
@@ -182,6 +209,36 @@ export default function NewInvoicePage() {
             await linkQuotationToInvoiceAction(sourceQuotationId.current, res.id);
             sourceQuotationId.current = null;
           }
+        }
+
+        // Sync custom items to the org's item master so they are reusable in the dropdown
+        const customLines = s.lines.filter((l) => !l.itemId && l.description.trim());
+        if (customLines.length > 0) {
+          syncCustomItemsToMasterAction(
+            customLines.map((l) => ({
+              description: l.description,
+              category: l.masterCategory || "Civil & Misc",
+              unit: l.unit || "LS",
+              usesSqft: Boolean(l.usesSqft),
+            }))
+          )
+            .then((idMap) => {
+              if (Object.keys(idMap).length > 0) {
+                setS((prev) => ({
+                  ...prev,
+                  lines: prev.lines.map((l) => {
+                    if (!l.itemId && l.description.trim()) {
+                      const key = l.description.trim().toLowerCase();
+                      const matchedId = idMap[key];
+                      if (matchedId) return { ...l, itemId: matchedId };
+                    }
+                    return l;
+                  }),
+                }));
+                listOrgItemMasterAction().then(setCustomMaster);
+              }
+            })
+            .catch(() => {});
         }
       }
     } catch (e) {
@@ -243,13 +300,19 @@ export default function NewInvoicePage() {
               <div className="flex gap-2">
                 <Select value={pick} onChange={(e) => addFromMaster(e.target.value)} className="h-8 w-48 text-xs">
                   <option value="">+ Add from item master…</option>
-                  {ITEM_CATEGORIES.map((cat) => (
-                    <optgroup key={cat} label={cat}>
-                      {ITEM_MASTER.filter((i) => i.category === cat).map((i) => (
-                        <option key={i.id} value={i.id}>{i.name}</option>
-                      ))}
-                    </optgroup>
-                  ))}
+                  {allCategories.map((cat) => {
+                    const items = allMaster.filter((i) => i.category === cat);
+                    if (!items.length) return null;
+                    return (
+                      <optgroup key={cat} label={cat}>
+                        {items.map((i) => (
+                          <option key={i.id} value={i.id}>
+                            {i.name}
+                          </option>
+                        ))}
+                      </optgroup>
+                    );
+                  })}
                 </Select>
                 <Button size="sm" variant="outline" onClick={addLine}><Plus /> Custom</Button>
               </div>
@@ -369,21 +432,40 @@ export default function NewInvoicePage() {
                       )}
                     </Field>
                   </div>
-                  <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                    <label htmlFor={`ilm-${l.id}`}>Lumpsum</label>
-                    <Select
-                      id={`ilm-${l.id}`}
-                      value={lm}
-                      onChange={(e) => updateLine(l.id, { lumpsumMode: e.target.value as LumpsumMode })}
-                      className="h-7 w-auto py-0 text-xs"
-                    >
-                      <option value="none">No — Qty × Rate</option>
-                      <option value="qty">In Qty — enter Rate</option>
-                    <option value="qty_rate">In Qty + Rate — enter Amount</option>
-                    <option value="amount_only">Amount only — Qty &amp; Rate blank</option>
-                      <option value="rate">In Rate — enter Amount</option>
-                      <option value="amount">In Amount — enter Rate</option>
-                    </Select>
+                  <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                    <div className="flex items-center gap-1.5">
+                      <label htmlFor={`ilm-${l.id}`}>Lumpsum</label>
+                      <Select
+                        id={`ilm-${l.id}`}
+                        value={lm}
+                        onChange={(e) => updateLine(l.id, { lumpsumMode: e.target.value as LumpsumMode })}
+                        className="h-7 w-auto py-0 text-xs"
+                      >
+                        <option value="none">No — Qty × Rate</option>
+                        <option value="qty">In Qty — enter Rate</option>
+                        <option value="qty_rate">In Qty + Rate — enter Amount</option>
+                        <option value="amount_only">Amount only — Qty &amp; Rate blank</option>
+                        <option value="rate">In Rate — enter Amount</option>
+                        <option value="amount">In Amount — enter Rate</option>
+                      </Select>
+                    </div>
+                    {!l.itemId && (
+                      <div className="flex items-center gap-1.5">
+                        <label htmlFor={`icat-${l.id}`}>Category</label>
+                        <Select
+                          id={`icat-${l.id}`}
+                          value={l.masterCategory || "Civil & Misc"}
+                          onChange={(e) => updateLine(l.id, { masterCategory: e.target.value })}
+                          className="h-7 w-auto py-0 text-xs"
+                        >
+                          {ITEM_CATEGORIES.map((cat) => (
+                            <option key={cat} value={cat}>
+                              {cat}
+                            </option>
+                          ))}
+                        </Select>
+                      </div>
+                    )}
                   </div>
                 </div>
                 );

@@ -23,6 +23,7 @@ export function quoteStateToInvoiceState(q: QuoteState, proforma = false): Invoi
     rate: l.rate || 0,
     specific: l.specific,
     lumpsumMode: l.lumpsumMode,
+    masterCategory: l.masterCategory,
   }));
 
   return {

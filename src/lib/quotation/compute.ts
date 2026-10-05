@@ -23,6 +23,12 @@ export interface QuoteLine {
   sqft: number; // area multiplier; 1 when not applicable
   specific: string; // free-text note shown in the "Specific" column
   lumpsumMode: LumpsumMode;
+  /**
+   * Category to file this line under in the org's item master once saved —
+   * only meaningful while itemId is null (a typed, not master-picked, line).
+   * Undefined on lines from before this field existed.
+   */
+  masterCategory?: string;
 }
 
 // `unit` is a plain string so invoice lines (whose units aren't restricted to

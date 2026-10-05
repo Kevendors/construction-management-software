@@ -20,6 +20,8 @@ export interface InvoiceLine {
   /** Free-text note; shown in the document's "Specific" column. */
   specific?: string;
   lumpsumMode?: LumpsumMode;
+  /** Category to file this line under in the org's item master once saved — see QuoteLine. */
+  masterCategory?: string;
 }
 
 export type TaxMode = "intra" | "inter";
