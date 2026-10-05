@@ -374,6 +374,27 @@ export interface WorkProgressReport {
   signatureUrl: string;
 }
 
+/** One line of a Challan — goods movement, deliberately no rate/amount. */
+export interface ChallanItem {
+  id: string;
+  materialItemId: string | null;
+  description: string;
+  qty: number;
+  unit: string;
+}
+
+/** A Delivery/Dispatch Challan — GST goods-movement record, not a sale. */
+export interface Challan {
+  id: string;
+  number: string;
+  projectId: string;
+  date: string;
+  vehicleNumber: string;
+  transporterName: string;
+  purposeNote: string;
+  items: ChallanItem[];
+}
+
 export interface GoodsReceiptLine {
   poItemId: string;
   qtyReceived: number;

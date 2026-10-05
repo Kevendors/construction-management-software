@@ -4,6 +4,8 @@
 import type {
   Boq,
   BoqItem,
+  Challan,
+  ChallanItem,
   Client,
   Drawing,
   DrawingVersion,
@@ -511,6 +513,44 @@ export const mapWorkProgressReport = (r: WorkProgressReportRow): WorkProgressRep
   issues: r.issues ?? "",
   photoUrls: r.photo_urls ?? [],
   signatureUrl: r.signature_url ?? "",
+});
+
+export interface ChallanItemRow {
+  id: string;
+  material_item_id: string | null;
+  description: string;
+  qty: number;
+  unit: string | null;
+}
+
+export const mapChallanItem = (r: ChallanItemRow): ChallanItem => ({
+  id: r.id,
+  materialItemId: r.material_item_id,
+  description: r.description,
+  qty: Number(r.qty),
+  unit: r.unit ?? "",
+});
+
+export interface ChallanRow {
+  id: string;
+  number: string;
+  project_id: string | null;
+  date: string;
+  vehicle_number: string | null;
+  transporter_name: string | null;
+  purpose_note: string | null;
+  challan_items?: ChallanItemRow[];
+}
+
+export const mapChallan = (r: ChallanRow): Challan => ({
+  id: r.id,
+  number: r.number,
+  projectId: r.project_id ?? "",
+  date: r.date,
+  vehicleNumber: r.vehicle_number ?? "",
+  transporterName: r.transporter_name ?? "",
+  purposeNote: r.purpose_note ?? "",
+  items: (r.challan_items ?? []).map(mapChallanItem),
 });
 
 export interface MaterialUsageRow {

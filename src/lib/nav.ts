@@ -14,6 +14,7 @@ import {
   Wallet,
   Receipt,
   Wrench,
+  Truck,
   ShieldCheck,
   History,
   ArrowLeftRight,
@@ -65,6 +66,7 @@ export const navSections: NavSection[] = [
     title: "Operations",
     items: [
       { label: "Material", href: "/material", icon: Boxes, module: "material" },
+      { label: "Challans", href: "/challans", icon: Truck, module: "challans" },
       { label: "Subcontractor", href: "/subcon", icon: HardHat, module: "subcon" },
       { label: "Payroll & Attendance", href: "/payroll", icon: Wallet, module: "payroll" },
       { label: "Petty Expenses", href: "/expenses", icon: Receipt, module: "expenses" },

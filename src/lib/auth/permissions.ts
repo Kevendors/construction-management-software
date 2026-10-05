@@ -11,6 +11,7 @@ export type ModuleKey =
   | "invoices"
   | "purchases"
   | "workProgress"
+  | "challans"
   | "material"
   | "subcon"
   | "payroll"
@@ -23,7 +24,7 @@ export type ModuleKey =
 
 const ALL: ModuleKey[] = [
   "dashboard", "analytics", "projects", "design", "clients", "quotations",
-  "invoices", "purchases", "workProgress", "material", "subcon", "payroll", "expenses", "equipment", "team", "activity", "transactions",
+  "invoices", "purchases", "workProgress", "challans", "material", "subcon", "payroll", "expenses", "equipment", "team", "activity", "transactions",
   "attendance",
 ];
 
@@ -40,10 +41,12 @@ export const ROLE_MODULES: Record<Role, ModuleKey[]> = {
   // list down to exactly supervisor's — pm keeps its extra project-write
   // grants (status-actions.ts, file-actions.ts, …) but no longer sees the
   // commercial/company-wide modules a supervisor never had either.
-  // "workProgress" added 2026-10-05: pm/supervisor author Work Progress
-  // Reports (a KeyVendors-side site-delivery document, not a commercial one).
-  pm: ["projects", "expenses", "workProgress", "attendance"],
-  supervisor: ["projects", "expenses", "workProgress", "attendance"], // site-only: projects (Updates/DPRs/Attendance live in the project) + petty expenses
+  // "workProgress"/"challans" added 2026-10-05: pm/supervisor author Work
+  // Progress Reports and Challans (KeyVendors-side site-delivery documents,
+  // not commercial ones). Challan write is super_admin/pm only at the RLS
+  // layer (0030) — supervisor gets nav + read access but Save is refused.
+  pm: ["projects", "expenses", "workProgress", "challans", "attendance"],
+  supervisor: ["projects", "expenses", "workProgress", "challans", "attendance"], // site-only: projects (Updates/DPRs/Attendance live in the project) + petty expenses
   // "purchases" added 2026-10-01: accountant manages accounts payable
   // (Purchase Bills) but has no Material-module access to see the Purchase
   // Orders they get converted from — that half of the tab stays empty for
@@ -86,6 +89,7 @@ export const MODULE_ROUTES: Record<ModuleKey, string> = {
   invoices: "/invoices",
   purchases: "/purchases",
   workProgress: "/reports/work-progress",
+  challans: "/challans",
   material: "/material",
   subcon: "/subcon",
   payroll: "/payroll",
@@ -105,6 +109,7 @@ export function pathModule(pathname: string): ModuleKey | null {
     ["/clients", "clients"], ["/quotations", "quotations"], ["/invoices", "invoices"],
     ["/purchases", "purchases"],
     ["/reports/work-progress", "workProgress"],
+    ["/challans", "challans"],
     ["/material", "material"], ["/subcon", "subcon"], ["/payroll", "payroll"],
     ["/expenses", "expenses"], ["/equipment", "equipment"], ["/team", "team"],
     ["/activity", "activity"], ["/transactions", "transactions"],
