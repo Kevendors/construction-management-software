@@ -196,7 +196,9 @@ svg.recharts-surface:focus,
   #quote-doc,
   #quote-doc *,
   #invoice-doc,
-  #invoice-doc * {
+  #invoice-doc *,
+  #wpr-doc,
+  #wpr-doc * {
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }

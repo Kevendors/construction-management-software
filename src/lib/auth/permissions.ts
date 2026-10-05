@@ -10,6 +10,7 @@ export type ModuleKey =
   | "quotations"
   | "invoices"
   | "purchases"
+  | "workProgress"
   | "material"
   | "subcon"
   | "payroll"
@@ -22,7 +23,7 @@ export type ModuleKey =
 
 const ALL: ModuleKey[] = [
   "dashboard", "analytics", "projects", "design", "clients", "quotations",
-  "invoices", "purchases", "material", "subcon", "payroll", "expenses", "equipment", "team", "activity", "transactions",
+  "invoices", "purchases", "workProgress", "material", "subcon", "payroll", "expenses", "equipment", "team", "activity", "transactions",
   "attendance",
 ];
 
@@ -39,8 +40,10 @@ export const ROLE_MODULES: Record<Role, ModuleKey[]> = {
   // list down to exactly supervisor's — pm keeps its extra project-write
   // grants (status-actions.ts, file-actions.ts, …) but no longer sees the
   // commercial/company-wide modules a supervisor never had either.
-  pm: ["projects", "expenses", "attendance"],
-  supervisor: ["projects", "expenses", "attendance"], // site-only: projects (Updates/DPRs/Attendance live in the project) + petty expenses
+  // "workProgress" added 2026-10-05: pm/supervisor author Work Progress
+  // Reports (a KeyVendors-side site-delivery document, not a commercial one).
+  pm: ["projects", "expenses", "workProgress", "attendance"],
+  supervisor: ["projects", "expenses", "workProgress", "attendance"], // site-only: projects (Updates/DPRs/Attendance live in the project) + petty expenses
   // "purchases" added 2026-10-01: accountant manages accounts payable
   // (Purchase Bills) but has no Material-module access to see the Purchase
   // Orders they get converted from — that half of the tab stays empty for
@@ -82,6 +85,7 @@ export const MODULE_ROUTES: Record<ModuleKey, string> = {
   quotations: "/quotations",
   invoices: "/invoices",
   purchases: "/purchases",
+  workProgress: "/reports/work-progress",
   material: "/material",
   subcon: "/subcon",
   payroll: "/payroll",
@@ -100,6 +104,7 @@ export function pathModule(pathname: string): ModuleKey | null {
     ["/analytics", "analytics"], ["/projects", "projects"], ["/design", "design"],
     ["/clients", "clients"], ["/quotations", "quotations"], ["/invoices", "invoices"],
     ["/purchases", "purchases"],
+    ["/reports/work-progress", "workProgress"],
     ["/material", "material"], ["/subcon", "subcon"], ["/payroll", "payroll"],
     ["/expenses", "expenses"], ["/equipment", "equipment"], ["/team", "team"],
     ["/activity", "activity"], ["/transactions", "transactions"],

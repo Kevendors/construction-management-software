@@ -8,6 +8,7 @@ import {
   FileText,
   ReceiptText,
   FileSpreadsheet,
+  ClipboardList,
   Boxes,
   HardHat,
   Wallet,
@@ -47,6 +48,7 @@ export const navSections: NavSection[] = [
     items: [
       { label: "Projects", href: "/projects", icon: FolderKanban, module: "projects" },
       { label: "Design Management", href: "/design", icon: PencilRuler, module: "design" },
+      { label: "Work Progress Reports", href: "/reports/work-progress", icon: ClipboardList, module: "workProgress" },
     ],
   },
   {

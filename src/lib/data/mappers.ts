@@ -31,6 +31,7 @@ import type {
   Transaction,
   User,
   WoItem,
+  WorkProgressReport,
 } from "@/lib/types";
 
 /* ---------- DB row shapes (only the columns we read) ---------- */
@@ -480,6 +481,36 @@ export const mapPurchaseBill = (r: PurchaseBillRow): PurchaseBill => ({
   taxRate: Number(r.tax_rate),
   paid: Number(r.paid),
   items: (r.purchase_bill_items ?? []).map(mapPurchaseBillItem),
+});
+
+export interface WorkProgressReportRow {
+  id: string;
+  number: string;
+  project_id: string | null;
+  date: string;
+  period_start: string | null;
+  period_end: string | null;
+  percent_complete: number | null;
+  work_completed: string | null;
+  next_plan: string | null;
+  issues: string | null;
+  photo_urls: string[] | null;
+  signature_url: string | null;
+}
+
+export const mapWorkProgressReport = (r: WorkProgressReportRow): WorkProgressReport => ({
+  id: r.id,
+  number: r.number,
+  projectId: r.project_id ?? "",
+  date: r.date,
+  periodStart: r.period_start ?? "",
+  periodEnd: r.period_end ?? "",
+  percentComplete: Number(r.percent_complete ?? 0),
+  workCompleted: r.work_completed ?? "",
+  nextPlan: r.next_plan ?? "",
+  issues: r.issues ?? "",
+  photoUrls: r.photo_urls ?? [],
+  signatureUrl: r.signature_url ?? "",
 });
 
 export interface MaterialUsageRow {

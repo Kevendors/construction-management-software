@@ -358,6 +358,22 @@ export interface PurchaseBill {
   items: PurchaseBillItem[];
 }
 
+/** A standalone KeyVendors-authored narrative progress report — not derived from DPR. */
+export interface WorkProgressReport {
+  id: string;
+  number: string;
+  projectId: string;
+  date: string;
+  periodStart: string;
+  periodEnd: string;
+  percentComplete: number;
+  workCompleted: string;
+  nextPlan: string;
+  issues: string;
+  photoUrls: string[];
+  signatureUrl: string;
+}
+
 export interface GoodsReceiptLine {
   poItemId: string;
   qtyReceived: number;
