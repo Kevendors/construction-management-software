@@ -30,6 +30,7 @@ import {
 } from "@/app/quotations/actions";
 import { quoteStateToInvoiceState } from "@/lib/quotation/to-invoice";
 import { richText } from "@/lib/quotation/rich-text";
+import { WorkOrdersSection } from "./work-orders-section";
 
 const QUOTATION_STATUSES: QuotationStatus[] = ["draft", "sent", "accepted", "rejected"];
 
@@ -461,6 +462,9 @@ export function QuotationsList({
                     <span>Total</span>
                     <span className="tabular-nums">{formatINR(total)}</span>
                   </div>
+                </div>
+                <div className="mt-4 border-t border-border pt-3">
+                  <WorkOrdersSection quotationId={q.id} />
                 </div>
               </CardContent>
             </Card>

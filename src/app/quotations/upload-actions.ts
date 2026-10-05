@@ -142,3 +142,122 @@ export async function getQuotationSourceAction(id: string): Promise<QuotationSou
     docType: data.source === "boq" ? "boq" : "quotation",
   };
 }
+
+// ----------------------------------------------------------------------------
+// Work Order (by Client) — pure record-keeping proof attached to a Quotation.
+// Reuses the same quotation-files bucket and signed-URL pattern as the
+// quotation's own source file (migration 0028). Does not drive any status
+// change or automation — see docs/superpowers/specs/2026-10-03-
+// document-workflow-design.md, section 2.
+// ----------------------------------------------------------------------------
+
+export interface QuotationWorkOrder {
+  id: string;
+  quotationId: string;
+  filePath: string;
+  fileName: string;
+  fileUrl: string | null;
+  referenceNumber: string | null;
+  date: string | null;
+  note: string | null;
+  createdAt: string;
+}
+
+interface WorkOrderRow {
+  id: string;
+  quotation_id: string;
+  file_path: string;
+  file_name: string;
+  reference_number: string | null;
+  date: string | null;
+  note: string | null;
+  created_at: string;
+}
+
+async function signWorkOrder(admin: ReturnType<typeof createAdminClient>, r: WorkOrderRow): Promise<QuotationWorkOrder> {
+  const { data: signed } = await admin.storage.from(BUCKET).createSignedUrl(r.file_path, SIGNED_TTL);
+  return {
+    id: r.id,
+    quotationId: r.quotation_id,
+    filePath: r.file_path,
+    fileName: r.file_name,
+    fileUrl: signed?.signedUrl ?? null,
+    referenceNumber: r.reference_number,
+    date: r.date,
+    note: r.note,
+    createdAt: r.created_at,
+  };
+}
+
+/** All work orders attached to a quotation, newest first. Empty before 0028 or on any error. */
+export async function getQuotationWorkOrdersAction(quotationId: string): Promise<QuotationWorkOrder[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("quotation_work_orders")
+    .select("id, quotation_id, file_path, file_name, reference_number, date, note, created_at")
+    .eq("quotation_id", quotationId)
+    .order("created_at", { ascending: false });
+  if (error || !data) return [];
+  const admin = createAdminClient();
+  return Promise.all((data as WorkOrderRow[]).map((r) => signWorkOrder(admin, r)));
+}
+
+/** Attach a client-supplied Work Order file to a quotation. */
+export async function uploadClientWorkOrderAction(
+  quotationId: string,
+  fileName: string,
+  dataUrl: string,
+  referenceNumber: string,
+  date: string,
+  note: string
+): Promise<{ workOrder?: QuotationWorkOrder; error?: string }> {
+  const supabase = await createClient();
+  const orgId = await currentOrgId(supabase);
+  if (!orgId) return { error: "You must be signed in to attach a work order." };
+
+  const decoded = decodeDataUrl(dataUrl);
+  if (!decoded) return { error: "Could not read that file." };
+
+  const MAX_BYTES = 32 * 1024 * 1024;
+  if (decoded.buffer.byteLength > MAX_BYTES) {
+    return { error: "That file is larger than 32MB — please upload a smaller file." };
+  }
+
+  const ext = extFor(decoded.contentType, fileName);
+  const path = `${orgId}/wo-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+  const admin = createAdminClient();
+  const { error: upErr } = await admin.storage
+    .from(BUCKET)
+    .upload(path, decoded.buffer, { contentType: decoded.contentType, upsert: false });
+  if (upErr) return { error: upErr.message };
+
+  const { data, error } = await supabase
+    .from("quotation_work_orders")
+    .insert({
+      org_id: orgId,
+      quotation_id: quotationId,
+      file_path: path,
+      file_name: fileName,
+      reference_number: referenceNumber || null,
+      date: date || null,
+      note: note || null,
+    })
+    .select("id, quotation_id, file_path, file_name, reference_number, date, note, created_at")
+    .single();
+  if (error) return { error: error.message };
+  return { workOrder: await signWorkOrder(admin, data as WorkOrderRow) };
+}
+
+/** Remove an attached Work Order. RLS decides who may. */
+export async function deleteQuotationWorkOrderAction(id: string): Promise<{ id?: string; error?: string }> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("quotation_work_orders")
+    .delete()
+    .eq("id", id)
+    .select("id")
+    .maybeSingle();
+  if (error) return { error: error.message };
+  if (!data) return { error: "That work order no longer exists, or you can't remove it." };
+  return { id };
+}
