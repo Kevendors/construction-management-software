@@ -19,6 +19,7 @@ import { CheckInFlow, type FlowSuccess } from "./check-in-flow";
 import { HistoryCalendar } from "./history-calendar";
 import { HistoryList } from "./history-list";
 import { MonthlySummary } from "./monthly-summary";
+import { UnclosedShiftAlert } from "./unclosed-shift-alert";
 
 function shiftMonth(month: string, delta: number): string {
   const [y, m] = month.split("-").map(Number);
@@ -94,6 +95,10 @@ export function MyAttendance({ data }: { data: MyAttendanceData }) {
       />
 
       <div className="mx-auto max-w-xl space-y-4">
+        {data.unclosedPreviousShift && (
+          <UnclosedShiftAlert shift={data.unclosedPreviousShift} />
+        )}
+
         <CheckInCard
           today={today}
           hasProjects={data.assignedProjects.length > 0}

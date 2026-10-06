@@ -7,6 +7,7 @@ import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { logActivity } from "@/lib/activity/log";
 import { dispatchNotification } from "@/lib/notifications/dispatch";
 import {
+  formatDuration,
   formatTime,
   haversineMeters,
   minutesBetween,
@@ -122,14 +123,32 @@ export async function checkInAction(input: CheckInInput): Promise<ActionResult> 
     .eq("id", input.projectId)
     .maybeSingle();
   if (!project) return { error: "Project not found." };
-  if (ctx.role !== "super_admin") {
+
+  // Project must be valid; supervisors, engineers, PMs, and super_admins can check in to any site.
+  // For other roles, ensure they are assigned, or if they have no assignments yet, allow them.
+  if (
+    ctx.role !== "super_admin" &&
+    ctx.role !== "pm" &&
+    ctx.role !== "supervisor" &&
+    ctx.role !== "engineer"
+  ) {
     const { data: assignment } = await supabase
       .from("project_members")
       .select("id")
       .eq("project_id", input.projectId)
       .eq("user_id", ctx.userId)
       .maybeSingle();
-    if (!assignment) return { error: "You are not assigned to this project." };
+
+    if (!assignment) {
+      const { data: anyAssign } = await supabase
+        .from("project_members")
+        .select("id")
+        .eq("user_id", ctx.userId)
+        .limit(1);
+      if (anyAssign && anyAssign.length > 0) {
+        return { error: "You are not assigned to this project." };
+      }
+    }
   }
 
   const fenceMsg = fenceError(project as GeofenceRow, input.lat, input.lng, input.accuracy);
@@ -380,4 +399,87 @@ export async function adminMarkAttendanceAction(input: AdminMarkAttendanceInput)
     meta: { userId: input.userId, date: input.date },
   });
   return { id: result.data.id };
+}
+
+export interface ClosePreviousShiftInput {
+  recordId: string;
+  checkOutTime?: string; // "HH:MM"
+  note?: string;
+}
+
+/**
+ * Close an unclosed / forgotten shift from an earlier date.
+ * Callable by the employee themselves or by super_admin/hr.
+ */
+export async function closePreviousShiftAction(
+  input: ClosePreviousShiftInput
+): Promise<ActionResult> {
+  if (!isSupabaseConfigured()) return { id: input.recordId };
+
+  const ctx = await getAuthContext();
+  if (!ctx?.orgId || !ctx?.userId) return { error: "You must be signed in." };
+
+  const admin = createAdminClient();
+  const { data: record, error: fetchErr } = await admin
+    .from("employee_attendance")
+    .select("id, user_id, date, check_in_at, check_out_at, note")
+    .eq("id", input.recordId)
+    .maybeSingle();
+
+  if (fetchErr || !record) return { error: "Attendance record not found." };
+
+  const isOwner = record.user_id === ctx.userId;
+  const isAdmin = ctx.role === "super_admin" || ctx.role === "hr";
+  if (!isOwner && !isAdmin) {
+    return { error: "Not authorized to close this shift." };
+  }
+
+  if (record.check_out_at) {
+    return { error: "This shift is already closed." };
+  }
+
+  let checkOutIso: string;
+  let totalMinutes: number;
+
+  if (input.checkOutTime && /^\d{2}:\d{2}$/.test(input.checkOutTime)) {
+    checkOutIso = `${record.date}T${input.checkOutTime}:00${ORG_UTC_OFFSET}`;
+    totalMinutes = minutesBetween(record.check_in_at as string, checkOutIso);
+  } else {
+    // Default to standard 8-hour workday (480 minutes)
+    const checkInDate = new Date(record.check_in_at as string);
+    const eightHoursLater = new Date(checkInDate.getTime() + 8 * 60 * 60 * 1000);
+    checkOutIso = eightHoursLater.toISOString();
+    totalMinutes = 8 * 60;
+  }
+
+  const updateNote = input.note?.trim()
+    ? input.note.trim()
+    : isOwner
+    ? "Shift closed retroactively"
+    : `Shift closed by ${ctx.name}`;
+
+  const existingNote = record.note as string | null;
+  const finalNote = existingNote ? `${existingNote} · ${updateNote}` : updateNote;
+
+  const { error: updateErr } = await admin
+    .from("employee_attendance")
+    .update({
+      check_out_at: checkOutIso,
+      total_minutes: totalMinutes,
+      overtime_minutes: overtimeOf(totalMinutes),
+      note: finalNote,
+    })
+    .eq("id", record.id);
+
+  if (updateErr) return { error: updateErr.message };
+
+  await logActivity({
+    action: "updated",
+    entityType: "attendance",
+    entityId: record.id,
+    summary: `${ctx.name} closed previous shift for ${record.date} (${formatDuration(totalMinutes)})`,
+    meta: { recordId: record.id, date: record.date, totalMinutes },
+  });
+
+  return { id: record.id };
 }

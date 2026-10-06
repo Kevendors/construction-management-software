@@ -57,9 +57,15 @@ export function AdminMarkAttendanceDialog({
     setUserId(existing?.userId ?? defaultUserId ?? "");
     setDate(existing?.date ?? defaultDate);
     setProjectId(existing?.projectId ?? "");
-    setCheckInTime(existing ? isoToHHMM(existing.checkInAt) || "09:00" : "09:00");
-    setCheckOutTime(existing ? isoToHHMM(existing.checkOutAt) : "");
-    setNote(existing?.note ?? "");
+    const inTime = existing ? isoToHHMM(existing.checkInAt) || "09:00" : "09:00";
+    setCheckInTime(inTime);
+    if (existing && !existing.checkOutAt) {
+      setCheckOutTime("18:00");
+      setNote(existing.note || "Shift closed by admin");
+    } else {
+      setCheckOutTime(existing ? isoToHHMM(existing.checkOutAt) : "");
+      setNote(existing?.note ?? "");
+    }
     setError(null);
   }, [open, existing, defaultUserId, defaultDate]);
 
@@ -86,8 +92,18 @@ export function AdminMarkAttendanceDialog({
     <Dialog
       open={open}
       onClose={onClose}
-      title={existing ? "Correct Attendance" : "Mark Attendance Manually"}
-      description="No GPS or selfie required — use this only when the employee genuinely couldn't self check-in. A reason is required and this stays visibly flagged as a manual entry."
+      title={
+        existing && !existing.checkOutAt
+          ? "Close Open Shift"
+          : existing
+          ? "Correct Attendance"
+          : "Mark Attendance Manually"
+      }
+      description={
+        existing && !existing.checkOutAt
+          ? "Close this employee's open shift by confirming check-out time and details."
+          : "No GPS or selfie required — use this only when the employee genuinely couldn't self check-in. A reason is required and this stays visibly flagged as a manual entry."
+      }
       className="max-w-lg"
     >
       <form onSubmit={submit} className="space-y-4">

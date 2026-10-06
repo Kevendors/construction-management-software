@@ -6,6 +6,8 @@ import type { EmployeeAttendance, Project, Role } from "@/lib/types";
 export interface MyAttendanceData {
   /** Today's record (checked in, maybe not yet out) — null if none. */
   today: EmployeeAttendance | null;
+  /** Unclosed shift from a previous date that was never checked out — null if none. */
+  unclosedPreviousShift?: EmployeeAttendance | null;
   /** All of the caller's records in `month`. */
   records: EmployeeAttendance[];
   /** Projects the caller may check in to (all org projects for super_admin). */

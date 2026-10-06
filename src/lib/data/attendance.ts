@@ -114,6 +114,7 @@ export async function getMyAttendancePage(month?: string): Promise<MyAttendanceD
     );
     return {
       today: mine.find((r) => r.date === today) ?? null,
+      unclosedPreviousShift: null,
       records: mine
         .filter((r) => r.date.startsWith(activeMonth))
         .sort((a, b) => b.date.localeCompare(a.date)),
@@ -129,14 +130,22 @@ export async function getMyAttendancePage(month?: string): Promise<MyAttendanceD
 
   const ctx = await getAuthContext();
   if (!ctx) {
-    return { today: null, records: [], assignedProjects: [], employeeId: "", userName: "", month: activeMonth };
+    return {
+      today: null,
+      unclosedPreviousShift: null,
+      records: [],
+      assignedProjects: [],
+      employeeId: "",
+      userName: "",
+      month: activeMonth,
+    };
   }
 
   const supabase = await createSupabase();
   const { from, to } = monthRange(activeMonth);
   // Explicit user_id filter: super_admin's RLS read is org-wide, but this
   // page is always "my own attendance".
-  const [monthRes, todayRes, pmRes, projRes, employeeId] = await Promise.all([
+  const [monthRes, todayRes, unclosedRes, pmRes, projRes, employeeId] = await Promise.all([
     supabase
       .from("employee_attendance")
       .select("*")
@@ -150,6 +159,15 @@ export async function getMyAttendancePage(month?: string): Promise<MyAttendanceD
       .eq("user_id", ctx.userId)
       .eq("date", today)
       .maybeSingle(),
+    supabase
+      .from("employee_attendance")
+      .select("*")
+      .eq("user_id", ctx.userId)
+      .lt("date", today)
+      .is("check_out_at", null)
+      .order("date", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
     supabase.from("project_members").select("project_id").eq("user_id", ctx.userId),
     supabase.rpc("list_org_projects"),
     myEmployeeId(supabase, ctx.userId),
@@ -158,12 +176,13 @@ export async function getMyAttendancePage(month?: string): Promise<MyAttendanceD
 
   const monthRows = (monthRes.data ?? []) as EmployeeAttendanceRow[];
   const todayRow = todayRes.data as EmployeeAttendanceRow | null;
+  const unclosedRow = unclosedRes?.data as EmployeeAttendanceRow | null;
 
   // Resolve names for any admin-marked rows (rare — usually 0, so this is a
   // small targeted query rather than joining profiles on every fetch).
   const markedByIds = Array.from(
     new Set(
-      [...monthRows, ...(todayRow ? [todayRow] : [])]
+      [...monthRows, ...(todayRow ? [todayRow] : []), ...(unclosedRow ? [unclosedRow] : [])]
         .filter((r) => r.source === "admin" && r.marked_by)
         .map((r) => r.marked_by as string)
     )
@@ -184,11 +203,19 @@ export async function getMyAttendancePage(month?: string): Promise<MyAttendanceD
   );
   const projects = ((projRes.data ?? []) as ProjectRow[]).map(mapProject);
 
+  // If the user has specific assigned projects, show those.
+  // If unassigned (assignedIds is empty) or super_admin/pm, allow all org projects so
+  // roving supervisors and new employees are never locked out of marking attendance.
+  const assignedProjects =
+    ctx.role === "super_admin" || ctx.role === "pm" || assignedIds.size === 0
+      ? projects
+      : projects.filter((p) => assignedIds.has(p.id));
+
   return {
     today: todayRow ? mapEmployeeAttendance(todayRow, identityFor(todayRow)) : null,
+    unclosedPreviousShift: unclosedRow ? mapEmployeeAttendance(unclosedRow, identityFor(unclosedRow)) : null,
     records: monthRows.map((r) => mapEmployeeAttendance(r, identityFor(r))),
-    assignedProjects:
-      ctx.role === "super_admin" ? projects : projects.filter((p) => assignedIds.has(p.id)),
+    assignedProjects: assignedProjects.length > 0 ? assignedProjects : projects,
     employeeId,
     userName: ctx.name,
     month: activeMonth,

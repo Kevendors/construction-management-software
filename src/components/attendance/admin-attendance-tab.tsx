@@ -360,8 +360,12 @@ export function AdminAttendanceTab({
                       <TableCell>
                         {record ? (
                           <div className="flex items-center gap-1.5">
-                            <Badge variant="success">Present</Badge>
-                            {record.source === "admin" && <Badge variant="warning">Manual</Badge>}
+                            {!record.checkOutAt ? (
+                              <Badge variant="warning">Open Shift</Badge>
+                            ) : (
+                              <Badge variant="success">Present</Badge>
+                            )}
+                            {record.source === "admin" && <Badge variant="outline">Manual</Badge>}
                           </div>
                         ) : dayStatus(date, false) === "holiday" ? (
                           <Badge variant="muted">Holiday</Badge>
@@ -370,7 +374,7 @@ export function AdminAttendanceTab({
                         )}
                       </TableCell>
                       <TableCell>
-                        <div className="flex items-center gap-0.5">
+                        <div className="flex items-center gap-1">
                           {record && (
                             <Button
                               size="icon"
@@ -381,7 +385,17 @@ export function AdminAttendanceTab({
                               <Eye />
                             </Button>
                           )}
-                          {record ? (
+                          {record && !record.checkOutAt ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-8 px-2.5 text-xs text-amber-700 dark:text-amber-400 border-amber-300 dark:border-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950/40 cursor-pointer"
+                              onClick={() => setMarkContext({ userId: member.userId, date, existing: record })}
+                              title="Close open shift"
+                            >
+                              Close Shift
+                            </Button>
+                          ) : record ? (
                             <Button
                               size="icon"
                               variant="ghost"
@@ -574,14 +588,16 @@ export function AdminAttendanceTab({
                           {record.overtimeMinutes > 0 ? formatDuration(record.overtimeMinutes) : "—"}
                         </TableCell>
                         <TableCell>
-                          {record.source === "admin" ? (
-                            <Badge variant="warning">Manual</Badge>
+                          {!record.checkOutAt ? (
+                            <Badge variant="warning">Open Shift</Badge>
+                          ) : record.source === "admin" ? (
+                            <Badge variant="outline">Manual</Badge>
                           ) : (
                             <Badge variant="success">Self</Badge>
                           )}
                         </TableCell>
                         <TableCell>
-                          <div className="flex items-center gap-0.5">
+                          <div className="flex items-center gap-1">
                             <Button
                               size="icon"
                               variant="ghost"
@@ -590,16 +606,30 @@ export function AdminAttendanceTab({
                             >
                               <Eye />
                             </Button>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              aria-label="Correct attendance"
-                              onClick={() =>
-                                setMarkContext({ userId: record.userId, date: record.date, existing: record })
-                              }
-                            >
-                              <Pencil />
-                            </Button>
+                            {!record.checkOutAt ? (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-8 px-2 text-xs text-amber-700 dark:text-amber-400 border-amber-300 dark:border-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950/40 cursor-pointer"
+                                onClick={() =>
+                                  setMarkContext({ userId: record.userId, date: record.date, existing: record })
+                                }
+                                title="Close open shift"
+                              >
+                                Close Shift
+                              </Button>
+                            ) : (
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                aria-label="Correct attendance"
+                                onClick={() =>
+                                  setMarkContext({ userId: record.userId, date: record.date, existing: record })
+                                }
+                              >
+                                <Pencil />
+                              </Button>
+                            )}
                           </div>
                         </TableCell>
                       </TableRow>
