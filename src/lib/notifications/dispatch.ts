@@ -2,6 +2,7 @@ import "server-only";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
+import { sendWebPushBatch } from "@/lib/notifications/web-push";
 import type { NotificationKind, Role } from "@/lib/types";
 
 export interface DispatchNotificationInput {
@@ -58,7 +59,8 @@ export async function dispatchNotification(
 
     // If recipients were targeted, insert one row per recipient
     if (recipientIds.size > 0) {
-      const rows = Array.from(recipientIds).map((userId) => ({
+      const recipientList = Array.from(recipientIds);
+      const rows = recipientList.map((userId) => ({
         org_id: orgId,
         user_id: userId,
         kind: input.kind,
@@ -72,6 +74,27 @@ export async function dispatchNotification(
       if (insError) {
         console.error("[notifications] dispatch insert failed", insError.message);
       }
+
+      // Also dispatch out-of-app Web Push to active device subscriptions
+      try {
+        const { data: subs } = await admin
+          .from("push_subscriptions")
+          .select("id, endpoint, p256dh, auth")
+          .eq("org_id", orgId)
+          .in("user_id", recipientList);
+
+        if (subs && subs.length > 0) {
+          sendWebPushBatch(subs, {
+            title: input.title,
+            body: input.body,
+            href: input.href,
+            tag: `${input.kind}-${Date.now()}`,
+          }).catch((e) => console.warn("[notifications] web push delivery error:", e));
+        }
+      } catch (pushErr) {
+        console.warn("[notifications] web push lookup error:", pushErr);
+      }
+
       return;
     }
 
@@ -88,6 +111,31 @@ export async function dispatchNotification(
       });
       if (insError) {
         console.error("[notifications] broadcast insert failed", insError.message);
+      }
+
+      // Dispatch Web Push to all org devices
+      try {
+        const { data: subs } = await admin
+          .from("push_subscriptions")
+          .select("id, endpoint, p256dh, auth, user_id")
+          .eq("org_id", orgId);
+
+        if (subs && subs.length > 0) {
+          const targets = input.excludeUserId
+            ? subs.filter((s: { user_id: string }) => s.user_id !== input.excludeUserId)
+            : subs;
+
+          if (targets.length > 0) {
+            sendWebPushBatch(targets, {
+              title: input.title,
+              body: input.body,
+              href: input.href,
+              tag: `${input.kind}-${Date.now()}`,
+            }).catch((e) => console.warn("[notifications] web push delivery error:", e));
+          }
+        }
+      } catch (pushErr) {
+        console.warn("[notifications] web push lookup error:", pushErr);
       }
     }
   } catch (err) {

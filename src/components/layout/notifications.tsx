@@ -19,6 +19,7 @@ import {
   markAllNotificationsReadAction,
   markNotificationReadAction,
 } from "@/app/notifications/actions";
+import { PushBanner } from "@/components/notifications/push-banner";
 
 const ICON: Record<NotificationKind, { icon: LucideIcon; tint: string }> = {
   approval: { icon: ClipboardCheck, tint: "bg-chart-3/15 text-chart-3" },
@@ -256,6 +257,9 @@ export function Notifications() {
               })
             )}
           </ul>
+
+          {/* Out-of-app Web Push banner & controls */}
+          <PushBanner />
         </div>
       )}
     </div>
