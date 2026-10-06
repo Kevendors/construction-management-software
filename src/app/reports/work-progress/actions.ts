@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { getAuthContext } from "@/lib/auth/context";
+import { dispatchNotification } from "@/lib/notifications/dispatch";
 
 async function currentOrgId(
   supabase: Awaited<ReturnType<typeof createClient>>
@@ -66,6 +67,7 @@ export async function saveWorkProgressReportAction(
     payload: state,
   };
 
+  let reportId: string;
   if (existingId) {
     const { data, error } = await supabase
       .from("work_progress_reports")
@@ -75,16 +77,29 @@ export async function saveWorkProgressReportAction(
       .maybeSingle();
     if (error) return { error: error.message };
     if (!data) return { error: "That report no longer exists, or you can't edit it." };
-    return { id: data.id as string };
+    reportId = data.id as string;
+  } else {
+    const { data, error } = await supabase
+      .from("work_progress_reports")
+      .insert({ org_id: orgId, ...fields })
+      .select("id")
+      .single();
+    if (error) return { error: error.message };
+    reportId = data.id as string;
   }
 
-  const { data, error } = await supabase
-    .from("work_progress_reports")
-    .insert({ org_id: orgId, ...fields })
-    .select("id")
-    .single();
-  if (error) return { error: error.message };
-  return { id: data.id as string };
+  const { data: proj } = await supabase.from("projects").select("name").eq("id", state.projectId).maybeSingle();
+  const projName = (proj?.name as string | undefined) || "Project";
+  await dispatchNotification({
+    orgId,
+    roles: ["super_admin", "pm"],
+    kind: "info",
+    title: existingId ? `Progress Report Updated: ${state.number}` : `New Progress Report: ${state.number}`,
+    body: `${projName} · ${state.percentComplete}% Complete (${state.date})`,
+    href: "/reports/work-progress",
+  });
+
+  return { id: reportId };
 }
 
 /** Load a saved report's full builder state for re-opening / editing. */

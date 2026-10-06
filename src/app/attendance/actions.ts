@@ -5,7 +5,9 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { logActivity } from "@/lib/activity/log";
+import { dispatchNotification } from "@/lib/notifications/dispatch";
 import {
+  formatTime,
   haversineMeters,
   minutesBetween,
   orgToday,
@@ -178,6 +180,17 @@ export async function checkInAction(input: CheckInInput): Promise<ActionResult> 
     summary: `${ctx.name} checked in — ${(project as { name: string }).name}`,
     meta: { projectId: input.projectId, lat: input.lat, lng: input.lng },
   });
+
+  await dispatchNotification({
+    orgId: ctx.orgId,
+    roles: ["super_admin"],
+    excludeUserId: ctx.userId,
+    kind: "info",
+    title: `${ctx.name} Checked In`,
+    body: `${ctx.name} checked in at ${(project as { name: string }).name} (${formatTime(new Date().toISOString())})`,
+    href: "/payroll",
+  });
+
   return { id: row.id };
 }
 
@@ -240,6 +253,17 @@ export async function checkOutAction(input: CheckOutInput): Promise<ActionResult
     summary: `${ctx.name} checked out — ${h}h ${m}m worked`,
     meta: { lat: input.lat, lng: input.lng, totalMinutes },
   });
+
+  await dispatchNotification({
+    orgId: ctx.orgId,
+    roles: ["super_admin"],
+    excludeUserId: ctx.userId,
+    kind: "info",
+    title: `${ctx.name} Checked Out`,
+    body: `${ctx.name} checked out — ${h}h ${m}m worked`,
+    href: "/payroll",
+  });
+
   return { id: row.id as string };
 }
 

@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { getAuthContext } from "@/lib/auth/context";
+import { dispatchNotification } from "@/lib/notifications/dispatch";
 
 async function currentOrgId(
   supabase: Awaited<ReturnType<typeof createClient>>
@@ -103,6 +104,17 @@ export async function saveChallanAction(
     const { error: iErr } = await supabase.from("challan_items").insert(items);
     if (iErr) return { error: iErr.message };
   }
+
+  const { data: proj } = await supabase.from("projects").select("name").eq("id", state.projectId).maybeSingle();
+  const projName = (proj?.name as string | undefined) || "Project";
+  await dispatchNotification({
+    orgId,
+    roles: ["super_admin", "pm", "supervisor"],
+    kind: "stock",
+    title: existingId ? `Challan Updated: ${state.number || "—"}` : `Delivery Challan: ${state.number || "—"}`,
+    body: `Dispatched to ${projName} (${items.length} items)`,
+    href: "/challans",
+  });
 
   return { id: challanId };
 }

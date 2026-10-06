@@ -5,6 +5,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getAuthContext } from "@/lib/auth/context";
 import { isAdminRole } from "@/lib/auth/permissions";
 import { logActivity } from "@/lib/activity/log";
+import { dispatchNotification } from "@/lib/notifications/dispatch";
 import { formatINR } from "@/lib/utils";
 import type { ApprovalStatus } from "@/lib/types";
 
@@ -101,6 +102,17 @@ export async function logExpense(input: LogExpenseInput): Promise<ActionResult> 
     entityId: expenseId,
     summary: `Logged expense ${input.title ? `"${input.title}" ` : ""}of ${formatINR(input.amount)}`,
   });
+
+  await dispatchNotification({
+    orgId,
+    roles: ["super_admin", "accountant"],
+    excludeUserId: userId ?? undefined,
+    kind: "payment",
+    title: `New Expense: ${formatINR(input.amount)}`,
+    body: `${input.title ? `"${input.title}" · ` : ""}${input.category} (${input.date})`,
+    href: "/expenses",
+  });
+
   return { id: expenseId };
 }
 
@@ -113,12 +125,31 @@ export async function setExpenseStatus(
   if (!ctx || !isAdminRole(ctx.role)) return { error: "Only a Super Admin can approve or reject expenses." };
 
   const supabase = await createClient();
+  const { data: expRow } = await supabase
+    .from("expenses")
+    .select("by_id, amount, title")
+    .eq("id", id)
+    .maybeSingle();
+
   const { error } = await supabase
     .from("expenses")
     .update({ status, approver_id: ctx.userId })
     .eq("id", id);
   if (error) return { error: error.message };
+
   await logActivity({ action: status, entityType: "expense", entityId: id, summary: `Expense ${status}` });
+
+  if (expRow?.by_id) {
+    await dispatchNotification({
+      orgId: ctx.orgId,
+      userIds: [expRow.by_id as string],
+      kind: status === "approved" ? "approval" : "delay",
+      title: `Expense ${status === "approved" ? "Approved" : "Rejected"} — ${formatINR(Number(expRow.amount))}`,
+      body: `Your expense ${expRow.title ? `"${expRow.title}" ` : ""}was marked as ${status} by ${ctx.name}`,
+      href: "/expenses",
+    });
+  }
+
   return { id };
 }
 

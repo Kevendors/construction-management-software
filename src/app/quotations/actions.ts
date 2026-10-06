@@ -4,6 +4,8 @@ import { createClient } from "@/lib/supabase/server";
 import { getAuthContext } from "@/lib/auth/context";
 import { isAdminRole } from "@/lib/auth/permissions";
 import { logActivity } from "@/lib/activity/log";
+import { dispatchNotification } from "@/lib/notifications/dispatch";
+import { formatINR } from "@/lib/utils";
 import { isLumpsum, type QuoteState } from "@/lib/quotation/compute";
 
 async function currentOrgId(
@@ -191,6 +193,15 @@ export async function saveQuotationAction(
     if (iErr) return { error: iErr.message };
   }
 
+  await dispatchNotification({
+    orgId,
+    roles: ["super_admin", "accountant", "pm"],
+    kind: "info",
+    title: existingId ? `Quotation Updated: ${state.number}` : `New Quotation: ${state.number}`,
+    body: `${state.quoteName ? `"${state.quoteName}" · ` : ""}${state.clientName || "Client"} (${formatINR(grandTotal)})`,
+    href: "/quotations",
+  });
+
   return { id: quotationId };
 }
 
@@ -290,7 +301,25 @@ export async function updateQuotationStatusAction(
   status: QuotationStatus
 ): Promise<SaveResult> {
   const supabase = await createClient();
+  const { data: qRow } = await supabase
+    .from("quotations")
+    .select("org_id, number")
+    .eq("id", id)
+    .maybeSingle();
+
   const { error } = await supabase.from("quotations").update({ status }).eq("id", id);
   if (error) return { error: error.message };
+
+  if (qRow?.org_id) {
+    await dispatchNotification({
+      orgId: qRow.org_id as string,
+      roles: ["super_admin", "accountant", "pm"],
+      kind: status === "accepted" ? "approval" : "info",
+      title: `Quotation ${status === "accepted" ? "Accepted" : status.toUpperCase()}: ${qRow.number}`,
+      body: `Status updated to ${status}`,
+      href: "/quotations",
+    });
+  }
+
   return { id };
 }

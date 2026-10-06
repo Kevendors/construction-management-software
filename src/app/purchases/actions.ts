@@ -5,6 +5,7 @@ import { computeBill, isLumpsum, type BillState } from "@/lib/purchases/compute"
 import { getAuthContext } from "@/lib/auth/context";
 import { isAdminRole } from "@/lib/auth/permissions";
 import { logActivity } from "@/lib/activity/log";
+import { dispatchNotification } from "@/lib/notifications/dispatch";
 import { purchaseBillStatusMeta } from "@/lib/labels";
 import { formatINR } from "@/lib/utils";
 
@@ -146,6 +147,16 @@ export async function savePurchaseBillAction(
     entityId: billId,
     summary: `${existingId ? "Updated" : "Created"} purchase bill ${state.number || ""} (${formatINR(c.grandTotal)})`.trim(),
   });
+
+  await dispatchNotification({
+    orgId,
+    roles: ["super_admin", "accountant"],
+    kind: "payment",
+    title: existingId ? `Purchase Bill Updated: ${state.number || "—"}` : `New Purchase Bill: ${state.number || "—"}`,
+    body: `${state.supplierName ? `${state.supplierName} · ` : ""}${formatINR(c.grandTotal)}`,
+    href: "/purchases",
+  });
+
   return { id: billId };
 }
 
@@ -183,12 +194,31 @@ export async function updatePurchaseBillStatusAction(
 
   const { error } = await supabase.from("purchase_bills").update(update).eq("id", id);
   if (error) return { error: error.message };
+
+  const { data: billRow } = await supabase
+    .from("purchase_bills")
+    .select("org_id, number")
+    .eq("id", id)
+    .maybeSingle();
+
   await logActivity({
     action: "updated",
     entityType: "purchase_bill",
     entityId: id,
     summary: `Marked purchase bill ${purchaseBillStatusMeta[status]?.label ?? status}`,
   });
+
+  if (billRow?.org_id) {
+    await dispatchNotification({
+      orgId: billRow.org_id as string,
+      roles: ["super_admin", "accountant"],
+      kind: status === "paid" ? "payment" : "info",
+      title: `Purchase Bill ${status === "paid" ? "Paid" : purchaseBillStatusMeta[status]?.label ?? status}: ${billRow.number}`,
+      body: `Status updated to ${purchaseBillStatusMeta[status]?.label ?? status}`,
+      href: "/purchases",
+    });
+  }
+
   return { id };
 }
 

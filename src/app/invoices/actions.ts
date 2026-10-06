@@ -5,6 +5,7 @@ import { computeInvoice, isLumpsum, type InvoiceState } from "@/lib/invoice/comp
 import { getAuthContext } from "@/lib/auth/context";
 import { isAdminRole } from "@/lib/auth/permissions";
 import { logActivity } from "@/lib/activity/log";
+import { dispatchNotification } from "@/lib/notifications/dispatch";
 import { invoiceStatusMeta } from "@/lib/labels";
 import { formatINR } from "@/lib/utils";
 
@@ -153,6 +154,16 @@ export async function saveInvoiceAction(
     entityId: invoiceId,
     summary: `${existingId ? "Updated" : "Created"} invoice ${state.number || ""} (${formatINR(c.grandTotal)})`.trim(),
   });
+
+  await dispatchNotification({
+    orgId,
+    roles: ["super_admin", "accountant"],
+    kind: "payment",
+    title: existingId ? `Invoice Updated: ${state.number || "—"}` : `New Invoice: ${state.number || "—"}`,
+    body: `${state.clientName ? `${state.clientName} · ` : ""}Total: ${formatINR(c.grandTotal)}`,
+    href: "/invoices",
+  });
+
   return { id: invoiceId };
 }
 
@@ -193,12 +204,31 @@ export async function updateInvoiceStatusAction(
 
   const { error } = await supabase.from("sales_invoices").update(update).eq("id", id);
   if (error) return { error: error.message };
+
+  const { data: invRow } = await supabase
+    .from("sales_invoices")
+    .select("org_id, number")
+    .eq("id", id)
+    .maybeSingle();
+
   await logActivity({
     action: "updated",
     entityType: "invoice",
     entityId: id,
     summary: `Marked invoice ${invoiceStatusMeta[status]?.label ?? status}`,
   });
+
+  if (invRow?.org_id) {
+    await dispatchNotification({
+      orgId: invRow.org_id as string,
+      roles: ["super_admin", "accountant"],
+      kind: status === "paid" ? "payment" : "info",
+      title: `Invoice ${status === "paid" ? "Paid" : invoiceStatusMeta[status]?.label ?? status}: ${invRow.number}`,
+      body: `Status updated to ${invoiceStatusMeta[status]?.label ?? status}`,
+      href: "/invoices",
+    });
+  }
+
   return { id };
 }
 
