@@ -123,7 +123,7 @@ export function SlipDocument({ slip, employee }: { slip: SalarySlip; employee: E
           Net pay credited to the registered bank account.
         </p>
         <div className="text-center">
-          <div className="w-56 border-t border-slate-400 pt-1 text-slate-700">For Charu Construction & Design</div>
+          <div className="w-56 border-t border-slate-400 pt-1 text-slate-700">For KeyVendors India Private Limited</div>
           <p className="mt-1 text-slate-500">Authorised Signatory</p>
         </div>
       </div>

@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "SiteHub — Construction & Design PM",
   description:
-    "Internal construction & design project-management platform for Charu. Projects, design, CRM, BOQ, dashboards & P&L.",
+    "Internal construction & design project-management platform for KeyVendors India Private Limited. Projects, design, CRM, BOQ, dashboards & P&L.",
   manifest: "/manifest.webmanifest",
   applicationName: "SiteHub",
   appleWebApp: { capable: true, statusBarStyle: "default", title: "SiteHub" },

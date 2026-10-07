@@ -38,9 +38,9 @@ export function DocumentShell({
               <HardHat className="h-6 w-6" />
             </span>
             <div>
-              <h1 className="text-lg font-bold tracking-tight">Charu Construction & Design</h1>
+              <h1 className="text-lg font-bold tracking-tight">KeyVendors India Private Limited</h1>
               <p className="text-xs text-slate-500">
-                Architecture · Building · Interiors · GSTIN 09AAACH0000A1Z5
+                Architecture · Construction · Interiors · GSTIN 07AAGCK1663C2ZS
               </p>
             </div>
           </div>

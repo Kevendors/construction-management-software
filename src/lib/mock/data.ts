@@ -688,7 +688,7 @@ function buildEmployeeAttendance(): EmployeeAttendance[] {
         totalMinutes: total,
         overtimeMinutes: Math.max(0, total - 480),
         source: isAdminMarked ? "admin" : "self",
-        markedByName: isAdminMarked ? "Charu Keyvendors" : "",
+        markedByName: isAdminMarked ? "KeyVendors Admin" : "",
         note: isAdminMarked ? "Phone died on site — confirmed present by supervisor call." : "",
       });
     });

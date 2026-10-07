@@ -106,7 +106,7 @@ export function PoDocument({
         </div>
         <div className="flex flex-col items-end justify-end">
           <div className="mt-10 w-48 border-t border-slate-400 pt-1 text-center text-slate-600">
-            For Charu Construction &amp; Design
+            For KeyVendors India Private Limited
           </div>
           <p className="mt-1 text-slate-500">Authorised Signatory</p>
         </div>
