@@ -7,9 +7,12 @@ import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { logActivity } from "@/lib/activity/log";
 import { dispatchNotification } from "@/lib/notifications/dispatch";
 import {
+  ALLOWED_LATE_ARRIVALS,
   formatDuration,
   formatTime,
   haversineMeters,
+  isAfterLateGrace,
+  isLateArrival,
   minutesBetween,
   orgToday,
   ORG_UTC_OFFSET,
@@ -194,11 +197,38 @@ export async function checkInAction(input: CheckInInput): Promise<ActionResult> 
   }
   await supabase.from("employee_attendance").update({ check_in_selfie_path: selfiePath }).eq("id", row.id);
 
+  const nowIso = new Date().toISOString();
+  let lateMsg = "";
+  if (isLateArrival(nowIso)) {
+    const curMonth = date.slice(0, 7);
+    const { data: monthRows } = await supabase
+      .from("employee_attendance")
+      .select("check_in_at")
+      .eq("user_id", ctx.userId)
+      .like("date", `${curMonth}%`)
+      .not("check_in_at", "is", null);
+
+    let priorLates = 0;
+    for (const mr of monthRows ?? []) {
+      if (mr.check_in_at && isLateArrival(mr.check_in_at) && mr.check_in_at !== nowIso) {
+        priorLates += 1;
+      }
+    }
+    const lateNum = priorLates + 1;
+    if (isAfterLateGrace(nowIso)) {
+      lateMsg = ` [Half Day — checked in after 10:15 AM]`;
+    } else if (lateNum > ALLOWED_LATE_ARRIVALS) {
+      lateMsg = ` [Half Day — late #${lateNum} exceeds allowed 3]`;
+    } else {
+      lateMsg = ` [Late #${lateNum} of ${ALLOWED_LATE_ARRIVALS} allowed]`;
+    }
+  }
+
   await logActivity({
     action: "created",
     entityType: "attendance",
     entityId: row.id,
-    summary: `${ctx.name} checked in — ${(project as { name: string }).name}`,
+    summary: `${ctx.name} checked in — ${(project as { name: string }).name}${lateMsg}`,
     meta: { projectId: input.projectId, lat: input.lat, lng: input.lng },
   });
 
@@ -206,9 +236,9 @@ export async function checkInAction(input: CheckInInput): Promise<ActionResult> 
     orgId: ctx.orgId,
     roles: ["super_admin"],
     excludeUserId: ctx.userId,
-    kind: "info",
-    title: `${ctx.name} Checked In`,
-    body: `${ctx.name} checked in at ${(project as { name: string }).name} (${formatTime(new Date().toISOString())})`,
+    kind: isLateArrival(nowIso) ? "delay" : "info",
+    title: `${ctx.name} Checked In${lateMsg ? " (Late)" : ""}`,
+    body: `${ctx.name} checked in at ${(project as { name: string }).name} (${formatTime(nowIso)})${lateMsg}`,
     href: "/payroll",
   });
 

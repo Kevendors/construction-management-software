@@ -19,6 +19,7 @@ import {
 import {
   dayStatus,
   daysOfMonth,
+  evaluateEmployeeMonthAttendance,
   formatDuration,
   formatTime,
   monthlySummary,
@@ -325,7 +326,13 @@ export function AdminAttendanceTab({
                       </TableCell>
                     </TableRow>
                   )}
-                  {dailyRows.map(({ member, record }) => (
+                  {dailyRows.map(({ member, record }) => {
+                    const memberMonthRecords = board.records.filter(
+                      (r) => r.userId === member.userId && r.date.startsWith(date.slice(0, 7))
+                    );
+                    const evalRecord = evaluateEmployeeMonthAttendance(memberMonthRecords, date.slice(0, 7)).recordMap.get(date);
+
+                    return (
                     <TableRow key={member.userId}>
                       <TableCell className="font-medium">
                         <button
@@ -362,6 +369,14 @@ export function AdminAttendanceTab({
                           <div className="flex items-center gap-1.5">
                             {!record.checkOutAt ? (
                               <Badge variant="warning">Open Shift</Badge>
+                            ) : evalRecord?.creditType === "late_half_day" || evalRecord?.creditType === "late_cutoff_half_day" ? (
+                              <Badge variant="warning" className="border-amber-400 bg-amber-500/15 text-amber-800 dark:text-amber-400 font-semibold" title={evalRecord.reason}>
+                                {evalRecord.badgeLabel}
+                              </Badge>
+                            ) : evalRecord?.creditType === "late_grace" ? (
+                              <Badge variant="warning" title={evalRecord.reason}>
+                                {evalRecord.badgeLabel}
+                              </Badge>
                             ) : (
                               <Badge variant="success">Present</Badge>
                             )}
@@ -418,7 +433,8 @@ export function AdminAttendanceTab({
                         </div>
                       </TableCell>
                     </TableRow>
-                  ))}
+                  );
+                })}
                 </TableBody>
               </Table>
             </div>
@@ -438,6 +454,13 @@ export function AdminAttendanceTab({
             </CardTitle>
           </CardHeader>
           <CardContent className="pt-0">
+            <div className="flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground pb-2">
+              <span className="flex items-center gap-1"><strong className="text-success">P</strong> = Present (1.0d)</span>
+              <span className="flex items-center gap-1"><strong className="text-amber-600 dark:text-amber-400">L</strong> = Late Grace (≤10:15 AM, 1-3 allowed)</span>
+              <span className="flex items-center gap-1"><strong className="text-orange-600 dark:text-orange-400">HD</strong> = Half Day (4th late / &gt;10:15 AM)</span>
+              <span className="flex items-center gap-1"><strong className="text-destructive">A</strong> = Absent</span>
+              <span className="flex items-center gap-1"><strong className="text-muted-foreground">H</strong> = Sunday</span>
+            </div>
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
                 <thead>
@@ -448,13 +471,13 @@ export function AdminAttendanceTab({
                         {Number(d.slice(-2))}
                       </th>
                     ))}
-                    <th className="py-2 pl-3 text-right font-medium">P / A</th>
+                    <th className="py-2 pl-3 text-right font-medium">Paid / Summary</th>
                     <th className="py-2 pl-3 text-right font-medium">OT</th>
                   </tr>
                 </thead>
                 <tbody>
                   {monthlyRows.map(({ member, records, summary }) => {
-                    const byDate = new Map(records.map((r) => [r.date, r]));
+                    const evaluation = evaluateEmployeeMonthAttendance(records, month);
                     return (
                       <tr key={member.userId} className="border-b border-border/60">
                         <td className="sticky left-0 whitespace-nowrap bg-card py-1.5 pr-3 font-medium">
@@ -468,21 +491,30 @@ export function AdminAttendanceTab({
                           </button>
                         </td>
                         {monthDays.map((d) => {
-                          const record = byDate.get(d);
+                          const ev = evaluation.recordMap.get(d);
+                          const record = ev?.record;
                           const status = dayStatus(d, Boolean(record));
                           const glyph =
-                            status === "present" ? (record?.source === "admin" ? "P*" : "P")
+                            status === "present"
+                              ? ev?.glyph || (record?.source === "admin" ? "P*" : "P")
                               : status === "absent" ? "A" : status === "holiday" ? "H" : "";
+                          const isGrace = ev?.creditType === "late_grace";
+                          const isHalf = ev?.creditType === "late_half_day" || ev?.creditType === "late_cutoff_half_day";
+
                           return (
                             <td
                               key={d}
-                              title={record?.source === "admin" ? `Manually marked — ${record.note}` : undefined}
+                              title={ev?.reason || (record?.source === "admin" ? `Manually marked — ${record.note}` : undefined)}
                               className={
-                                status === "present"
+                                status === "present" && isHalf
+                                  ? "cursor-pointer px-0.5 py-1.5 text-center font-bold text-orange-700 dark:text-orange-300 bg-orange-500/15"
+                                  : status === "present" && isGrace
+                                  ? "cursor-pointer px-0.5 py-1.5 text-center font-semibold text-amber-700 dark:text-amber-400 bg-amber-500/15"
+                                  : status === "present"
                                   ? "cursor-pointer px-0.5 py-1.5 text-center font-medium text-success"
                                   : status === "absent"
-                                    ? "px-0.5 py-1.5 text-center text-destructive"
-                                    : "px-0.5 py-1.5 text-center text-muted-foreground/60"
+                                  ? "px-0.5 py-1.5 text-center text-destructive"
+                                  : "px-0.5 py-1.5 text-center text-muted-foreground/60"
                               }
                               onClick={() => record && setSelected(record)}
                             >
@@ -491,9 +523,16 @@ export function AdminAttendanceTab({
                           );
                         })}
                         <td className="py-1.5 pl-3 text-right tabular-nums">
-                          <span className="text-success">{summary.present}</span>
-                          {" / "}
-                          <span className="text-destructive">{summary.absent}</span>
+                          <div>
+                            <span className="font-semibold text-foreground">{summary.effectivePaidDays}d</span>
+                            <span className="text-[10px] text-muted-foreground ml-1">paid</span>
+                          </div>
+                          <div className="text-[10px] text-muted-foreground">
+                            <span className="text-success font-medium">{summary.present}P</span>
+                            {summary.halfDay > 0 && <span className="text-orange-600 dark:text-orange-400 font-semibold"> · {summary.halfDay}HD</span>}
+                            {summary.lateCount > 0 && <span className="text-amber-600 dark:text-amber-400"> · {summary.lateCount}L</span>}
+                            <span className="text-destructive"> · {summary.absent}A</span>
+                          </div>
                         </td>
                         <td className="py-1.5 pl-3 text-right tabular-nums">
                           {formatDuration(records.reduce((s, r) => s + r.overtimeMinutes, 0))}
@@ -643,7 +682,17 @@ export function AdminAttendanceTab({
       )}
 
       {selected && (
-        <RecordDetailDialog record={selected} onClose={() => setSelected(null)} showName />
+        <RecordDetailDialog
+          record={selected}
+          evaluated={
+            evaluateEmployeeMonthAttendance(
+              board.records.filter((r) => r.userId === selected.userId),
+              selected.date.slice(0, 7)
+            ).recordMap.get(selected.date)
+          }
+          onClose={() => setSelected(null)}
+          showName
+        />
       )}
 
       <AdminMarkAttendanceDialog

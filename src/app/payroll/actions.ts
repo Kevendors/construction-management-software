@@ -283,25 +283,35 @@ export async function generateSlipAction(
 
   // Replace any existing slip for this employee+month.
   await supabase.from("salary_slips").delete().eq("org_id", orgId).eq("employee_id", employeeId).eq("month", month);
-  const { data, error } = await supabase
+  const insertPayload: Record<string, unknown> = {
+    org_id: orgId,
+    employee_id: employeeId,
+    month,
+    paid_days: days,
+    month_days: monthDays,
+    basic,
+    hra,
+    allowances,
+    pf,
+    esi,
+    advance_deduction: advanceDeduction,
+    status: "draft",
+  };
+  let { data, error } = await supabase
     .from("salary_slips")
-    .insert({
-      org_id: orgId,
-      employee_id: employeeId,
-      month,
-      paid_days: days,
-      month_days: monthDays,
-      basic,
-      hra,
-      allowances,
-      pf,
-      esi,
-      advance_deduction: advanceDeduction,
-      status: "draft",
-    })
+    .insert(insertPayload)
     .select("id")
     .single();
+
+  if (error && error.code === "22P02") {
+    // If the database paid_days column is integer and received a decimal (e.g. 23.5), round for DB insert
+    insertPayload.paid_days = Math.round(days);
+    const retry = await supabase.from("salary_slips").insert(insertPayload).select("id").single();
+    data = retry.data;
+    error = retry.error;
+  }
   if (error) return { error: error.message };
+  if (!data) return { error: "Could not create salary slip." };
   await logActivity({
     action: "created",
     entityType: "salary_slip",

@@ -21,7 +21,7 @@ import {
 import { PayrollBreakdownChart } from "@/components/charts/payroll-chart";
 import { SetSalaryDialog } from "./set-salary-dialog";
 import type { PayrollBoard } from "@/lib/payroll/compute";
-import type { AttendanceAdminBoard } from "@/lib/attendance/compute";
+import { evaluateEmployeeMonthAttendance, type AttendanceAdminBoard } from "@/lib/attendance/compute";
 import { payrollByDepartment, slipTotals } from "@/lib/payroll/compute";
 import { addEmployeeAction, generateSlipAction } from "@/app/payroll/actions";
 import { departmentLabel, salarySlipStatusMeta, roleLabel } from "@/lib/labels";
@@ -57,8 +57,8 @@ export function EmployeesTab({
   const slipFor = (empId: string) => slips.find((s) => s.employeeId === empId && s.month === month) ?? null;
   const monthLabel = new Date(`${month}-01`).toLocaleDateString("en-IN", { month: "long", year: "numeric" });
 
-  // Count GPS verified attendance days for this employee in the active month (if available)
-  const attendanceDaysFor = (emp: Employee) => {
+  // Count GPS verified attendance days and late/half-day evaluation for this employee in the active month
+  const attendanceStatsFor = (emp: Employee) => {
     if (!attendanceBoard?.records?.length) return null;
     const matching = attendanceBoard.records.filter((r) => {
       if (!r.date.startsWith(month)) return false;
@@ -67,15 +67,23 @@ export function EmployeesTab({
       if (r.userName && r.userName.toLowerCase() === emp.name.toLowerCase()) return true;
       return false;
     });
-    return matching.length;
+    if (matching.length === 0) return null;
+    const ev = evaluateEmployeeMonthAttendance(matching, month);
+    return {
+      rawDays: matching.length,
+      fullDays: ev.fullDays,
+      halfDays: ev.halfDays,
+      lateCount: ev.lateCount,
+      paidDays: ev.effectivePaidDays,
+    };
   };
 
   async function generate(empId: string) {
     setBusyId(empId);
     const emp = employees.find((e) => e.id === empId);
-    const attendedDays = emp ? attendanceDaysFor(emp) : null;
-    // Default to attended days if available and > 0, otherwise standard 30 days
-    const daysToPay = attendedDays && attendedDays > 0 ? attendedDays : 30;
+    const stats = emp ? attendanceStatsFor(emp) : null;
+    // Default to effective paid days (taking into account half days from late arrivals) if available and > 0, otherwise standard 30 days
+    const daysToPay = stats && stats.paidDays > 0 ? stats.paidDays : 30;
     const res = await generateSlipAction(empId, month, daysToPay);
     setBusyId(null);
     if (!res.error) router.refresh();
@@ -134,7 +142,7 @@ export function EmployeesTab({
                 const s = slipFor(emp.id);
                 const t = s ? slipTotals(s) : null;
                 const meta = s ? salarySlipStatusMeta[s.status] : null;
-                const attended = attendanceDaysFor(emp);
+                const stats = attendanceStatsFor(emp);
 
                 return (
                   <TableRow key={emp.id}>
@@ -145,9 +153,17 @@ export function EmployeesTab({
                           <div className="font-medium text-foreground">{emp.name}</div>
                           <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                             <span>{emp.designation || "Staff"}</span>
-                            {attended !== null && attended > 0 && (
-                              <span className="inline-flex items-center rounded bg-emerald-500/10 px-1 py-0.2 text-[10px] font-medium text-emerald-700 dark:text-emerald-400">
-                                {attended}d present
+                            {stats !== null && (
+                              <span
+                                className="inline-flex items-center gap-1 rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-800 dark:text-emerald-400"
+                                title={`${stats.fullDays} full days, ${stats.halfDays} half days, ${stats.lateCount} late arrivals`}
+                              >
+                                {stats.paidDays}d paid
+                                {stats.halfDays > 0 && (
+                                  <span className="text-orange-700 dark:text-orange-300 font-semibold">
+                                    ({stats.halfDays} HD)
+                                  </span>
+                                )}
                               </span>
                             )}
                           </div>
