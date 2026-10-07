@@ -31,7 +31,7 @@ export function TrendChart({
   label: string;
 }) {
   return (
-    <ResponsiveContainer width="100%" height={220}>
+    <ResponsiveContainer width="100%" height={220} minWidth={0}>
       <BarChart data={data} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
         <XAxis dataKey="month" tick={axisTick} tickLine={false} axisLine={false} />
@@ -50,7 +50,7 @@ export function TrendChart({
 /* Chart 11 — margin trend (negatives red) */
 export function MarginTrendChart({ data }: { data: Row[] }) {
   return (
-    <ResponsiveContainer width="100%" height={220}>
+    <ResponsiveContainer width="100%" height={220} minWidth={0}>
       <BarChart data={data} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
         <XAxis dataKey="month" tick={axisTick} tickLine={false} axisLine={false} />

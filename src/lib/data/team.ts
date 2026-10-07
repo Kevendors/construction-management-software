@@ -1,5 +1,6 @@
 import "server-only";
 
+import { cache } from "react";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createClient as createSupabase } from "@/lib/supabase/server";
 import { getAuthContext } from "@/lib/auth/context";
@@ -10,8 +11,10 @@ import { getAuthContext } from "@/lib/auth/context";
  * where the mock currentUser is a super admin). RLS (0010) enforces the same
  * rule at the DB; this keeps app behavior correct before 0010 is applied and
  * lets pages branch without re-querying.
+ *
+ * Memoized per-request with React cache() to deduplicate visibility lookups.
  */
-export async function getVisibleProjectIds(): Promise<string[] | null> {
+export const getVisibleProjectIds = cache(async (): Promise<string[] | null> => {
   if (!isSupabaseConfigured()) return null;
 
   const ctx = await getAuthContext();
@@ -30,7 +33,7 @@ export async function getVisibleProjectIds(): Promise<string[] | null> {
     return null;
   }
   return (data as { project_id: string }[]).map((r) => r.project_id);
-}
+});
 
 /** Applies the visibility seam to any project-keyed list. */
 export function filterByProjectIds<T>(

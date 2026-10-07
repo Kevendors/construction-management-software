@@ -36,7 +36,7 @@ export function PayrollBreakdownChart({
     .map((d) => ({ ...d, label: departmentLabel[d.department as Department] ?? d.department }))
     .sort((a, b) => b.amount - a.amount);
   return (
-    <ResponsiveContainer width="100%" height={260}>
+    <ResponsiveContainer width="100%" height={260} minWidth={0}>
       <BarChart data={rows} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
         <XAxis dataKey="label" tick={axisTick} tickLine={false} axisLine={false} />

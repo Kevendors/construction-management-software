@@ -33,7 +33,7 @@ const SERIES: { key: keyof Omit<Row, "name">; color: string }[] = [
 /* Chart 15 — Portfolio health: task status mix across all projects */
 export function PortfolioHealthChart({ data }: { data: Row[] }) {
   return (
-    <ResponsiveContainer width="100%" height={280}>
+    <ResponsiveContainer width="100%" height={280} minWidth={0}>
       <BarChart data={data} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
         <XAxis dataKey="name" tick={axisTick} tickLine={false} axisLine={false} />

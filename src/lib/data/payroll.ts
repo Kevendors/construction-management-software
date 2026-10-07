@@ -172,8 +172,8 @@ export async function getPayrollBoard(): Promise<PayrollBoard> {
   const [emp, con, att, adv, slp, pr] = await Promise.all([
     supabase.from("employees").select("*").order("name"),
     supabase.from("labour_contractors").select("*").order("company"),
-    supabase.from("labour_attendance").select("*").order("date", { ascending: false }),
-    supabase.from("advances").select("*").order("date", { ascending: false }),
+    supabase.from("labour_attendance").select("*").order("date", { ascending: false }).limit(300),
+    supabase.from("advances").select("*").order("date", { ascending: false }).limit(200),
     supabase.from("salary_slips").select("*"),
     supabase.from("projects").select("*"),
   ]);

@@ -8,6 +8,16 @@ const nextConfig: NextConfig = {
     // limit here must stay above that or uploads in the 7.5-32MB range fail
     // with an opaque framework error before reaching the action's own check.
     serverActions: { bodySizeLimit: "45mb" },
+    optimizePackageImports: [
+      "lucide-react",
+      "recharts",
+      "date-fns",
+      "@radix-ui/react-dialog",
+      "@radix-ui/react-select",
+      "@radix-ui/react-tabs",
+      "@radix-ui/react-popover",
+      "@radix-ui/react-dropdown-menu",
+    ],
   },
 };
 

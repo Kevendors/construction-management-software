@@ -26,13 +26,40 @@ const RoleContext = React.createContext<RoleContextValue>({
 
 const supaConfigured = !!process.env.NEXT_PUBLIC_SUPABASE_URL;
 
+function getInitialRoleValue(): RoleContextValue {
+  if (!supaConfigured) {
+    return {
+      loading: false,
+      userId: null,
+      name: currentUser.name,
+      email: "",
+      role: "super_admin",
+      canViewPurchaseOrders: true,
+    };
+  }
+  if (typeof window !== "undefined") {
+    try {
+      const stored = sessionStorage.getItem("sh_cached_role");
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed && typeof parsed === "object" && parsed.role) {
+          return { ...parsed, loading: false };
+        }
+      }
+    } catch {}
+  }
+  return {
+    loading: true,
+    userId: null,
+    name: "",
+    email: "",
+    role: null,
+    canViewPurchaseOrders: false,
+  };
+}
+
 export function RoleProvider({ children }: { children: React.ReactNode }) {
-  const [value, setValue] = React.useState<RoleContextValue>(
-    supaConfigured
-      ? { loading: true, userId: null, name: "", email: "", role: null, canViewPurchaseOrders: false }
-      : // no backend (local mock) → treat as full-access super admin
-        { loading: false, userId: null, name: currentUser.name, email: "", role: "super_admin", canViewPurchaseOrders: true }
-  );
+  const [value, setValue] = React.useState<RoleContextValue>(getInitialRoleValue);
 
   React.useEffect(() => {
     if (!supaConfigured) return;
@@ -43,8 +70,19 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
         data: { user },
       } = await supabase.auth.getUser();
       if (!user) {
-        if (!cancelled)
-          setValue({ loading: false, userId: null, name: "", email: "", role: null, canViewPurchaseOrders: false });
+        try {
+          sessionStorage.removeItem("sh_cached_role");
+        } catch {}
+        if (!cancelled) {
+          setValue({
+            loading: false,
+            userId: null,
+            name: "",
+            email: "",
+            role: null,
+            canViewPurchaseOrders: false,
+          });
+        }
         return;
       }
       const { data: m } = await supabase
@@ -56,7 +94,7 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
       const meta = user.user_metadata ?? {};
       const name = (meta.name as string | undefined) || user.email?.split("@")[0] || "User";
       if (!cancelled) {
-        setValue({
+        const nextVal = {
           loading: false,
           userId: user.id,
           name,
@@ -64,7 +102,11 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
           role,
           // super admins always see POs; others only with the explicit grant
           canViewPurchaseOrders: role === "super_admin" || Boolean(m?.can_view_purchase_orders),
-        });
+        };
+        setValue(nextVal);
+        try {
+          sessionStorage.setItem("sh_cached_role", JSON.stringify(nextVal));
+        } catch {}
       }
     })();
     return () => {

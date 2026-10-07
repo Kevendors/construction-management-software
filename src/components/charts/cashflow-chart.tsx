@@ -22,7 +22,7 @@ type Row = { month: string; inflow: number; outflow: number; balance: number };
 /* Chart 14 — Cash-flow in/out over time (with running balance line) */
 export function CashFlowChart({ data }: { data: Row[] }) {
   return (
-    <ResponsiveContainer width="100%" height={280}>
+    <ResponsiveContainer width="100%" height={280} minWidth={0}>
       <ComposedChart data={data} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
         <defs>
           <linearGradient id="cfIn" x1="0" y1="0" x2="0" y2="1">

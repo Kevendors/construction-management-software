@@ -25,7 +25,7 @@ export function FinancialHealthChart({
 }) {
   const colors = ["var(--chart-1)", "var(--destructive)", "var(--chart-4)", "var(--chart-2)"];
   return (
-    <ResponsiveContainer width="100%" height={240}>
+    <ResponsiveContainer width="100%" height={240} minWidth={0}>
       <BarChart data={data} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
         <XAxis dataKey="label" tick={axisTick} tickLine={false} axisLine={false} />
@@ -53,7 +53,7 @@ export function ExpenseCategoryChart({
 }) {
   const rows = data.map((d) => ({ ...d, label: categoryLabel[d.category] ?? d.category }));
   return (
-    <ResponsiveContainer width="100%" height={240}>
+    <ResponsiveContainer width="100%" height={240} minWidth={0}>
       <BarChart data={rows} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
         <XAxis dataKey="label" tick={axisTick} tickLine={false} axisLine={false} />
@@ -80,7 +80,7 @@ export function AttendanceChart({
     day: new Date(d.date).toLocaleDateString("en-IN", { weekday: "short" }),
   }));
   return (
-    <ResponsiveContainer width="100%" height={220}>
+    <ResponsiveContainer width="100%" height={220} minWidth={0}>
       <BarChart data={rows} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
         <XAxis dataKey="day" tick={axisTick} tickLine={false} axisLine={false} />
@@ -100,7 +100,7 @@ export function BudgetVsActualChart({
   data: { name: string; budget: number; actual: number }[];
 }) {
   return (
-    <ResponsiveContainer width="100%" height={260}>
+    <ResponsiveContainer width="100%" height={260} minWidth={0}>
       <BarChart data={data} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
         <XAxis dataKey="name" tick={axisTick} tickLine={false} axisLine={false} />
@@ -124,7 +124,7 @@ export function ProjectMarginChart({
   data: { name: string; margin: number }[];
 }) {
   return (
-    <ResponsiveContainer width="100%" height={260}>
+    <ResponsiveContainer width="100%" height={260} minWidth={0}>
       <BarChart layout="vertical" data={data} margin={{ top: 8, right: 16, left: 8, bottom: 0 }}>
         <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="var(--border)" />
         <XAxis type="number" tickFormatter={inrTick} tick={axisTick} tickLine={false} axisLine={false} />

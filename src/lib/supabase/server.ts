@@ -1,11 +1,13 @@
 import { cookies } from "next/headers";
+import { cache } from "react";
 import { createServerClient } from "@supabase/ssr";
 
 /**
  * Server-side Supabase client (Server Components, Server Actions, Route Handlers).
  * Wires Supabase Auth into Next's cookie store so RLS sees the signed-in user.
+ * Memoized per-request with React cache() to reuse the client instance within a single request.
  */
-export async function createClient() {
+export const createClient = cache(async () => {
   const cookieStore = await cookies();
 
   return createServerClient(
@@ -28,4 +30,4 @@ export async function createClient() {
       },
     }
   );
-}
+});

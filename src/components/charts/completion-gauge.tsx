@@ -11,7 +11,7 @@ export function CompletionGauge({ value }: { value: number }) {
   const data = [{ name: "completion", value, fill: "var(--chart-2)" }];
   return (
     <div className="relative h-44 w-full">
-      <ResponsiveContainer width="100%" height="100%">
+      <ResponsiveContainer width="100%" height="100%" minWidth={0}>
         <RadialBarChart
           innerRadius="72%"
           outerRadius="100%"

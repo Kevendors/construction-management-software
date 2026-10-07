@@ -1,5 +1,6 @@
 import "server-only";
 
+import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 import type { Role } from "@/lib/types";
 
@@ -16,8 +17,11 @@ export interface AuthContext {
  * Resolve the signed-in user's org + role from a single membership lookup.
  * Central replacement for the per-file currentOrgId()/currentContext() helpers.
  * Returns null when not signed in.
+ *
+ * Memoized per-request with React cache() to avoid duplicate Supabase/DB roundtrips
+ * across layout, page, and nested data fetchers within the same HTTP request.
  */
-export async function getAuthContext(): Promise<AuthContext | null> {
+export const getAuthContext = cache(async (): Promise<AuthContext | null> => {
   const supabase = await createClient();
   const {
     data: { user },
@@ -44,4 +48,4 @@ export async function getAuthContext(): Promise<AuthContext | null> {
     email: user.email ?? "",
     isActive: true, // enforced once Migration A + role-aware RLS land
   };
-}
+});
