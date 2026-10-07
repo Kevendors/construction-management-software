@@ -257,12 +257,13 @@ export function EmployeesTab({
                         {canManageSalary && (
                           <Button
                             size="sm"
-                            variant="ghost"
-                            className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                            variant="outline"
+                            className="h-7 px-2 text-xs gap-1 text-muted-foreground hover:text-foreground hover:border-primary/50"
                             onClick={() => setSalaryTarget(emp)}
                             title="Set Salary & Job Details"
                           >
-                            <Pencil className="h-3.5 w-3.5" />
+                            <Pencil className="h-3 w-3" />
+                            <span>Set Salary</span>
                           </Button>
                         )}
                       </div>
