@@ -104,9 +104,23 @@ async function uploadSelfie(
   }
   const path = `${orgId}/${userId}/${date}-${suffix}.jpg`;
   const admin = createAdminClient();
-  const { error } = await admin.storage
+  let { error } = await admin.storage
     .from(BUCKET)
     .upload(path, decoded.buffer, { contentType: decoded.contentType, upsert: true });
+
+  if (error && (error.message?.toLowerCase().includes("bucket") || (error as { statusCode?: string }).statusCode === "404")) {
+    try {
+      await admin.storage.createBucket(BUCKET, { public: false });
+      const retry = await admin.storage
+        .from(BUCKET)
+        .upload(path, decoded.buffer, { contentType: decoded.contentType, upsert: true });
+      if (!retry.error) return path;
+      error = retry.error;
+    } catch {
+      // Continue to error logging below
+    }
+  }
+
   if (error) {
     console.error("[attendance] selfie upload failed", path, error.message);
     return null;

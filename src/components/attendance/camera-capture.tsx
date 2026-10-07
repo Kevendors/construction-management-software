@@ -48,7 +48,15 @@ export function CameraCapture({
         if (video) {
           video.srcObject = stream;
           await video.play().catch(() => undefined);
-          setReady(true);
+          if (video.videoWidth > 0 && video.videoHeight > 0) {
+            setReady(true);
+          } else {
+            video.onloadedmetadata = () => {
+              setReady(true);
+            };
+            // Fallback in case onloadedmetadata already fired
+            setTimeout(() => setReady(true), 500);
+          }
         }
       } catch (e) {
         const name = e instanceof DOMException ? e.name : "";

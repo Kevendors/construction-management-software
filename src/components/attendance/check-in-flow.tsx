@@ -61,23 +61,29 @@ export function CheckInFlow({
   const geo = useGeolocation();
   const geoRequest = geo.request;
 
-  // Reset and choose the entry step each time the dialog opens.
+  // Track if dialog was previously open to ONLY reset when newly opening (false -> true).
+  // Prevents re-renders in parent (e.g. from optimistic state updates or router.refresh)
+  // from wiping state and bouncing the user back to the camera step.
+  const prevOpenRef = React.useRef(false);
+
   React.useEffect(() => {
-    if (!open) return;
-    setSelfie("");
-    setErrorMsg("");
-    setDoneAt("");
-    setEvalInfo(null);
-    if (mode === "out") {
-      setProjectId(activeProjectId ?? "");
-      setStep("locate");
-    } else if (projects.length === 1) {
-      setProjectId(projects[0].id);
-      setStep("locate");
-    } else {
-      setProjectId("");
-      setStep("project");
+    if (open && !prevOpenRef.current) {
+      setSelfie("");
+      setErrorMsg("");
+      setDoneAt("");
+      setEvalInfo(null);
+      if (mode === "out") {
+        setProjectId(activeProjectId ?? "");
+        setStep("locate");
+      } else if (projects.length === 1) {
+        setProjectId(projects[0].id);
+        setStep("locate");
+      } else {
+        setProjectId("");
+        setStep("project");
+      }
     }
+    prevOpenRef.current = open;
   }, [open, mode, activeProjectId, projects]);
 
   // Kick off the GPS fix whenever we enter the locate step.
@@ -179,22 +185,35 @@ export function CheckInFlow({
         </div>
       )}
 
-      {step === "camera" && <CameraCapture onCapture={(d) => { setSelfie(d); setStep("preview"); }} />}
+      {step === "camera" && (
+        <CameraCapture
+          onCapture={(d) => {
+            setSelfie(d);
+            setStep("preview");
+          }}
+        />
+      )}
 
       {step === "preview" && (
         <div className="space-y-3">
+          <div className="text-center">
+            <p className="text-sm font-semibold text-foreground">Selfie Captured</p>
+            <p className="text-xs text-muted-foreground">
+              Review your photo and confirm {mode === "in" ? "check in" : "check out"}
+            </p>
+          </div>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={selfie}
             alt="Your selfie"
-            className="aspect-[3/4] w-full -scale-x-100 rounded-xl object-cover"
+            className="aspect-[3/4] w-full -scale-x-100 rounded-xl object-cover border border-border"
           />
           <div className="grid grid-cols-2 gap-2">
             <Button variant="outline" className="h-12" onClick={() => setStep("camera")}>
               Retake
             </Button>
             <Button className="h-12" onClick={submit}>
-              {mode === "in" ? "Check In" : "Check Out"}
+              {mode === "in" ? "Confirm Check In" : "Confirm Check Out"}
             </Button>
           </div>
         </div>
@@ -203,7 +222,8 @@ export function CheckInFlow({
       {step === "submitting" && (
         <div className="flex flex-col items-center gap-3 py-10 text-center">
           <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-          <p className="text-sm text-muted-foreground">Saving your attendance…</p>
+          <p className="text-sm font-medium">Saving your attendance…</p>
+          <p className="text-xs text-muted-foreground">Verifying location and uploading selfie</p>
         </div>
       )}
 
@@ -211,12 +231,15 @@ export function CheckInFlow({
         <div className="flex flex-col items-center gap-3 py-6 text-center">
           <CheckCircle2 className="h-12 w-12 text-success" />
           <p className="text-lg font-semibold">
-            {mode === "in" ? "Checked in" : "Checked out"} at {formatTime(doneAt)}
+            {mode === "in" ? "Checked in successfully" : "Checked out successfully"}
           </p>
-          {project && <p className="text-sm text-muted-foreground">{project.name}</p>}
+          <p className="text-sm font-medium tabular-nums text-foreground">
+            at {formatTime(doneAt)}
+          </p>
+          {project && <p className="text-xs text-muted-foreground">{project.name}</p>}
 
           {mode === "in" && evalInfo && (
-            <div className="mt-1 w-full rounded-lg border p-3 text-left text-xs space-y-1">
+            <div className="mt-2 w-full rounded-lg border p-3 text-left text-xs space-y-1">
               {evalInfo.creditType === "on_time" && (
                 <div className="flex items-center gap-2 font-medium text-success">
                   <span className="inline-block h-2 w-2 rounded-full bg-success" />
@@ -256,7 +279,7 @@ export function CheckInFlow({
             </div>
           )}
 
-          <Button className="mt-2 h-12 w-full" onClick={onClose}>
+          <Button className="mt-4 h-12 w-full" onClick={onClose}>
             Done
           </Button>
         </div>
