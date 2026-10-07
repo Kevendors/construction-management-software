@@ -40,6 +40,7 @@ import {
 
 interface EmployeeRow {
   id: string;
+  profile_id?: string | null;
   name: string;
   designation: string | null;
   department: Department;
@@ -106,6 +107,7 @@ const mapEmployee = (r: EmployeeRow): Employee => ({
   phone: r.phone ?? "",
   initials: r.initials || initialsOf(r.name),
   avatarColor: r.avatar_color || "#64748b",
+  profileId: r.profile_id ?? null,
 });
 const mapContractor = (r: ContractorRow): LabourContractor => ({
   id: r.id,

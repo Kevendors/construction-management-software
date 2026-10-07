@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FileText, Plus } from "lucide-react";
+import { Calculator, FileText, Pencil, Plus, Users } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
@@ -19,38 +19,64 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { PayrollBreakdownChart } from "@/components/charts/payroll-chart";
+import { SetSalaryDialog } from "./set-salary-dialog";
 import type { PayrollBoard } from "@/lib/payroll/compute";
+import type { AttendanceAdminBoard } from "@/lib/attendance/compute";
 import { payrollByDepartment, slipTotals } from "@/lib/payroll/compute";
 import { addEmployeeAction, generateSlipAction } from "@/app/payroll/actions";
 import { departmentLabel, salarySlipStatusMeta, roleLabel } from "@/lib/labels";
 import { useRole } from "@/components/layout/role-provider";
 import { isAdminRole } from "@/lib/auth/permissions";
 import { formatINR } from "@/lib/utils";
-import type { Department, Role } from "@/lib/types";
+import type { Department, Employee, Role } from "@/lib/types";
 
 const DEPARTMENTS: Department[] = ["engineering", "design", "site", "accounts", "admin"];
 const ACCOUNT_ROLES: Role[] = ["supervisor", "pm", "super_admin"];
 
 export function EmployeesTab({
   board,
+  attendanceBoard,
   month,
   onMonthChange,
 }: {
   board: PayrollBoard;
+  attendanceBoard?: AttendanceAdminBoard;
   month: string;
   onMonthChange: (m: string) => void;
 }) {
   const router = useRouter();
+  const { role } = useRole();
+  const canManageSalary = isAdminRole(role) || role === "hr";
+
   const { employees, slips } = board;
   const [addOpen, setAddOpen] = React.useState(false);
+  const [salaryTarget, setSalaryTarget] = React.useState<Employee | null>(null);
   const [busyId, setBusyId] = React.useState<string | null>(null);
+
   const breakdown = payrollByDepartment(slips, employees, month);
   const slipFor = (empId: string) => slips.find((s) => s.employeeId === empId && s.month === month) ?? null;
   const monthLabel = new Date(`${month}-01`).toLocaleDateString("en-IN", { month: "long", year: "numeric" });
 
+  // Count GPS verified attendance days for this employee in the active month (if available)
+  const attendanceDaysFor = (emp: Employee) => {
+    if (!attendanceBoard?.records?.length) return null;
+    const matching = attendanceBoard.records.filter((r) => {
+      if (!r.date.startsWith(month)) return false;
+      if (emp.profileId && r.userId === emp.profileId) return true;
+      if (r.employeeId && r.employeeId.toLowerCase() === emp.id.toLowerCase()) return true;
+      if (r.userName && r.userName.toLowerCase() === emp.name.toLowerCase()) return true;
+      return false;
+    });
+    return matching.length;
+  };
+
   async function generate(empId: string) {
     setBusyId(empId);
-    const res = await generateSlipAction(empId, month, 30);
+    const emp = employees.find((e) => e.id === empId);
+    const attendedDays = emp ? attendanceDaysFor(emp) : null;
+    // Default to attended days if available and > 0, otherwise standard 30 days
+    const daysToPay = attendedDays && attendedDays > 0 ? attendedDays : 30;
+    const res = await generateSlipAction(empId, month, daysToPay);
     setBusyId(null);
     if (!res.error) router.refresh();
   }
@@ -62,9 +88,11 @@ export function EmployeesTab({
           <Label htmlFor="pay-month" className="text-xs text-muted-foreground">Month</Label>
           <Input id="pay-month" type="month" value={month} onChange={(e) => onMonthChange(e.target.value)} className="h-8 w-40" />
         </div>
-        <Button size="sm" onClick={() => setAddOpen(true)}>
-          <Plus /> Add Employee
-        </Button>
+        {canManageSalary && (
+          <Button size="sm" onClick={() => setAddOpen(true)}>
+            <Plus /> Add Employee
+          </Button>
+        )}
       </div>
 
       {breakdown.length > 0 && (
@@ -91,7 +119,7 @@ export function EmployeesTab({
                 <TableHead className="text-right">Monthly CTC</TableHead>
                 <TableHead className="text-right">Net Pay</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead className="text-right">Slip</TableHead>
+                <TableHead className="text-right">Slip / Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -106,36 +134,109 @@ export function EmployeesTab({
                 const s = slipFor(emp.id);
                 const t = s ? slipTotals(s) : null;
                 const meta = s ? salarySlipStatusMeta[s.status] : null;
+                const attended = attendanceDaysFor(emp);
+
                 return (
                   <TableRow key={emp.id}>
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <Avatar initials={emp.initials} color={emp.avatarColor} className="h-7 w-7 text-[11px]" />
                         <div>
-                          <div className="font-medium">{emp.name}</div>
-                          <div className="text-xs text-muted-foreground">{emp.designation}</div>
+                          <div className="font-medium text-foreground">{emp.name}</div>
+                          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                            <span>{emp.designation || "Staff"}</span>
+                            {attended !== null && attended > 0 && (
+                              <span className="inline-flex items-center rounded bg-emerald-500/10 px-1 py-0.2 text-[10px] font-medium text-emerald-700 dark:text-emerald-400">
+                                {attended}d present
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </TableCell>
                     <TableCell>
                       <Badge variant="outline">{departmentLabel[emp.department]}</Badge>
                     </TableCell>
-                    <TableCell className="text-right tabular-nums text-muted-foreground">{formatINR(emp.monthlyCtc)}</TableCell>
-                    <TableCell className="text-right font-semibold tabular-nums">{t ? formatINR(t.net) : "—"}</TableCell>
-                    <TableCell>{meta ? <Badge variant={meta.variant}>{meta.label}</Badge> : <span className="text-xs text-muted-foreground">Not generated</span>}</TableCell>
                     <TableCell className="text-right">
-                      {s ? (
-                        <Link
-                          href={`/payroll/slip/${s.id}/print`}
-                          className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
+                      {canManageSalary ? (
+                        <button
+                          type="button"
+                          onClick={() => setSalaryTarget(emp)}
+                          className="group inline-flex items-center gap-1.5 rounded px-2 py-1 text-right font-medium tabular-nums transition-colors hover:bg-muted"
+                          title="Click to set or adjust salary"
                         >
-                          <FileText className="h-3.5 w-3.5" /> View
-                        </Link>
+                          {emp.monthlyCtc > 0 ? (
+                            <>
+                              <span className="text-foreground">{formatINR(emp.monthlyCtc)}</span>
+                              <Pencil className="h-3 w-3 text-muted-foreground opacity-30 transition-opacity group-hover:opacity-100" />
+                            </>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 rounded bg-amber-500/10 px-2 py-0.5 text-xs font-semibold text-amber-700 dark:text-amber-400">
+                              <Pencil className="h-3 w-3" /> Set Salary
+                            </span>
+                          )}
+                        </button>
                       ) : (
-                        <Button size="sm" variant="outline" onClick={() => generate(emp.id)} disabled={busyId === emp.id}>
-                          {busyId === emp.id ? "…" : "Generate"}
-                        </Button>
+                        <span className="tabular-nums text-muted-foreground">{formatINR(emp.monthlyCtc)}</span>
                       )}
+                    </TableCell>
+                    <TableCell className="text-right font-semibold tabular-nums">
+                      {t ? formatINR(t.net) : "—"}
+                    </TableCell>
+                    <TableCell>
+                      {meta ? (
+                        <Badge variant={meta.variant}>{meta.label}</Badge>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">Not generated</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex items-center justify-end gap-1.5">
+                        {s ? (
+                          <>
+                            <Link
+                              href={`/payroll/slip/${s.id}/print`}
+                              className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+                            >
+                              <FileText className="h-3.5 w-3.5" /> View
+                            </Link>
+                            {s.status === "draft" && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
+                                onClick={() => generate(emp.id)}
+                                disabled={busyId === emp.id}
+                                title="Recalculate slip with latest salary"
+                              >
+                                {busyId === emp.id ? "…" : "Recalc"}
+                              </Button>
+                            )}
+                          </>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-xs"
+                            onClick={() => generate(emp.id)}
+                            disabled={busyId === emp.id}
+                          >
+                            {busyId === emp.id ? "…" : "Generate"}
+                          </Button>
+                        )}
+
+                        {canManageSalary && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                            onClick={() => setSalaryTarget(emp)}
+                            title="Set Salary & Job Details"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 );
@@ -145,12 +246,37 @@ export function EmployeesTab({
         </CardContent>
       </Card>
 
-      <AddEmployeeDialog open={addOpen} onClose={() => setAddOpen(false)} />
+      {/* Set / Edit Salary Dialog */}
+      <SetSalaryDialog
+        open={salaryTarget !== null}
+        onClose={() => setSalaryTarget(null)}
+        employee={salaryTarget}
+        month={month}
+        existingSlip={salaryTarget ? slipFor(salaryTarget.id) : null}
+      />
+
+      {/* Add New Employee Dialog */}
+      <AddEmployeeDialog
+        open={addOpen}
+        onClose={() => setAddOpen(false)}
+        members={attendanceBoard?.members}
+        existingEmployees={employees}
+      />
     </div>
   );
 }
 
-function AddEmployeeDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+function AddEmployeeDialog({
+  open,
+  onClose,
+  members,
+  existingEmployees,
+}: {
+  open: boolean;
+  onClose: () => void;
+  members?: AttendanceAdminBoard["members"];
+  existingEmployees?: Employee[];
+}) {
   const router = useRouter();
   const [name, setName] = React.useState("");
   const [designation, setDesignation] = React.useState("");
@@ -166,6 +292,40 @@ function AddEmployeeDialog({ open, onClose }: { open: boolean; onClose: () => vo
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
+  // Live breakdown calculations
+  const numCtc = Math.max(0, Number(monthlyCtc) || 0);
+  const perDay = Math.round(numCtc / 30);
+  const basic = Math.round(numCtc * 0.5);
+  const hra = Math.round(numCtc * 0.2);
+  const allowances = Math.max(0, numCtc - basic - hra);
+  const pf = Math.round(basic * 0.12);
+  const esi = Math.round(numCtc * 0.0075);
+  const estNet = Math.max(0, numCtc - pf - esi);
+
+  // Find unlinked team members
+  const unlinkedMembers = React.useMemo(() => {
+    if (!members?.length || !existingEmployees) return [];
+    const existingNames = new Set(existingEmployees.map((e) => e.name.toLowerCase()));
+    return members.filter((m) => !existingNames.has(m.name.toLowerCase()));
+  }, [members, existingEmployees]);
+
+  function handleSelectMember(userId: string) {
+    const found = members?.find((m) => m.userId === userId);
+    if (found) {
+      setName(found.name);
+      setDesignation(found.role ? roleLabel[found.role] || found.role : "");
+      setDepartment(
+        found.role === "pm" || found.role === "supervisor"
+          ? "site"
+          : found.role === "accountant"
+          ? "accounts"
+          : found.role === "architect"
+          ? "design"
+          : "site"
+      );
+    }
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) return setError("Name is required.");
@@ -179,7 +339,7 @@ function AddEmployeeDialog({ open, onClose }: { open: boolean; onClose: () => vo
       name: name.trim(),
       designation: designation.trim(),
       department,
-      monthlyCtc: Number(monthlyCtc) || 0,
+      monthlyCtc: numCtc,
       joinDate,
       phone: phone.trim(),
       createAccount: createAccount && canCreateAccount,
@@ -195,8 +355,24 @@ function AddEmployeeDialog({ open, onClose }: { open: boolean; onClose: () => vo
   }
 
   return (
-    <Dialog open={open} onClose={onClose} title="Add Employee" description="Add a staff member to the payroll." className="max-w-lg">
+    <Dialog open={open} onClose={onClose} title="Add Employee to Payroll" description="Enroll an employee and configure their monthly salary." className="max-w-lg">
       <form onSubmit={submit} className="space-y-4">
+        {unlinkedMembers.length > 0 && (
+          <div className="rounded-lg border border-border/80 bg-muted/40 p-2.5">
+            <Label htmlFor="m-link" className="text-xs text-muted-foreground flex items-center gap-1 mb-1">
+              <Users className="h-3 w-3" /> Quick pick from existing Team Members
+            </Label>
+            <Select id="m-link" value="" onChange={(e) => handleSelectMember(e.target.value)}>
+              <option value="">-- Choose a team member (or type below) --</option>
+              {unlinkedMembers.map((m) => (
+                <option key={m.userId} value={m.userId}>
+                  {m.name} ({m.employeeId || roleLabel[m.role] || m.role})
+                </option>
+              ))}
+            </Select>
+          </div>
+        )}
+
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
             <Label htmlFor="e-name">Name *</Label>
@@ -213,8 +389,20 @@ function AddEmployeeDialog({ open, onClose }: { open: boolean; onClose: () => vo
             </Select>
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="e-ctc">Monthly CTC (₹)</Label>
-            <Input id="e-ctc" type="number" value={monthlyCtc} onChange={(e) => setMonthlyCtc(e.target.value)} />
+            <div className="flex items-center justify-between">
+              <Label htmlFor="e-ctc">Monthly CTC (₹) *</Label>
+              {numCtc > 0 && <span className="text-xs font-semibold text-primary">{formatINR(numCtc)}</span>}
+            </div>
+            <Input
+              id="e-ctc"
+              type="number"
+              min="0"
+              step="500"
+              value={monthlyCtc}
+              onChange={(e) => setMonthlyCtc(e.target.value)}
+              placeholder="e.g. 30000"
+              required
+            />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="e-join">Join Date</Label>
@@ -225,6 +413,46 @@ function AddEmployeeDialog({ open, onClose }: { open: boolean; onClose: () => vo
             <Input id="e-phone" value={phone} onChange={(e) => setPhone(e.target.value)} />
           </div>
         </div>
+
+        {/* Live Payroll Breakdown Card */}
+        {numCtc > 0 && (
+          <div className="rounded-lg border border-border bg-card p-3 space-y-2">
+            <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <span className="flex items-center gap-1.5 text-foreground">
+                <Calculator className="h-3 w-3 text-primary" /> Salary Structure Breakdown
+              </span>
+              <span className="font-medium text-foreground">{formatINR(perDay)}/day</span>
+            </div>
+            <div className="grid grid-cols-3 gap-2 text-xs pt-1 border-t border-border/60">
+              <div>
+                <span className="text-muted-foreground block text-[10px]">Basic (50%)</span>
+                <span className="font-semibold text-foreground">{formatINR(basic)}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground block text-[10px]">HRA (20%)</span>
+                <span className="font-semibold text-foreground">{formatINR(hra)}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground block text-[10px]">Allowances (30%)</span>
+                <span className="font-semibold text-foreground">{formatINR(allowances)}</span>
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-2 text-xs pt-1.5 border-t border-border/60">
+              <div>
+                <span className="text-muted-foreground block text-[10px]">PF (12%)</span>
+                <span className="font-semibold text-destructive">-{formatINR(pf)}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground block text-[10px]">ESI (0.75%)</span>
+                <span className="font-semibold text-destructive">-{formatINR(esi)}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground block text-[10px]">Est. Take-Home</span>
+                <span className="font-semibold text-emerald-600 dark:text-emerald-400">{formatINR(estNet)}</span>
+              </div>
+            </div>
+          </div>
+        )}
 
         {canCreateAccount && (
           <div className="rounded-lg border border-border p-3">

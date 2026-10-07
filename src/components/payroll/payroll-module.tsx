@@ -62,7 +62,7 @@ export function PayrollModule({
           <TabsTrigger value="advances">Advances</TabsTrigger>
         </TabsList>
         <TabsContent value="payroll">
-          <EmployeesTab board={board} month={month} onMonthChange={setMonth} />
+          <EmployeesTab board={board} attendanceBoard={attendanceBoard} month={month} onMonthChange={setMonth} />
         </TabsContent>
         {/* Employee selfie/GPS attendance (admin view) */}
         <TabsContent value="attendance">

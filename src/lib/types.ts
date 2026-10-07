@@ -500,6 +500,7 @@ export interface Employee {
   phone: string;
   initials: string;
   avatarColor: string;
+  profileId?: string | null;
 }
 
 export interface SalarySlip {

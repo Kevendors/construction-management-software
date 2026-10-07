@@ -322,3 +322,96 @@ export async function setSlipStatusAction(
   if (error) return { error: error.message };
   return { id };
 }
+
+export interface UpdateEmployeeSalaryInput {
+  employeeId: string;
+  monthlyCtc: number;
+  designation?: string;
+  department?: Department;
+  phone?: string;
+}
+
+/** Admin/HR only: update an employee's salary (monthly CTC) and job details. */
+export async function updateEmployeeSalaryAction(
+  input: UpdateEmployeeSalaryInput
+): Promise<ActionResult> {
+  const supabase = await createClient();
+  const orgId = await currentOrgId(supabase);
+  if (!orgId) return { error: "You must be signed in." };
+
+  const ctx = await getAuthContext();
+  if (!ctx || !(ctx.role === "super_admin" || ctx.role === "hr")) {
+    return { error: "Only administrators and HR can set employee salaries." };
+  }
+
+  if (!input.employeeId) return { error: "Employee ID is required." };
+  const monthlyCtc = Number(input.monthlyCtc);
+  if (isNaN(monthlyCtc) || monthlyCtc < 0) {
+    return { error: "Monthly CTC must be a non-negative number." };
+  }
+
+  const patch: Record<string, unknown> = {
+    monthly_ctc: monthlyCtc,
+  };
+  if (input.designation !== undefined) patch.designation = input.designation.trim() || null;
+  if (input.department !== undefined) patch.department = input.department;
+  if (input.phone !== undefined) patch.phone = input.phone.trim() || null;
+
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("employees")
+    .update(patch)
+    .eq("id", input.employeeId)
+    .eq("org_id", orgId)
+    .select("id, name, monthly_ctc")
+    .maybeSingle();
+
+  if (error) return { error: error.message };
+  if (!data) return { error: "Employee record not found." };
+
+  await logActivity({
+    action: "updated",
+    entityType: "employee",
+    entityId: input.employeeId,
+    summary: `Set salary for ${data.name} to ${formatINR(monthlyCtc)}/month`,
+  });
+
+  return { id: data.id as string };
+}
+
+export async function deleteEmployeeAction(employeeId: string): Promise<ActionResult> {
+  const supabase = await createClient();
+  const orgId = await currentOrgId(supabase);
+  if (!orgId) return { error: "You must be signed in." };
+
+  const ctx = await getAuthContext();
+  if (!ctx || !(ctx.role === "super_admin" || ctx.role === "hr")) {
+    return { error: "Only administrators and HR can remove employees." };
+  }
+
+  const admin = createAdminClient();
+  const { data: emp } = await admin
+    .from("employees")
+    .select("name")
+    .eq("id", employeeId)
+    .eq("org_id", orgId)
+    .maybeSingle();
+
+  const { error } = await admin
+    .from("employees")
+    .delete()
+    .eq("id", employeeId)
+    .eq("org_id", orgId);
+  if (error) return { error: error.message };
+
+  if (emp) {
+    await logActivity({
+      action: "deleted",
+      entityType: "employee",
+      entityId: employeeId,
+      summary: `Removed employee ${emp.name} from payroll`,
+    });
+  }
+  return { id: employeeId };
+}
+
