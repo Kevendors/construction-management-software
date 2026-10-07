@@ -34,8 +34,10 @@ export const ORG_TIMEZONE = "Asia/Kolkata";
 /** India has no DST, so this fixed offset is always correct for ORG_TIMEZONE. */
 export const ORG_UTC_OFFSET = "+05:30";
 
-/** Standard workday; minutes beyond this count as overtime. */
-export const STANDARD_WORKDAY_MINUTES = 8 * 60;
+/** Standard workday shift: 9:30 AM to 6:00 PM (8h 30m / 510 minutes); minutes beyond this count as overtime. */
+export const SHIFT_START_TIME = "09:30";
+export const SHIFT_END_TIME = "18:00";
+export const STANDARD_WORKDAY_MINUTES = 8 * 60 + 30; // 510 minutes (9:30 to 18:00)
 
 /**
  * Today's date ("YYYY-MM-DD") in the org's timezone. Never derive the

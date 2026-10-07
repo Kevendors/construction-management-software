@@ -5,7 +5,13 @@ import { Dialog, Select } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/dialog";
-import { ORG_TIMEZONE, orgToday, type AttendanceMember } from "@/lib/attendance/compute";
+import {
+  ORG_TIMEZONE,
+  orgToday,
+  SHIFT_START_TIME,
+  SHIFT_END_TIME,
+  type AttendanceMember,
+} from "@/lib/attendance/compute";
 import { adminMarkAttendanceAction } from "@/app/attendance/actions";
 import type { EmployeeAttendance, Project } from "@/lib/types";
 
@@ -46,7 +52,7 @@ export function AdminMarkAttendanceDialog({
   const [userId, setUserId] = React.useState("");
   const [date, setDate] = React.useState(defaultDate);
   const [projectId, setProjectId] = React.useState("");
-  const [checkInTime, setCheckInTime] = React.useState("09:00");
+  const [checkInTime, setCheckInTime] = React.useState(SHIFT_START_TIME);
   const [checkOutTime, setCheckOutTime] = React.useState("");
   const [note, setNote] = React.useState("");
   const [saving, setSaving] = React.useState(false);
@@ -57,10 +63,10 @@ export function AdminMarkAttendanceDialog({
     setUserId(existing?.userId ?? defaultUserId ?? "");
     setDate(existing?.date ?? defaultDate);
     setProjectId(existing?.projectId ?? "");
-    const inTime = existing ? isoToHHMM(existing.checkInAt) || "09:00" : "09:00";
+    const inTime = existing ? isoToHHMM(existing.checkInAt) || SHIFT_START_TIME : SHIFT_START_TIME;
     setCheckInTime(inTime);
     if (existing && !existing.checkOutAt) {
-      setCheckOutTime("18:00");
+      setCheckOutTime(SHIFT_END_TIME);
       setNote(existing.note || "Shift closed by admin");
     } else {
       setCheckOutTime(existing ? isoToHHMM(existing.checkOutAt) : "");

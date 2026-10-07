@@ -47,7 +47,7 @@ export function UnclosedShiftAlert({
               Unclosed Shift from {shift.date}
             </p>
             <p className="text-xs text-amber-800/90 dark:text-amber-400/90 mt-0.5">
-              You checked in at <span className="font-semibold">{formatTime(shift.checkInAt)}</span> but did not check out. Close this shift to record your hours properly.
+              You checked in at <span className="font-semibold">{formatTime(shift.checkInAt)}</span> but did not check out. Standard shift ended at 6:00 PM (18:00).
             </p>
           </div>
 
@@ -63,7 +63,7 @@ export function UnclosedShiftAlert({
                 className="h-8 text-xs cursor-pointer"
               >
                 {closing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Clock className="h-3.5 w-3.5" />}
-                Close Shift (Standard 8h)
+                Close Shift (Standard 18:00)
               </Button>
               <Button
                 size="sm"

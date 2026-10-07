@@ -14,6 +14,8 @@ import {
   orgToday,
   ORG_UTC_OFFSET,
   overtimeOf,
+  SHIFT_END_TIME,
+  STANDARD_WORKDAY_MINUTES,
 } from "@/lib/attendance/compute";
 
 const BUCKET = "attendance-selfies";
@@ -445,11 +447,10 @@ export async function closePreviousShiftAction(
     checkOutIso = `${record.date}T${input.checkOutTime}:00${ORG_UTC_OFFSET}`;
     totalMinutes = minutesBetween(record.check_in_at as string, checkOutIso);
   } else {
-    // Default to standard 8-hour workday (480 minutes)
-    const checkInDate = new Date(record.check_in_at as string);
-    const eightHoursLater = new Date(checkInDate.getTime() + 8 * 60 * 60 * 1000);
-    checkOutIso = eightHoursLater.toISOString();
-    totalMinutes = 8 * 60;
+    // Default to standard 18:00 (6:00 PM) shift end
+    checkOutIso = `${record.date}T${SHIFT_END_TIME}:00${ORG_UTC_OFFSET}`;
+    const diff = minutesBetween(record.check_in_at as string, checkOutIso);
+    totalMinutes = diff > 0 ? diff : STANDARD_WORKDAY_MINUTES;
   }
 
   const updateNote = input.note?.trim()
