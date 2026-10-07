@@ -48,6 +48,8 @@ export interface AddEmployeeInput {
   monthlyCtc: number;
   joinDate: string;
   phone: string;
+  deductPf?: boolean;
+  deductEsi?: boolean;
   /** Optionally create a phone+password login for this employee (admin only). */
   createAccount?: boolean;
   accountPassword?: string;
@@ -95,23 +97,36 @@ export async function addEmployeeAction(input: AddEmployeeInput): Promise<Action
     if (mErr) return { error: mErr.message };
   }
 
-  const { data, error } = await supabase
+  const insertPayload: Record<string, unknown> = {
+    org_id: orgId,
+    profile_id: profileId,
+    name: input.name.trim(),
+    designation: input.designation.trim() || null,
+    department: input.department,
+    monthly_ctc: input.monthlyCtc || 0,
+    join_date: input.joinDate || null,
+    phone: input.phone.trim() || null,
+    initials: initialsOf(input.name),
+    avatar_color: pickColor(input.name),
+    deduct_pf: input.deductPf ?? true,
+    deduct_esi: input.deductEsi ?? true,
+  };
+
+  let { data, error } = await supabase
     .from("employees")
-    .insert({
-      org_id: orgId,
-      profile_id: profileId,
-      name: input.name.trim(),
-      designation: input.designation.trim() || null,
-      department: input.department,
-      monthly_ctc: input.monthlyCtc || 0,
-      join_date: input.joinDate || null,
-      phone: input.phone.trim() || null,
-      initials: initialsOf(input.name),
-      avatar_color: pickColor(input.name),
-    })
+    .insert(insertPayload)
     .select("id")
     .single();
+
+  if (error && (error.message.includes("deduct_pf") || error.message.includes("deduct_esi"))) {
+    delete insertPayload.deduct_pf;
+    delete insertPayload.deduct_esi;
+    const retry = await supabase.from("employees").insert(insertPayload).select("id").single();
+    data = retry.data;
+    error = retry.error;
+  }
   if (error) return { error: error.message };
+  if (!data) return { error: "Could not create employee record." };
   await logActivity({
     action: "created",
     entityType: "employee",
@@ -254,7 +269,7 @@ export async function generateSlipAction(
 
   const { data: emp, error: empErr } = await supabase
     .from("employees")
-    .select("monthly_ctc")
+    .select("*")
     .eq("id", employeeId)
     .maybeSingle();
   if (empErr) return { error: empErr.message };
@@ -264,12 +279,14 @@ export async function generateSlipAction(
   const days = Math.max(0, Math.min(paidDays || monthDays, monthDays));
   const ctc = Number(emp.monthly_ctc) || 0;
   const gross = Math.round((ctc * days) / monthDays);
-  // Standard split: 50% basic, 20% HRA, 30% allowances; PF 12% of basic, ESI 0.75% of gross.
+  // Standard split: 50% basic, 20% HRA, 30% allowances; PF 12% of basic (if enabled), ESI 0.75% of gross (if enabled).
   const basic = Math.round(gross * 0.5);
   const hra = Math.round(gross * 0.2);
   const allowances = gross - basic - hra;
-  const pf = Math.round(basic * 0.12);
-  const esi = Math.round(gross * 0.0075);
+  const deductPf = (emp as Record<string, unknown>).deduct_pf !== false;
+  const deductEsi = (emp as Record<string, unknown>).deduct_esi !== false;
+  const pf = deductPf ? Math.round(basic * 0.12) : 0;
+  const esi = deductEsi ? Math.round(gross * 0.0075) : 0;
 
   // Outstanding advance recovery for this employee (capped at 20% of gross).
   const { data: advs } = await supabase
@@ -339,6 +356,8 @@ export interface UpdateEmployeeSalaryInput {
   designation?: string;
   department?: Department;
   phone?: string;
+  deductPf?: boolean;
+  deductEsi?: boolean;
 }
 
 /** Admin/HR only: update an employee's salary (monthly CTC) and job details. */
@@ -366,15 +385,31 @@ export async function updateEmployeeSalaryAction(
   if (input.designation !== undefined) patch.designation = input.designation.trim() || null;
   if (input.department !== undefined) patch.department = input.department;
   if (input.phone !== undefined) patch.phone = input.phone.trim() || null;
+  if (input.deductPf !== undefined) patch.deduct_pf = input.deductPf;
+  if (input.deductEsi !== undefined) patch.deduct_esi = input.deductEsi;
 
   const admin = createAdminClient();
-  const { data, error } = await admin
+  let { data, error } = await admin
     .from("employees")
     .update(patch)
     .eq("id", input.employeeId)
     .eq("org_id", orgId)
     .select("id, name, monthly_ctc")
     .maybeSingle();
+
+  if (error && (error.message.includes("deduct_pf") || error.message.includes("deduct_esi"))) {
+    delete patch.deduct_pf;
+    delete patch.deduct_esi;
+    const retry = await admin
+      .from("employees")
+      .update(patch)
+      .eq("id", input.employeeId)
+      .eq("org_id", orgId)
+      .select("id, name, monthly_ctc")
+      .maybeSingle();
+    data = retry.data;
+    error = retry.error;
+  }
 
   if (error) return { error: error.message };
   if (!data) return { error: "Employee record not found." };

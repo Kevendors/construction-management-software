@@ -577,14 +577,14 @@ export const raBills: RaBill[] = [
 /* ---------- Staff employees (office + site) ---------- */
 
 export const employees: Employee[] = [
-  { id: "emp1", name: "Arjun Mehta", designation: "Director", department: "admin", monthlyCtc: 280000, joinDate: "2018-04-01", phone: "+91 98100 10001", initials: "AM", avatarColor: "#1e3a5f" },
-  { id: "emp2", name: "Priya Nair", designation: "Project Manager", department: "engineering", monthlyCtc: 165000, joinDate: "2020-06-15", phone: "+91 98100 10002", initials: "PN", avatarColor: "#b45309" },
-  { id: "emp3", name: "Rohan Das", designation: "Senior Architect", department: "design", monthlyCtc: 142000, joinDate: "2019-09-01", phone: "+91 98100 10003", initials: "RD", avatarColor: "#0369a1" },
-  { id: "emp4", name: "Sana Kapoor", designation: "Site Engineer", department: "site", monthlyCtc: 78000, joinDate: "2022-02-10", phone: "+91 98100 10004", initials: "SK", avatarColor: "#15803d" },
-  { id: "emp5", name: "Vikram Rao", designation: "Site Engineer", department: "site", monthlyCtc: 74000, joinDate: "2022-08-22", phone: "+91 98100 10005", initials: "VR", avatarColor: "#7c3aed" },
-  { id: "emp6", name: "Neha Joshi", designation: "Accountant", department: "accounts", monthlyCtc: 88000, joinDate: "2021-03-05", phone: "+91 98100 10006", initials: "NJ", avatarColor: "#be123c" },
-  { id: "emp7", name: "Imran Sheikh", designation: "Junior Architect", department: "design", monthlyCtc: 62000, joinDate: "2023-07-12", phone: "+91 98100 10007", initials: "IS", avatarColor: "#0d9488" },
-  { id: "emp8", name: "Kavya Reddy", designation: "Site Supervisor", department: "site", monthlyCtc: 54000, joinDate: "2023-11-01", phone: "+91 98100 10008", initials: "KR", avatarColor: "#9333ea" },
+  { id: "emp1", name: "Arjun Mehta", designation: "Director", department: "admin", monthlyCtc: 280000, joinDate: "2018-04-01", phone: "+91 98100 10001", initials: "AM", avatarColor: "#1e3a5f", deductPf: true, deductEsi: false },
+  { id: "emp2", name: "Priya Nair", designation: "Project Manager", department: "engineering", monthlyCtc: 165000, joinDate: "2020-06-15", phone: "+91 98100 10002", initials: "PN", avatarColor: "#b45309", deductPf: true, deductEsi: false },
+  { id: "emp3", name: "Rohan Das", designation: "Senior Architect", department: "design", monthlyCtc: 142000, joinDate: "2019-09-01", phone: "+91 98100 10003", initials: "RD", avatarColor: "#0369a1", deductPf: true, deductEsi: false },
+  { id: "emp4", name: "Sana Kapoor", designation: "Site Engineer", department: "site", monthlyCtc: 78000, joinDate: "2022-02-10", phone: "+91 98100 10004", initials: "SK", avatarColor: "#15803d", deductPf: true, deductEsi: true },
+  { id: "emp5", name: "Vikram Rao", designation: "Site Engineer", department: "site", monthlyCtc: 74000, joinDate: "2022-08-22", phone: "+91 98100 10005", initials: "VR", avatarColor: "#7c3aed", deductPf: true, deductEsi: true },
+  { id: "emp6", name: "Neha Joshi", designation: "Accountant", department: "accounts", monthlyCtc: 88000, joinDate: "2021-03-05", phone: "+91 98100 10006", initials: "NJ", avatarColor: "#be123c", deductPf: true, deductEsi: false },
+  { id: "emp7", name: "Imran Sheikh", designation: "Junior Architect", department: "design", monthlyCtc: 62000, joinDate: "2023-07-12", phone: "+91 98100 10007", initials: "IS", avatarColor: "#0d9488", deductPf: false, deductEsi: true },
+  { id: "emp8", name: "Kavya Reddy", designation: "Site Supervisor", department: "site", monthlyCtc: 54000, joinDate: "2023-11-01", phone: "+91 98100 10008", initials: "KR", avatarColor: "#9333ea", deductPf: true, deductEsi: true },
 ];
 
 /* ---------- Salary slips for May 2026 ---------- */

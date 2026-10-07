@@ -49,6 +49,8 @@ interface EmployeeRow {
   phone: string | null;
   initials: string | null;
   avatar_color: string | null;
+  deduct_pf?: boolean | null;
+  deduct_esi?: boolean | null;
 }
 interface ContractorRow {
   id: string;
@@ -108,6 +110,8 @@ const mapEmployee = (r: EmployeeRow): Employee => ({
   initials: r.initials || initialsOf(r.name),
   avatarColor: r.avatar_color || "#64748b",
   profileId: r.profile_id ?? null,
+  deductPf: r.deduct_pf !== false,
+  deductEsi: r.deduct_esi !== false,
 });
 const mapContractor = (r: ContractorRow): LabourContractor => ({
   id: r.id,

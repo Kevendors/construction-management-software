@@ -501,6 +501,8 @@ export interface Employee {
   initials: string;
   avatarColor: string;
   profileId?: string | null;
+  deductPf?: boolean;
+  deductEsi?: boolean;
 }
 
 export interface SalarySlip {

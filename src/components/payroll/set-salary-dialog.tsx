@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 import { Dialog, Select } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { formatINR } from "@/lib/utils";
+import { cn, formatINR } from "@/lib/utils";
 import { departmentLabel } from "@/lib/labels";
 import { updateEmployeeSalaryAction, generateSlipAction } from "@/app/payroll/actions";
 import type { Department, Employee, SalarySlip } from "@/lib/types";
@@ -35,6 +35,8 @@ export function SetSalaryDialog({
   const [designation, setDesignation] = React.useState<string>("");
   const [department, setDepartment] = React.useState<Department>("site");
   const [phone, setPhone] = React.useState<string>("");
+  const [deductPf, setDeductPf] = React.useState<boolean>(true);
+  const [deductEsi, setDeductEsi] = React.useState<boolean>(true);
   const [recalcDraft, setRecalcDraft] = React.useState<boolean>(true);
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -45,6 +47,8 @@ export function SetSalaryDialog({
       setDesignation(employee.designation || "");
       setDepartment(employee.department || "site");
       setPhone(employee.phone || "");
+      setDeductPf(employee.deductPf !== false);
+      setDeductEsi(employee.deductEsi !== false);
       setError(null);
     }
   }, [employee]);
@@ -57,8 +61,8 @@ export function SetSalaryDialog({
   const basic = Math.round(ctc * 0.5);
   const hra = Math.round(ctc * 0.2);
   const allowances = Math.max(0, ctc - basic - hra);
-  const pf = Math.round(basic * 0.12);
-  const esi = Math.round(ctc * 0.0075);
+  const pf = deductPf ? Math.round(basic * 0.12) : 0;
+  const esi = deductEsi ? Math.round(ctc * 0.0075) : 0;
   const estNet = Math.max(0, ctc - pf - esi);
 
   const monthLabel = new Date(`${month}-01`).toLocaleDateString("en-IN", {
@@ -78,6 +82,8 @@ export function SetSalaryDialog({
       designation: designation.trim(),
       department,
       phone: phone.trim(),
+      deductPf,
+      deductEsi,
     });
 
     if (res.error) {
@@ -163,6 +169,49 @@ export function SetSalaryDialog({
           </div>
         </div>
 
+        {/* Statutory Deductions Configuration */}
+        <div className="rounded-lg border border-border bg-muted/40 p-3 space-y-2">
+          <div className="text-xs font-semibold text-foreground flex items-center justify-between">
+            <span>Statutory Deductions (PF & ESI)</span>
+            <span className="text-[11px] font-normal text-muted-foreground">Toggle per employee</span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+            <label className="flex items-start gap-2.5 cursor-pointer select-none rounded border border-border/70 bg-card p-2.5 transition-colors hover:bg-muted/30">
+              <input
+                type="checkbox"
+                checked={deductPf}
+                onChange={(e) => setDeductPf(e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-border text-primary focus:ring-primary"
+              />
+              <div className="space-y-0.5">
+                <span className="font-medium text-foreground block">Deduct PF (12% of basic)</span>
+                <p className="text-[11px] text-muted-foreground leading-snug">
+                  {deductPf
+                    ? `Deducting ${formatINR(Math.round(basic * 0.12))}/mo`
+                    : "Exempt — No PF deducted"}
+                </p>
+              </div>
+            </label>
+
+            <label className="flex items-start gap-2.5 cursor-pointer select-none rounded border border-border/70 bg-card p-2.5 transition-colors hover:bg-muted/30">
+              <input
+                type="checkbox"
+                checked={deductEsi}
+                onChange={(e) => setDeductEsi(e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-border text-primary focus:ring-primary"
+              />
+              <div className="space-y-0.5">
+                <span className="font-medium text-foreground block">Deduct ESI (0.75% gross)</span>
+                <p className="text-[11px] text-muted-foreground leading-snug">
+                  {deductEsi
+                    ? `Deducting ${formatINR(Math.round(ctc * 0.0075))}/mo`
+                    : "Exempt — No ESI deducted"}
+                </p>
+              </div>
+            </label>
+          </div>
+        </div>
+
         {/* Live Salary Structure Breakdown */}
         {ctc > 0 && (
           <div className="rounded-lg border border-border bg-card p-3.5 space-y-2.5">
@@ -192,12 +241,20 @@ export function SetSalaryDialog({
 
             <div className="grid grid-cols-3 gap-2 text-xs pt-2 border-t border-border/60">
               <div>
-                <span className="text-muted-foreground block text-[11px]">PF (12% of basic)</span>
-                <span className="font-semibold text-destructive tabular-nums">-{formatINR(pf)}</span>
+                <span className="text-muted-foreground block text-[11px]">
+                  {deductPf ? "PF (12% of basic)" : "PF (Exempt)"}
+                </span>
+                <span className={cn("font-semibold tabular-nums", deductPf ? "text-destructive" : "text-muted-foreground")}>
+                  {deductPf ? `-${formatINR(pf)}` : "₹0"}
+                </span>
               </div>
               <div>
-                <span className="text-muted-foreground block text-[11px]">ESI (0.75% gross)</span>
-                <span className="font-semibold text-destructive tabular-nums">-{formatINR(esi)}</span>
+                <span className="text-muted-foreground block text-[11px]">
+                  {deductEsi ? "ESI (0.75% gross)" : "ESI (Exempt)"}
+                </span>
+                <span className={cn("font-semibold tabular-nums", deductEsi ? "text-destructive" : "text-muted-foreground")}>
+                  {deductEsi ? `-${formatINR(esi)}` : "₹0"}
+                </span>
               </div>
               <div>
                 <span className="text-muted-foreground block text-[11px]">Est. Take-Home</span>

@@ -27,7 +27,7 @@ import { addEmployeeAction, generateSlipAction } from "@/app/payroll/actions";
 import { departmentLabel, salarySlipStatusMeta, roleLabel } from "@/lib/labels";
 import { useRole } from "@/components/layout/role-provider";
 import { isAdminRole } from "@/lib/auth/permissions";
-import { formatINR } from "@/lib/utils";
+import { cn, formatINR } from "@/lib/utils";
 import type { Department, Employee, Role } from "@/lib/types";
 
 const DEPARTMENTS: Department[] = ["engineering", "design", "site", "accounts", "admin"];
@@ -182,10 +182,18 @@ export function EmployeesTab({
                           title="Click to set or adjust salary"
                         >
                           {emp.monthlyCtc > 0 ? (
-                            <>
-                              <span className="text-foreground">{formatINR(emp.monthlyCtc)}</span>
-                              <Pencil className="h-3 w-3 text-muted-foreground opacity-30 transition-opacity group-hover:opacity-100" />
-                            </>
+                            <span className="flex flex-col items-end">
+                              <span className="inline-flex items-center gap-1.5">
+                                <span className="text-foreground">{formatINR(emp.monthlyCtc)}</span>
+                                <Pencil className="h-3 w-3 text-muted-foreground opacity-30 transition-opacity group-hover:opacity-100" />
+                              </span>
+                              <span className={cn(
+                                "text-[10px]",
+                                emp.deductPf !== false ? "text-muted-foreground" : "text-amber-600 dark:text-amber-400 font-medium"
+                              )}>
+                                {emp.deductPf !== false ? "PF 12%" : "No PF"}
+                              </span>
+                            </span>
                           ) : (
                             <span className="inline-flex items-center gap-1 rounded bg-amber-500/10 px-2 py-0.5 text-xs font-semibold text-amber-700 dark:text-amber-400">
                               <Pencil className="h-3 w-3" /> Set Salary
@@ -193,7 +201,12 @@ export function EmployeesTab({
                           )}
                         </button>
                       ) : (
-                        <span className="tabular-nums text-muted-foreground">{formatINR(emp.monthlyCtc)}</span>
+                        <div className="flex flex-col items-end">
+                          <span className="tabular-nums text-muted-foreground">{formatINR(emp.monthlyCtc)}</span>
+                          <span className="text-[10px] text-muted-foreground">
+                            {emp.deductPf !== false ? "PF 12%" : "No PF"}
+                          </span>
+                        </div>
                       )}
                     </TableCell>
                     <TableCell className="text-right font-semibold tabular-nums">
@@ -305,6 +318,8 @@ function AddEmployeeDialog({
   const [createAccount, setCreateAccount] = React.useState(false);
   const [accountPassword, setAccountPassword] = React.useState("");
   const [accountRole, setAccountRole] = React.useState<Role>("supervisor");
+  const [deductPf, setDeductPf] = React.useState(true);
+  const [deductEsi, setDeductEsi] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
@@ -314,8 +329,8 @@ function AddEmployeeDialog({
   const basic = Math.round(numCtc * 0.5);
   const hra = Math.round(numCtc * 0.2);
   const allowances = Math.max(0, numCtc - basic - hra);
-  const pf = Math.round(basic * 0.12);
-  const esi = Math.round(numCtc * 0.0075);
+  const pf = deductPf ? Math.round(basic * 0.12) : 0;
+  const esi = deductEsi ? Math.round(numCtc * 0.0075) : 0;
   const estNet = Math.max(0, numCtc - pf - esi);
 
   // Find unlinked team members
@@ -358,6 +373,8 @@ function AddEmployeeDialog({
       monthlyCtc: numCtc,
       joinDate,
       phone: phone.trim(),
+      deductPf,
+      deductEsi,
       createAccount: createAccount && canCreateAccount,
       accountPassword: createAccount ? accountPassword : undefined,
       accountRole: createAccount ? accountRole : undefined,
@@ -366,6 +383,7 @@ function AddEmployeeDialog({
     if (res.error) return setError(res.error);
     onClose();
     setName(""); setDesignation(""); setMonthlyCtc(""); setPhone("");
+    setDeductPf(true); setDeductEsi(true);
     setCreateAccount(false); setAccountPassword("");
     router.refresh();
   }
@@ -430,6 +448,44 @@ function AddEmployeeDialog({
           </div>
         </div>
 
+        {/* Statutory Deductions Options */}
+        <div className="rounded-lg border border-border bg-muted/40 p-2.5 space-y-2">
+          <div className="text-xs font-semibold text-foreground flex items-center justify-between">
+            <span>Statutory Deductions (PF & ESI)</span>
+            <span className="text-[11px] font-normal text-muted-foreground">Toggle per employee</span>
+          </div>
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            <label className="flex items-start gap-2 cursor-pointer select-none rounded border border-border/70 bg-card p-2">
+              <input
+                type="checkbox"
+                checked={deductPf}
+                onChange={(e) => setDeductPf(e.target.checked)}
+                className="mt-0.5 h-3.5 w-3.5 rounded border-border text-primary"
+              />
+              <div>
+                <span className="font-medium text-foreground block">Deduct PF</span>
+                <span className="text-[10px] text-muted-foreground">
+                  {deductPf ? "12% of basic" : "Exempt"}
+                </span>
+              </div>
+            </label>
+            <label className="flex items-start gap-2 cursor-pointer select-none rounded border border-border/70 bg-card p-2">
+              <input
+                type="checkbox"
+                checked={deductEsi}
+                onChange={(e) => setDeductEsi(e.target.checked)}
+                className="mt-0.5 h-3.5 w-3.5 rounded border-border text-primary"
+              />
+              <div>
+                <span className="font-medium text-foreground block">Deduct ESI</span>
+                <span className="text-[10px] text-muted-foreground">
+                  {deductEsi ? "0.75% of gross" : "Exempt"}
+                </span>
+              </div>
+            </label>
+          </div>
+        </div>
+
         {/* Live Payroll Breakdown Card */}
         {numCtc > 0 && (
           <div className="rounded-lg border border-border bg-card p-3 space-y-2">
@@ -455,12 +511,16 @@ function AddEmployeeDialog({
             </div>
             <div className="grid grid-cols-3 gap-2 text-xs pt-1.5 border-t border-border/60">
               <div>
-                <span className="text-muted-foreground block text-[10px]">PF (12%)</span>
-                <span className="font-semibold text-destructive">-{formatINR(pf)}</span>
+                <span className="text-muted-foreground block text-[10px]">{deductPf ? "PF (12%)" : "PF (Exempt)"}</span>
+                <span className={cn("font-semibold", deductPf ? "text-destructive" : "text-muted-foreground")}>
+                  {deductPf ? `-${formatINR(pf)}` : "₹0"}
+                </span>
               </div>
               <div>
-                <span className="text-muted-foreground block text-[10px]">ESI (0.75%)</span>
-                <span className="font-semibold text-destructive">-{formatINR(esi)}</span>
+                <span className="text-muted-foreground block text-[10px]">{deductEsi ? "ESI (0.75%)" : "ESI (Exempt)"}</span>
+                <span className={cn("font-semibold", deductEsi ? "text-destructive" : "text-muted-foreground")}>
+                  {deductEsi ? `-${formatINR(esi)}` : "₹0"}
+                </span>
               </div>
               <div>
                 <span className="text-muted-foreground block text-[10px]">Est. Take-Home</span>
