@@ -279,10 +279,10 @@ export async function generateSlipAction(
   const days = Math.max(0, Math.min(paidDays || monthDays, monthDays));
   const ctc = Number(emp.monthly_ctc) || 0;
   const gross = Math.round((ctc * days) / monthDays);
-  // Standard split: 50% basic, 20% HRA, 30% allowances; PF 12% of basic (if enabled), ESI 0.75% of gross (if enabled).
-  const basic = Math.round(gross * 0.5);
-  const hra = Math.round(gross * 0.2);
-  const allowances = gross - basic - hra;
+  // Full salary as basic pay (no HRA or allowances split)
+  const basic = gross;
+  const hra = 0;
+  const allowances = 0;
   const deductPf = (emp as Record<string, unknown>).deduct_pf !== false;
   const deductEsi = (emp as Record<string, unknown>).deduct_esi !== false;
   const pf = deductPf ? Math.round(basic * 0.12) : 0;

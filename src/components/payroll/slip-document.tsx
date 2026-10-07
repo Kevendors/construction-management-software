@@ -12,15 +12,18 @@ export function SlipDocument({ slip, employee }: { slip: SalarySlip; employee: E
   });
 
   const earningRows = [
-    { label: "Basic", value: slip.basic },
-    { label: "House Rent Allowance", value: slip.hra },
-    { label: "Other Allowances", value: slip.allowances },
+    { label: "Basic Salary", value: slip.basic },
+    ...(slip.hra > 0 ? [{ label: "House Rent Allowance", value: slip.hra }] : []),
+    ...(slip.allowances > 0 ? [{ label: "Other Allowances", value: slip.allowances }] : []),
   ];
   const deductionRows = [
-    { label: "Provident Fund (PF)", value: slip.pf },
-    { label: "ESI", value: slip.esi },
-    { label: "Advance Recovery", value: slip.advanceDeduction },
+    ...(slip.pf > 0 ? [{ label: "Provident Fund (PF)", value: slip.pf }] : []),
+    ...(slip.esi > 0 ? [{ label: "ESI", value: slip.esi }] : []),
+    ...(slip.advanceDeduction > 0 ? [{ label: "Advance Recovery", value: slip.advanceDeduction }] : []),
   ];
+  if (deductionRows.length === 0) {
+    deductionRows.push({ label: "Nil Deductions", value: 0 });
+  }
 
   return (
     <>

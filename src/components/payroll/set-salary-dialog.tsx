@@ -58,9 +58,7 @@ export function SetSalaryDialog({
   // Real-time payroll breakdown calculations
   const ctc = Math.max(0, Number(monthlyCtc) || 0);
   const perDayRate = Math.round(ctc / 30);
-  const basic = Math.round(ctc * 0.5);
-  const hra = Math.round(ctc * 0.2);
-  const allowances = Math.max(0, ctc - basic - hra);
+  const basic = ctc; // 100% of salary as basic pay (no HRA or allowances)
   const pf = deductPf ? Math.round(basic * 0.12) : 0;
   const esi = deductEsi ? Math.round(ctc * 0.0075) : 0;
   const estNet = Math.max(0, ctc - pf - esi);
@@ -184,7 +182,7 @@ export function SetSalaryDialog({
                 className="mt-0.5 h-4 w-4 rounded border-border text-primary focus:ring-primary"
               />
               <div className="space-y-0.5">
-                <span className="font-medium text-foreground block">Deduct PF (12% of basic)</span>
+                <span className="font-medium text-foreground block">Deduct PF (12%)</span>
                 <p className="text-[11px] text-muted-foreground leading-snug">
                   {deductPf
                     ? `Deducting ${formatINR(Math.round(basic * 0.12))}/mo`
@@ -201,7 +199,7 @@ export function SetSalaryDialog({
                 className="mt-0.5 h-4 w-4 rounded border-border text-primary focus:ring-primary"
               />
               <div className="space-y-0.5">
-                <span className="font-medium text-foreground block">Deduct ESI (0.75% gross)</span>
+                <span className="font-medium text-foreground block">Deduct ESI (0.75%)</span>
                 <p className="text-[11px] text-muted-foreground leading-snug">
                   {deductEsi
                     ? `Deducting ${formatINR(Math.round(ctc * 0.0075))}/mo`
@@ -212,37 +210,26 @@ export function SetSalaryDialog({
           </div>
         </div>
 
-        {/* Live Salary Structure Breakdown */}
+        {/* Live Salary Breakdown Preview */}
         {ctc > 0 && (
           <div className="rounded-lg border border-border bg-card p-3.5 space-y-2.5">
             <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               <span className="flex items-center gap-1.5 text-foreground">
-                <Calculator className="h-3.5 w-3.5 text-primary" /> Indian Payroll Breakdown Preview
+                <Calculator className="h-3.5 w-3.5 text-primary" /> Monthly Salary Breakdown Preview
               </span>
               <span className="font-medium tabular-nums text-foreground">
                 {formatINR(perDayRate)} / day (30d base)
               </span>
             </div>
 
-            <div className="grid grid-cols-3 gap-2 text-xs pt-1 border-t border-border/60">
+            <div className="grid grid-cols-4 gap-2 text-xs pt-2 border-t border-border/60">
               <div>
-                <span className="text-muted-foreground block text-[11px]">Basic Pay (50%)</span>
-                <span className="font-semibold text-foreground tabular-nums">{formatINR(basic)}</span>
+                <span className="text-muted-foreground block text-[11px]">Monthly Gross</span>
+                <span className="font-semibold text-foreground tabular-nums">{formatINR(ctc)}</span>
               </div>
-              <div>
-                <span className="text-muted-foreground block text-[11px]">HRA (20%)</span>
-                <span className="font-semibold text-foreground tabular-nums">{formatINR(hra)}</span>
-              </div>
-              <div>
-                <span className="text-muted-foreground block text-[11px]">Allowances (30%)</span>
-                <span className="font-semibold text-foreground tabular-nums">{formatINR(allowances)}</span>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-2 text-xs pt-2 border-t border-border/60">
               <div>
                 <span className="text-muted-foreground block text-[11px]">
-                  {deductPf ? "PF (12% of basic)" : "PF (Exempt)"}
+                  {deductPf ? "PF (12%)" : "PF (Exempt)"}
                 </span>
                 <span className={cn("font-semibold tabular-nums", deductPf ? "text-destructive" : "text-muted-foreground")}>
                   {deductPf ? `-${formatINR(pf)}` : "₹0"}
@@ -250,7 +237,7 @@ export function SetSalaryDialog({
               </div>
               <div>
                 <span className="text-muted-foreground block text-[11px]">
-                  {deductEsi ? "ESI (0.75% gross)" : "ESI (Exempt)"}
+                  {deductEsi ? "ESI (0.75%)" : "ESI (Exempt)"}
                 </span>
                 <span className={cn("font-semibold tabular-nums", deductEsi ? "text-destructive" : "text-muted-foreground")}>
                   {deductEsi ? `-${formatINR(esi)}` : "₹0"}

@@ -327,9 +327,7 @@ function AddEmployeeDialog({
   // Live breakdown calculations
   const numCtc = Math.max(0, Number(monthlyCtc) || 0);
   const perDay = Math.round(numCtc / 30);
-  const basic = Math.round(numCtc * 0.5);
-  const hra = Math.round(numCtc * 0.2);
-  const allowances = Math.max(0, numCtc - basic - hra);
+  const basic = numCtc;
   const pf = deductPf ? Math.round(basic * 0.12) : 0;
   const esi = deductEsi ? Math.round(numCtc * 0.0075) : 0;
   const estNet = Math.max(0, numCtc - pf - esi);
@@ -492,25 +490,15 @@ function AddEmployeeDialog({
           <div className="rounded-lg border border-border bg-card p-3 space-y-2">
             <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               <span className="flex items-center gap-1.5 text-foreground">
-                <Calculator className="h-3 w-3 text-primary" /> Salary Structure Breakdown
+                <Calculator className="h-3 w-3 text-primary" /> Salary Breakdown
               </span>
               <span className="font-medium text-foreground">{formatINR(perDay)}/day</span>
             </div>
-            <div className="grid grid-cols-3 gap-2 text-xs pt-1 border-t border-border/60">
+            <div className="grid grid-cols-4 gap-2 text-xs pt-1.5 border-t border-border/60">
               <div>
-                <span className="text-muted-foreground block text-[10px]">Basic (50%)</span>
-                <span className="font-semibold text-foreground">{formatINR(basic)}</span>
+                <span className="text-muted-foreground block text-[10px]">Monthly Gross</span>
+                <span className="font-semibold text-foreground">{formatINR(numCtc)}</span>
               </div>
-              <div>
-                <span className="text-muted-foreground block text-[10px]">HRA (20%)</span>
-                <span className="font-semibold text-foreground">{formatINR(hra)}</span>
-              </div>
-              <div>
-                <span className="text-muted-foreground block text-[10px]">Allowances (30%)</span>
-                <span className="font-semibold text-foreground">{formatINR(allowances)}</span>
-              </div>
-            </div>
-            <div className="grid grid-cols-3 gap-2 text-xs pt-1.5 border-t border-border/60">
               <div>
                 <span className="text-muted-foreground block text-[10px]">{deductPf ? "PF (12%)" : "PF (Exempt)"}</span>
                 <span className={cn("font-semibold", deductPf ? "text-destructive" : "text-muted-foreground")}>
