@@ -53,6 +53,11 @@ export function CheckInFlow({
   const [selfie, setSelfie] = React.useState("");
   const [errorMsg, setErrorMsg] = React.useState("");
   const [doneAt, setDoneAt] = React.useState("");
+  const [evalInfo, setEvalInfo] = React.useState<{
+    creditType?: "on_time" | "late_grace" | "late_half_day" | "late_cutoff_half_day";
+    lateIndex?: number;
+    lateMessage?: string;
+  } | null>(null);
   const geo = useGeolocation();
   const geoRequest = geo.request;
 
@@ -62,6 +67,7 @@ export function CheckInFlow({
     setSelfie("");
     setErrorMsg("");
     setDoneAt("");
+    setEvalInfo(null);
     if (mode === "out") {
       setProjectId(activeProjectId ?? "");
       setStep("locate");
@@ -96,14 +102,25 @@ export function CheckInFlow({
     if (!geo.position) return;
     setStep("submitting");
     const { lat, lng, accuracy } = geo.position;
-    const res =
-      mode === "in"
-        ? await checkInAction({ projectId, lat, lng, accuracy, selfieDataUrl: selfie })
-        : await checkOutAction({ lat, lng, accuracy, selfieDataUrl: selfie });
-    if (res.error) {
-      setErrorMsg(res.error);
-      setStep("error");
-      return;
+    if (mode === "in") {
+      const checkInRes = await checkInAction({ projectId, lat, lng, accuracy, selfieDataUrl: selfie });
+      if (checkInRes.error) {
+        setErrorMsg(checkInRes.error);
+        setStep("error");
+        return;
+      }
+      setEvalInfo({
+        creditType: checkInRes.creditType,
+        lateIndex: checkInRes.lateIndex,
+        lateMessage: checkInRes.lateMessage,
+      });
+    } else {
+      const checkOutRes = await checkOutAction({ lat, lng, accuracy, selfieDataUrl: selfie });
+      if (checkOutRes.error) {
+        setErrorMsg(checkOutRes.error);
+        setStep("error");
+        return;
+      }
     }
     const at = new Date().toISOString();
     setDoneAt(at);
@@ -191,12 +208,54 @@ export function CheckInFlow({
       )}
 
       {step === "success" && (
-        <div className="flex flex-col items-center gap-3 py-8 text-center">
+        <div className="flex flex-col items-center gap-3 py-6 text-center">
           <CheckCircle2 className="h-12 w-12 text-success" />
           <p className="text-lg font-semibold">
             {mode === "in" ? "Checked in" : "Checked out"} at {formatTime(doneAt)}
           </p>
           {project && <p className="text-sm text-muted-foreground">{project.name}</p>}
+
+          {mode === "in" && evalInfo && (
+            <div className="mt-1 w-full rounded-lg border p-3 text-left text-xs space-y-1">
+              {evalInfo.creditType === "on_time" && (
+                <div className="flex items-center gap-2 font-medium text-success">
+                  <span className="inline-block h-2 w-2 rounded-full bg-success" />
+                  <span>On-time arrival (by 9:30 AM) — Full Day (1.0d) credited</span>
+                </div>
+              )}
+              {evalInfo.creditType === "late_grace" && (
+                <div className="rounded border border-amber-500/30 bg-amber-500/10 p-2.5 text-amber-900 dark:text-amber-300">
+                  <div className="flex items-center gap-1.5 font-semibold">
+                    <span>⚠️ Late Arrival #{evalInfo.lateIndex} of 3 Allowed</span>
+                  </div>
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    Covered under monthly grace allowance (up to 10:15 AM). Full Day (1.0d) credited.
+                  </p>
+                </div>
+              )}
+              {evalInfo.creditType === "late_half_day" && (
+                <div className="rounded border border-orange-500/30 bg-orange-500/10 p-2.5 text-orange-900 dark:text-orange-300">
+                  <div className="flex items-center gap-1.5 font-semibold">
+                    <span>⚠️ 4th Late Arrival — Counted as Half Day</span>
+                  </div>
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    Exceeded 3 monthly grace late arrivals. Today is marked as a Half Day (0.5 paid day).
+                  </p>
+                </div>
+              )}
+              {evalInfo.creditType === "late_cutoff_half_day" && (
+                <div className="rounded border border-orange-500/30 bg-orange-500/10 p-2.5 text-orange-900 dark:text-orange-300">
+                  <div className="flex items-center gap-1.5 font-semibold">
+                    <span>⚠️ Checked In After 10:15 AM Cutoff — Half Day</span>
+                  </div>
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    Arrival past 10:15 AM grace cutoff. Today is marked as a Half Day (0.5 paid day).
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
           <Button className="mt-2 h-12 w-full" onClick={onClose}>
             Done
           </Button>
