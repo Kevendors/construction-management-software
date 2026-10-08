@@ -3,9 +3,15 @@ import "server-only";
 import webpush from "web-push";
 import { createAdminClient } from "@/lib/supabase/admin";
 
-const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-const privateKey = process.env.VAPID_PRIVATE_KEY;
-const subject = process.env.VAPID_SUBJECT || "mailto:support@keyvendors.com";
+export const DEFAULT_VAPID_PUBLIC_KEY =
+  "BFaDSDfZ41GG4LuXI4Z-YgfWrJvfiVQSqjV35qxq_TlhP1JCi8DmJ6bM5k0_aY2kM6Zmm7wTaO3FQtbjYGZOjP8";
+export const DEFAULT_VAPID_PRIVATE_KEY =
+  "gjSaH1arwhPXU9b9P4nYYGbXBWzLC7AzAXT6m0HeVUg";
+export const DEFAULT_VAPID_SUBJECT = "mailto:support@keyvendors.com";
+
+const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || DEFAULT_VAPID_PUBLIC_KEY;
+const privateKey = process.env.VAPID_PRIVATE_KEY || DEFAULT_VAPID_PRIVATE_KEY;
+const subject = process.env.VAPID_SUBJECT || DEFAULT_VAPID_SUBJECT;
 
 let isConfigured = false;
 

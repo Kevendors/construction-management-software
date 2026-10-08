@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { LogOut, ChevronDown } from "lucide-react";
+import Link from "next/link";
+import { LogOut, ChevronDown, Bell } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { signOutAction } from "@/app/login/actions";
 import { roleLabel } from "@/lib/labels";
@@ -53,6 +54,15 @@ export function AccountMenu() {
             <p className="text-sm font-medium">{name}</p>
             <p className="truncate text-xs text-muted-foreground">{email}</p>
             {role && <p className="mt-0.5 text-[11px] font-medium text-primary">{roleLabel[role] ?? role}</p>}
+          </div>
+          <div className="p-1 border-b border-border">
+            <Link
+              href="/notifications"
+              onClick={() => setOpen(false)}
+              className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-foreground hover:bg-secondary transition-colors"
+            >
+              <Bell className="h-4 w-4 text-muted-foreground" /> Notifications
+            </Link>
           </div>
           <form action={signOutAction}>
             <button

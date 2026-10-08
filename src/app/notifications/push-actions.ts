@@ -4,10 +4,15 @@ import { getAuthContext } from "@/lib/auth/context";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
+  DEFAULT_VAPID_PUBLIC_KEY,
   isWebPushConfigured,
   sendWebPushBatch,
   type PushSubscriptionRecord,
 } from "@/lib/notifications/web-push";
+
+export async function getVapidPublicKeyAction(): Promise<string> {
+  return process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || DEFAULT_VAPID_PUBLIC_KEY;
+}
 
 export interface SaveSubscriptionInput {
   endpoint: string;

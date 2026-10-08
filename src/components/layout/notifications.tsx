@@ -130,11 +130,17 @@ export function Notifications() {
       </button>
 
       {open && (
-        <div className="absolute right-0 z-40 mt-2 w-84 sm:w-96 overflow-hidden rounded-xl border border-border bg-popover shadow-xl animate-in fade-in-50 zoom-in-95">
+        <div className="fixed inset-x-3 top-18 z-50 flex max-h-[calc(100dvh-5.5rem)] flex-col overflow-hidden rounded-xl border border-border bg-popover shadow-2xl animate-in fade-in-50 zoom-in-95 sm:absolute sm:inset-auto sm:right-0 sm:top-full sm:mt-2 sm:max-h-[34rem] sm:w-96">
           {/* Header */}
-          <div className="flex items-center justify-between border-b border-border bg-card/60 px-4 py-3">
+          <div className="flex shrink-0 items-center justify-between border-b border-border bg-card/60 px-4 py-3">
             <div className="flex items-center gap-2">
-              <span className="text-sm font-semibold">Notifications</span>
+              <Link
+                href="/notifications"
+                onClick={() => setOpen(false)}
+                className="text-sm font-semibold hover:text-primary transition-colors"
+              >
+                Notifications
+              </Link>
               {unreadCount > 0 && (
                 <span className="rounded-full bg-accent/15 px-2 py-0.5 text-[11px] font-medium text-accent">
                   {unreadCount} new
@@ -152,7 +158,7 @@ export function Notifications() {
           </div>
 
           {/* Filter Pills */}
-          <div className="flex border-b border-border/60 bg-muted/30 px-3 py-1.5 gap-1.5 text-xs">
+          <div className="flex shrink-0 border-b border-border/60 bg-muted/30 px-3 py-1.5 gap-1.5 text-xs">
             <button
               onClick={() => setFilter("all")}
               className={cn(
@@ -178,7 +184,7 @@ export function Notifications() {
           </div>
 
           {/* Notifications List */}
-          <ul className="max-h-[26rem] divide-y divide-border/50 overflow-y-auto">
+          <ul className="flex-1 min-h-0 divide-y divide-border/50 overflow-y-auto">
             {displayed.length === 0 ? (
               <li className="py-10 text-center">
                 <Bell className="mx-auto h-8 w-8 text-muted-foreground/40 mb-2" />
@@ -258,8 +264,19 @@ export function Notifications() {
             )}
           </ul>
 
-          {/* Out-of-app Web Push banner & controls */}
-          <PushBanner />
+          {/* Out-of-app Web Push banner & controls (docked at bottom, always visible) */}
+          <div className="shrink-0 border-t border-border">
+            <PushBanner />
+            <div className="border-t border-border/60 bg-muted/20 px-3 py-1.5 text-center text-xs">
+              <Link
+                href="/notifications"
+                onClick={() => setOpen(false)}
+                className="text-[11px] font-medium text-primary hover:underline"
+              >
+                Open notification center &rarr;
+              </Link>
+            </div>
+          </div>
         </div>
       )}
     </div>
