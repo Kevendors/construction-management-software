@@ -454,33 +454,51 @@ export function AdminAttendanceTab({
             </CardTitle>
           </CardHeader>
           <CardContent className="pt-0">
-            <div className="flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground pb-2">
-              <span className="flex items-center gap-1"><strong className="text-success">P</strong> = Present (1.0d)</span>
-              <span className="flex items-center gap-1"><strong className="text-amber-600 dark:text-amber-400">L</strong> = Late Grace (≤10:15 AM, 1-3 allowed)</span>
-              <span className="flex items-center gap-1"><strong className="text-orange-600 dark:text-orange-400">HD</strong> = Half Day (4th late / &gt;10:15 AM)</span>
-              <span className="flex items-center gap-1"><strong className="text-destructive">A</strong> = Absent</span>
-              <span className="flex items-center gap-1"><strong className="text-muted-foreground">H</strong> = Sunday</span>
+            <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 rounded-md border border-border bg-secondary/30 px-3 py-2 text-[11px] text-muted-foreground">
+              <LegendDot className="bg-success" label="Present" />
+              <LegendDot className="bg-amber-500" label="Late grace (≤10:15, 1–3/mo)" />
+              <LegendDot className="bg-orange-500" label="Half day (4th late / after 10:15)" />
+              <LegendDot className="bg-destructive" label="Absent" />
+              <LegendDot className="bg-muted-foreground/40" label="Sunday" />
+              <span className="ml-auto text-muted-foreground/70">Click any day to mark or correct it</span>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
+            <div className="overflow-x-auto rounded-md border border-border">
+              <table className="w-full border-collapse text-xs">
                 <thead>
-                  <tr className="border-b border-border text-muted-foreground">
-                    <th className="sticky left-0 bg-card py-2 pr-3 text-left font-medium">Employee</th>
-                    {monthDays.map((d) => (
-                      <th key={d} className="min-w-6 px-0.5 py-2 text-center font-normal tabular-nums">
-                        {Number(d.slice(-2))}
-                      </th>
-                    ))}
-                    <th className="py-2 pl-3 text-right font-medium">Paid / Summary</th>
-                    <th className="py-2 pl-3 text-right font-medium">OT</th>
+                  <tr className="border-b border-border bg-secondary/40 text-muted-foreground">
+                    <th className="sticky left-0 z-10 border-r border-border bg-secondary/40 px-3 py-2 text-left font-medium">
+                      Employee
+                    </th>
+                    {monthDays.map((d) => {
+                      const isSunday = new Date(`${d}T00:00:00`).getDay() === 0;
+                      return (
+                        <th
+                          key={d}
+                          className={`w-8 px-0.5 py-2 text-center font-normal tabular-nums ${isSunday ? "bg-muted-foreground/5" : ""}`}
+                        >
+                          {Number(d.slice(-2))}
+                        </th>
+                      );
+                    })}
+                    <th className="border-l border-border px-3 py-2 text-right font-medium">Paid</th>
+                    <th className="px-3 py-2 text-right font-medium">OT</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {monthlyRows.map(({ member, records, summary }) => {
+                  {monthlyRows.length === 0 && (
+                    <tr>
+                      <td colSpan={monthDays.length + 3} className="py-8 text-center text-sm text-muted-foreground">
+                        No members match the filters.
+                      </td>
+                    </tr>
+                  )}
+                  {monthlyRows.map(({ member, records, summary }, rowIdx) => {
                     const evaluation = evaluateEmployeeMonthAttendance(records, month);
                     return (
-                      <tr key={member.userId} className="border-b border-border/60">
-                        <td className="sticky left-0 whitespace-nowrap bg-card py-1.5 pr-3 font-medium">
+                      <tr key={member.userId} className={rowIdx % 2 === 1 ? "bg-secondary/15" : undefined}>
+                        <td
+                          className={`sticky left-0 z-10 whitespace-nowrap border-r border-border px-3 py-1.5 font-medium ${rowIdx % 2 === 1 ? "bg-secondary/15" : "bg-card"}`}
+                        >
                           <button
                             type="button"
                             onClick={() => openEmployee(member.userId)}
@@ -497,44 +515,51 @@ export function AdminAttendanceTab({
                           const glyph =
                             status === "present"
                               ? ev?.glyph || (record?.source === "admin" ? "P*" : "P")
-                              : status === "absent" ? "A" : status === "holiday" ? "H" : "";
+                              : status === "absent" ? "A" : status === "holiday" ? "" : "";
                           const isGrace = ev?.creditType === "late_grace";
                           const isHalf = ev?.creditType === "late_half_day" || ev?.creditType === "late_cutoff_half_day";
+                          const tooltip =
+                            ev?.reason ||
+                            (record?.source === "admin" ? `Manually marked — ${record.note}` : undefined) ||
+                            (status === "absent" ? "Absent — click to mark attendance" : undefined) ||
+                            (status === "holiday" ? "Sunday — click to record if worked" : undefined);
 
                           return (
-                            <td
-                              key={d}
-                              title={ev?.reason || (record?.source === "admin" ? `Manually marked — ${record.note}` : undefined)}
-                              className={
-                                status === "present" && isHalf
-                                  ? "cursor-pointer px-0.5 py-1.5 text-center font-bold text-orange-700 dark:text-orange-300 bg-orange-500/15"
-                                  : status === "present" && isGrace
-                                  ? "cursor-pointer px-0.5 py-1.5 text-center font-semibold text-amber-700 dark:text-amber-400 bg-amber-500/15"
-                                  : status === "present"
-                                  ? "cursor-pointer px-0.5 py-1.5 text-center font-medium text-success"
-                                  : status === "absent"
-                                  ? "px-0.5 py-1.5 text-center text-destructive"
-                                  : "px-0.5 py-1.5 text-center text-muted-foreground/60"
-                              }
-                              onClick={() => record && setSelected(record)}
-                            >
-                              {glyph}
+                            <td key={d} className="px-0.5 py-1.5 text-center align-middle">
+                              <button
+                                type="button"
+                                title={tooltip}
+                                onClick={() => setMarkContext({ userId: member.userId, date: d, existing: record ?? null })}
+                                className={
+                                  "mx-auto flex h-6 w-6 items-center justify-center rounded-md text-[11px] font-semibold transition-colors hover:ring-2 hover:ring-primary/40 " +
+                                  (status === "present" && isHalf
+                                    ? "bg-orange-500/20 text-orange-700 dark:text-orange-300"
+                                    : status === "present" && isGrace
+                                    ? "bg-amber-500/20 text-amber-700 dark:text-amber-400"
+                                    : status === "present"
+                                    ? "bg-success/15 text-success"
+                                    : status === "absent"
+                                    ? "bg-destructive/10 text-destructive"
+                                    : "text-muted-foreground/40")
+                                }
+                              >
+                                {glyph}
+                              </button>
                             </td>
                           );
                         })}
-                        <td className="py-1.5 pl-3 text-right tabular-nums">
-                          <div>
+                        <td className="border-l border-border px-3 py-1.5 text-right align-middle">
+                          <div className="tabular-nums">
                             <span className="font-semibold text-foreground">{summary.effectivePaidDays}d</span>
-                            <span className="text-[10px] text-muted-foreground ml-1">paid</span>
                           </div>
-                          <div className="text-[10px] text-muted-foreground">
-                            <span className="text-success font-medium">{summary.present}P</span>
-                            {summary.halfDay > 0 && <span className="text-orange-600 dark:text-orange-400 font-semibold"> · {summary.halfDay}HD</span>}
-                            {summary.lateCount > 0 && <span className="text-amber-600 dark:text-amber-400"> · {summary.lateCount}L</span>}
-                            <span className="text-destructive"> · {summary.absent}A</span>
+                          <div className="mt-0.5 flex justify-end gap-1.5 whitespace-nowrap text-[10px] tabular-nums text-muted-foreground">
+                            <span className="text-success">{summary.present}P</span>
+                            {summary.halfDay > 0 && <span className="text-orange-600 dark:text-orange-400">{summary.halfDay}HD</span>}
+                            {summary.lateCount > 0 && <span className="text-amber-600 dark:text-amber-400">{summary.lateCount}L</span>}
+                            <span className="text-destructive">{summary.absent}A</span>
                           </div>
                         </td>
-                        <td className="py-1.5 pl-3 text-right tabular-nums">
+                        <td className="px-3 py-1.5 text-right align-middle tabular-nums">
                           {formatDuration(records.reduce((s, r) => s + r.overtimeMinutes, 0))}
                         </td>
                       </tr>
@@ -706,5 +731,14 @@ export function AdminAttendanceTab({
         existing={markContext?.existing}
       />
     </div>
+  );
+}
+
+function LegendDot({ className, label }: { className: string; label: string }) {
+  return (
+    <span className="flex items-center gap-1.5">
+      <span className={`h-2 w-2 shrink-0 rounded-full ${className}`} />
+      {label}
+    </span>
   );
 }
