@@ -465,8 +465,8 @@ export function AdminAttendanceTab({
             <div className="overflow-x-auto rounded-md border border-border">
               <table className="w-full border-collapse text-xs">
                 <thead>
-                  <tr className="border-b border-border bg-secondary/40 text-muted-foreground">
-                    <th className="sticky left-0 z-10 border-r border-border bg-secondary/40 px-3 py-2 text-left font-medium">
+                  <tr className="border-b border-border bg-muted text-muted-foreground">
+                    <th className="sticky left-0 z-10 border-r border-border bg-muted px-3 py-2 text-left font-medium">
                       Employee
                     </th>
                     {monthDays.map((d) => {
@@ -494,10 +494,11 @@ export function AdminAttendanceTab({
                   )}
                   {monthlyRows.map(({ member, records, summary }, rowIdx) => {
                     const evaluation = evaluateEmployeeMonthAttendance(records, month);
+                    const rowBg = rowIdx % 2 === 1 ? "bg-muted" : "bg-card";
                     return (
-                      <tr key={member.userId} className={rowIdx % 2 === 1 ? "bg-secondary/15" : undefined}>
+                      <tr key={member.userId} className={rowBg}>
                         <td
-                          className={`sticky left-0 z-10 whitespace-nowrap border-r border-border px-3 py-1.5 font-medium ${rowIdx % 2 === 1 ? "bg-secondary/15" : "bg-card"}`}
+                          className={`sticky left-0 z-10 whitespace-nowrap border-r border-border px-3 py-1.5 font-medium ${rowBg}`}
                         >
                           <button
                             type="button"
