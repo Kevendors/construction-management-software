@@ -205,11 +205,73 @@ export async function saveQuotationAction(
   return { id: quotationId };
 }
 
-/** Load a saved quotation's full builder state for re-opening / editing. */
+/**
+ * Load a saved quotation's full builder state for re-opening / editing.
+ *
+ * Falls back to rebuilding the state from the normalized columns +
+ * `quotation_items` + the joined client when `payload` is null (a
+ * pre-payload-era or otherwise payload-less row) — the same data-loss gap
+ * already found and fixed for invoices (see `getInvoicePayloadAction`).
+ * Without this, opening such a quotation silently shows a blank form
+ * instead of its real saved data.
+ */
 export async function getQuotationPayloadAction(id: string): Promise<QuoteState | null> {
   const supabase = await createClient();
-  const { data } = await supabase.from("quotations").select("payload").eq("id", id).maybeSingle();
-  return (data?.payload as QuoteState | undefined) ?? null;
+  const { data } = await supabase
+    .from("quotations")
+    .select(
+      "payload, number, date, valid_until, tax_rate, project_name, quotation_items(id, description, qty, unit, rate), clients(name, company, email, phone, address, gst)"
+    )
+    .eq("id", id)
+    .maybeSingle();
+  if (!data) return null;
+
+  const payload = data.payload as QuoteState | undefined;
+  if (payload) return payload;
+
+  const row = data as unknown as {
+    number: string | null;
+    date: string;
+    valid_until: string | null;
+    tax_rate: number | null;
+    project_name: string | null;
+    quotation_items?: { id: string; description: string; qty: number; unit: string | null; rate: number }[];
+    clients?: { name?: string; company?: string; email?: string; phone?: string; address?: string; gst?: string } | null;
+  };
+
+  return {
+    clientName: row.clients?.name ?? "",
+    company: row.clients?.company ?? "",
+    contact: row.clients?.phone ?? "",
+    email: row.clients?.email ?? "",
+    address: row.clients?.address ?? "",
+    siteLocation: "",
+    clientGstin: row.clients?.gst ?? "",
+    quoteName: row.project_name ?? "",
+    number: row.number ?? "",
+    date: row.date,
+    validTill: row.valid_until ?? "",
+    taxMode: "intra",
+    gstRate: Number(row.tax_rate ?? 0),
+    discount: 0,
+    additionalLabel: "Additional Charges",
+    additionalCharges: 0,
+    lines: (row.quotation_items ?? []).map((it) => ({
+      id: it.id,
+      itemId: null,
+      description: it.description,
+      unit: (it.unit ?? "") as QuoteState["lines"][number]["unit"],
+      usesSqft: false,
+      rate: Number(it.rate) || 0,
+      qty: Number(it.qty) || 0,
+      sqft: 1,
+      specific: "",
+      lumpsumMode: "none",
+    })),
+    notes: "",
+    terms: "",
+    signatureUrl: "",
+  };
 }
 
 export type QuotationStatus = "draft" | "sent" | "accepted" | "rejected";
