@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, KeyRound, UserPlus } from "lucide-react";
+import { CheckCircle2, KeyRound, Pencil, UserPlus } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/table";
 import {
   createMemberAction,
+  renameMemberAction,
   resetMemberPasswordAction,
   setMemberActiveAction,
   setMemberPoAccessAction,
@@ -203,6 +204,54 @@ function ResetPasswordDialog({ member, onClose }: { member: TeamMember | null; o
   );
 }
 
+function RenameMemberDialog({ member, onClose }: { member: TeamMember | null; onClose: () => void }) {
+  const router = useRouter();
+  const [name, setName] = React.useState(member?.name ?? "");
+  const [saving, setSaving] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    setName(member?.name ?? "");
+    setError(null);
+  }, [member]);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!member) return;
+    setSaving(true);
+    setError(null);
+    const res = await renameMemberAction(member.userId, name);
+    setSaving(false);
+    if (res.error) return setError(res.error);
+    onClose();
+    router.refresh();
+  }
+
+  return (
+    <Dialog
+      open={!!member}
+      onClose={onClose}
+      title="Edit Name"
+      description={member ? `Change the display name for ${member.name}.` : ""}
+    >
+      <form onSubmit={submit} className="space-y-4">
+        <div className="space-y-1.5">
+          <Label htmlFor="rn-name">Full name</Label>
+          <Input id="rn-name" value={name} onChange={(e) => setName(e.target.value)} autoFocus required />
+          <p className="text-xs text-muted-foreground">
+            This only changes how their name is shown — their login phone number and password stay the same.
+          </p>
+        </div>
+        {error && <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
+        <div className="flex justify-end gap-2 pt-2">
+          <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+          <Button type="submit" disabled={saving}>{saving ? "Saving…" : "Save"}</Button>
+        </div>
+      </form>
+    </Dialog>
+  );
+}
+
 export function TeamBoard({
   members,
   currentUserId,
@@ -216,6 +265,7 @@ export function TeamBoard({
   const [open, setOpen] = React.useState(false);
   const [busy, setBusy] = React.useState<string | null>(null);
   const [resetting, setResetting] = React.useState<TeamMember | null>(null);
+  const [renaming, setRenaming] = React.useState<TeamMember | null>(null);
 
   async function changeRole(userId: string, role: Role) {
     setBusy(userId);
@@ -284,6 +334,16 @@ export function TeamBoard({
                       <div className="flex items-center gap-2">
                         <Avatar initials={initials(m.name)} color="#1e3a5f" className="h-7 w-7 text-[10px]" />
                         <span className="font-medium">{m.name}{self && <span className="ml-1 text-xs text-muted-foreground">(you)</span>}</span>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                          aria-label={`Edit ${m.name}'s name`}
+                          title="Edit name"
+                          onClick={() => setRenaming(m)}
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
                       </div>
                     </TableCell>
                     <TableCell className="font-mono text-xs text-muted-foreground">{m.employeeId || "—"}</TableCell>
@@ -362,6 +422,11 @@ export function TeamBoard({
         key={resetting?.userId ?? "none"}
         member={resetting}
         onClose={() => setResetting(null)}
+      />
+      <RenameMemberDialog
+        key={`rename-${renaming?.userId ?? "none"}`}
+        member={renaming}
+        onClose={() => setRenaming(null)}
       />
     </>
   );

@@ -138,6 +138,35 @@ export async function setMemberRoleAction(userId: string, role: Role): Promise<A
   return { id: userId };
 }
 
+/** Admin-only: rename a member (their display name — not their login phone/password). */
+export async function renameMemberAction(userId: string, name: string): Promise<ActionResult> {
+  const ctx = await getAuthContext();
+  if (!ctx || !isAdminRole(ctx.role)) return { error: "Not authorized." };
+  const trimmed = name.trim();
+  if (!trimmed) return { error: "Name can't be empty." };
+
+  const admin = createAdminClient();
+  const { error: profileErr } = await admin
+    .from("profiles")
+    .upsert({ id: userId, name: trimmed, initials: initialsOf(trimmed) }, { onConflict: "id" });
+  if (profileErr) return { error: profileErr.message };
+
+  // Best-effort: keep the auth user's own metadata in sync too (it's the
+  // fallback name source if a profile row is ever missing).
+  const { data: userRes } = await admin.auth.admin.getUserById(userId);
+  await admin.auth.admin.updateUserById(userId, {
+    user_metadata: { ...(userRes?.user?.user_metadata ?? {}), name: trimmed },
+  });
+
+  await logActivity({
+    action: "updated",
+    entityType: "member",
+    entityId: userId,
+    summary: `Renamed to ${trimmed}`,
+  });
+  return { id: userId };
+}
+
 /** Admin-only: grant/revoke a member's access to Purchase Orders. */
 export async function setMemberPoAccessAction(userId: string, canView: boolean): Promise<ActionResult> {
   const ctx = await getAuthContext();
