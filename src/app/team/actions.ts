@@ -151,12 +151,9 @@ export async function renameMemberAction(userId: string, name: string): Promise<
     .upsert({ id: userId, name: trimmed, initials: initialsOf(trimmed) }, { onConflict: "id" });
   if (profileErr) return { error: profileErr.message };
 
-  // Best-effort: keep the auth user's own metadata in sync too (it's the
-  // fallback name source if a profile row is ever missing).
-  const { data: userRes } = await admin.auth.admin.getUserById(userId);
-  await admin.auth.admin.updateUserById(userId, {
-    user_metadata: { ...(userRes?.user?.user_metadata ?? {}), name: trimmed },
-  });
+  // profiles.name is always the primary source /team reads (see page.tsx) —
+  // no need to also round-trip the slower Auth Admin API to sync
+  // user_metadata.name, which is only ever consulted as a fallback.
 
   await logActivity({
     action: "updated",
