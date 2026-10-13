@@ -199,12 +199,15 @@ export async function updateMemberPhoneAction(userId: string, phone: string): Pr
     user_metadata: { ...(existing.user?.user_metadata ?? {}), phone: phone.trim() },
   });
   if (error) {
-    // Supabase surfaces a duplicate-email conflict as a generic message —
-    // reword it in terms the admin actually typed (a phone, not an email).
-    if (error.message.toLowerCase().includes("already been registered")) {
+    // The underlying conflict is a raw Postgres unique-violation on the
+    // email-alias column (not GoTrue's usual signup-style error shape), so
+    // `.message` isn't reliably a clean string here — guard it and reword
+    // in terms the admin actually typed (a phone, not an email/DB error).
+    const raw = String((error as { message?: string }).message ?? error);
+    if (/duplicate key|already exist|already been registered/i.test(raw)) {
       return { error: "That phone number is already used by another account." };
     }
-    return { error: error.message };
+    return { error: raw || "Could not update the login phone — please try again." };
   }
 
   await logActivity({
