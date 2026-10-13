@@ -31,11 +31,14 @@ export interface AttendanceMember {
   name: string;
   employeeId: string;
   role: Role;
+  /** True when this member has no project_members roster entry — the office (not site) flow applies to them. */
+  isOffice: boolean;
 }
 
 export interface AttendanceAdminBoard {
   records: EmployeeAttendance[];
   members: AttendanceMember[];
+  holidays: OrgHoliday[];
 }
 
 /** Single org for now; make per-org when a second timezone shows up. */
@@ -139,18 +142,33 @@ export function formatTime(iso: string): string {
 
 export type DayStatus = "present" | "absent" | "holiday" | "future";
 
+/** A company holiday declared by an admin — see org_holidays (migration 0037). */
+export interface OrgHoliday {
+  date: string; // "YYYY-MM-DD"
+  label: string;
+  appliesTo: "all" | "office";
+}
+
+/** True when `date` is a declared holiday that excuses this particular employee. */
+export function isHolidayFor(date: string, holidays: OrgHoliday[], isOffice: boolean): boolean {
+  return holidays.some((h) => h.date === date && (h.appliesTo === "all" || (h.appliesTo === "office" && isOffice)));
+}
+
 /**
- * Status of one calendar day given the user's records. Sundays are holidays
- * (no org holiday table yet); a past working day without a record is absent;
- * today/future without a record is not counted either way.
+ * Status of one calendar day given the user's records. Sundays are always
+ * holidays; `isExtraHoliday` additionally marks admin-declared holidays
+ * (already filtered to whether they apply to this employee — see
+ * isHolidayFor). A past working day without a record is absent; today/future
+ * without a record is not counted either way.
  */
 export function dayStatus(
   date: string,
   hasRecord: boolean,
-  today: string = orgToday()
+  today: string = orgToday(),
+  isExtraHoliday: boolean = false
 ): DayStatus {
   if (hasRecord) return "present";
-  if (new Date(`${date}T00:00:00`).getDay() === 0) return "holiday";
+  if (new Date(`${date}T00:00:00`).getDay() === 0 || isExtraHoliday) return "holiday";
   return date < today ? "absent" : "future";
 }
 
@@ -321,7 +339,9 @@ export function daysOfMonth(month: string): string[] {
 export function monthlySummary(
   records: EmployeeAttendance[],
   month: string,
-  today: string = orgToday()
+  today: string = orgToday(),
+  holidays: OrgHoliday[] = [],
+  isOffice: boolean = false
 ): MonthlySummary {
   const evalResult = evaluateEmployeeMonthAttendance(records, month);
   // Days with an explicit-absent row already have a record, so dayStatus()
@@ -340,7 +360,7 @@ export function monthlySummary(
       absent += 1;
       continue;
     }
-    const status = dayStatus(date, recorded.has(date), today);
+    const status = dayStatus(date, recorded.has(date), today, isHolidayFor(date, holidays, isOffice));
     if (status === "absent") absent += 1;
     else if (status === "holiday") holiday += 1;
   }

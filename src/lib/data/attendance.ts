@@ -11,11 +11,12 @@ import {
   type AttendanceAdminBoard,
   type AttendanceMember,
   type MyAttendanceData,
+  type OrgHoliday,
 } from "@/lib/attendance/compute";
 import { mapProject, type ProjectRow } from "./mappers";
 
 // Re-export the client-safe board types for existing import sites.
-export type { AttendanceAdminBoard, AttendanceMember, MyAttendanceData };
+export type { AttendanceAdminBoard, AttendanceMember, MyAttendanceData, OrgHoliday };
 
 // mock fallback
 import {
@@ -246,6 +247,7 @@ export async function getMyAttendancePage(month?: string): Promise<MyAttendanceD
  */
 export async function getAttendanceAdminBoard(): Promise<AttendanceAdminBoard> {
   if (!isSupabaseConfigured()) {
+    const rosterUserIds = new Set(mockProjectMembers.map((pm) => pm.userId));
     return {
       records: [...mockEmployeeAttendance].sort((a, b) => b.date.localeCompare(a.date)),
       members: mockUsers.map((u, i) => ({
@@ -253,13 +255,15 @@ export async function getAttendanceAdminBoard(): Promise<AttendanceAdminBoard> {
         name: u.name,
         employeeId: `KV${String(i + 1).padStart(3, "0")}`,
         role: u.role,
+        isOffice: !rosterUserIds.has(u.id),
       })),
+      holidays: [],
     };
   }
 
   const ctx = await getAuthContext();
   if (!ctx?.orgId || !(ctx.role === "super_admin" || ctx.role === "hr")) {
-    return { records: [], members: [] };
+    return { records: [], members: [], holidays: [] };
   }
 
   const admin = createAdminClient();
@@ -282,7 +286,7 @@ export async function getAttendanceAdminBoard(): Promise<AttendanceAdminBoard> {
   memRows = memRows.filter((m) => m.is_active ?? true);
 
   const ids = memRows.map((m) => m.user_id);
-  const [profRes, attRes] = await Promise.all([
+  const [profRes, attRes, pmRes, holidaysRes] = await Promise.all([
     admin
       .from("profiles")
       .select("id, name")
@@ -292,19 +296,28 @@ export async function getAttendanceAdminBoard(): Promise<AttendanceAdminBoard> {
       .select("*")
       .eq("org_id", ctx.orgId)
       .order("date", { ascending: false }),
+    admin.from("project_members").select("user_id").in("user_id", ids.length ? ids : ["00000000-0000-0000-0000-000000000000"]),
+    admin.from("org_holidays").select("date, label, applies_to").eq("org_id", ctx.orgId),
   ]);
   if (attRes.error) throw attRes.error;
 
   const nameById = new Map((profRes.data ?? []).map((p) => [p.id as string, (p.name as string) || "User"]));
+  const rosterUserIds = new Set((pmRes.data ?? []).map((r) => (r as { user_id: string }).user_id));
   const members: AttendanceMember[] = memRows
     .map((m) => ({
       userId: m.user_id,
       name: nameById.get(m.user_id) ?? "User",
       employeeId: m.employee_id ?? "",
       role: m.role,
+      isOffice: !rosterUserIds.has(m.user_id),
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
   const memberById = new Map(members.map((m) => [m.userId, m]));
+  const holidays = (holidaysRes.data ?? []).map((h) => ({
+    date: (h as { date: string }).date,
+    label: (h as { label: string | null }).label ?? "Holiday",
+    appliesTo: (h as { applies_to: "all" | "office" }).applies_to,
+  }));
 
   return {
     records: ((attRes.data ?? []) as EmployeeAttendanceRow[]).map((r) => {
@@ -316,5 +329,6 @@ export async function getAttendanceAdminBoard(): Promise<AttendanceAdminBoard> {
       });
     }),
     members,
+    holidays,
   };
 }

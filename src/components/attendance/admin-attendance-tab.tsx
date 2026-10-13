@@ -22,6 +22,7 @@ import {
   evaluateEmployeeMonthAttendance,
   formatDuration,
   formatTime,
+  isHolidayFor,
   monthlySummary,
   orgThisMonth,
   orgToday,
@@ -31,6 +32,7 @@ import type { EmployeeAttendance, Project } from "@/lib/types";
 import { RecordDetailDialog } from "./record-detail-dialog";
 import { AdminMarkAttendanceDialog } from "./admin-mark-attendance-dialog";
 import { OfficeLocationCard } from "./office-location-card";
+import { HolidaysCard } from "./holidays-card";
 
 const STATUS_LABEL: Record<string, string> = {
   half_day: "Half Day",
@@ -100,7 +102,7 @@ export function AdminAttendanceTab({
       const recs = board.records.filter(
         (r) => r.userId === m.userId && r.date.startsWith(month) && (!projectId || r.projectId === projectId)
       );
-      return { member: m, records: recs, summary: monthlySummary(recs, month) };
+      return { member: m, records: recs, summary: monthlySummary(recs, month, orgToday(), board.holidays, m.isOffice) };
     })
     .filter((r) => !projectId || r.records.length > 0);
 
@@ -189,6 +191,7 @@ export function AdminAttendanceTab({
   return (
     <div className="space-y-4">
       <OfficeLocationCard />
+      <HolidaysCard />
 
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex rounded-md border border-border p-0.5">
@@ -411,7 +414,7 @@ export function AdminAttendanceTab({
                             )}
                             {record.source === "admin" && <Badge variant="outline">Manual</Badge>}
                           </div>
-                        ) : dayStatus(date, false) === "holiday" ? (
+                        ) : dayStatus(date, false, orgToday(), isHolidayFor(date, board.holidays, member.isOffice)) === "holiday" ? (
                           <Badge variant="muted">Holiday</Badge>
                         ) : (
                           <Badge variant="destructive">Missed</Badge>
@@ -449,7 +452,7 @@ export function AdminAttendanceTab({
                               <Pencil />
                             </Button>
                           ) : (
-                            dayStatus(date, false) !== "holiday" && (
+                            dayStatus(date, false, orgToday(), isHolidayFor(date, board.holidays, member.isOffice)) !== "holiday" && (
                               <Button
                                 size="sm"
                                 variant="ghost"
@@ -542,7 +545,8 @@ export function AdminAttendanceTab({
                         {monthDays.map((d) => {
                           const ev = evaluation.recordMap.get(d);
                           const record = ev?.record;
-                          const rawStatus = dayStatus(d, Boolean(record));
+                          const isDeclaredHoliday = isHolidayFor(d, board.holidays, member.isOffice);
+                          const rawStatus = dayStatus(d, Boolean(record), orgToday(), isDeclaredHoliday);
                           // explicit_absent has a real row, so dayStatus() (which only
                           // knows "does a row exist") would otherwise call it present.
                           const status = ev?.creditType === "explicit_absent" ? "absent" : rawStatus;
@@ -555,11 +559,16 @@ export function AdminAttendanceTab({
                               : status === "absent" ? "A" : status === "holiday" ? "" : "";
                           const isGrace = ev?.creditType === "late_grace";
                           const isHalf = ev?.creditType === "late_half_day" || ev?.creditType === "explicit_half_day";
+                          const holidayLabel = board.holidays.find((h) => h.date === d)?.label;
                           const tooltip =
                             ev?.reason ||
                             (record?.source === "admin" ? `Manually marked — ${record.note}` : undefined) ||
                             (status === "absent" ? "Absent — click to mark attendance" : undefined) ||
-                            (status === "holiday" ? "Sunday — click to record if worked" : undefined);
+                            (status === "holiday"
+                              ? isDeclaredHoliday && holidayLabel
+                                ? `${holidayLabel} — click to record if worked`
+                                : "Sunday — click to record if worked"
+                              : undefined);
 
                           return (
                             <td key={d} className="px-0.5 py-1.5 text-center align-middle">

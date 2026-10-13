@@ -423,6 +423,83 @@ export async function setOfficeGeofenceAction(
   return { id: ctx.orgId };
 }
 
+export interface HolidayInput {
+  date: string; // "YYYY-MM-DD"
+  label: string;
+  appliesTo: "all" | "office";
+}
+
+/** Any org member: list declared company holidays (read-only, RLS-gated). */
+export async function getOrgHolidaysAction(): Promise<
+  { date: string; label: string; appliesTo: "all" | "office" }[]
+> {
+  if (!isSupabaseConfigured()) return [];
+  const ctx = await getAuthContext();
+  if (!ctx?.orgId) return [];
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("org_holidays")
+    .select("date, label, applies_to")
+    .eq("org_id", ctx.orgId)
+    .order("date", { ascending: true });
+  return (data ?? []).map((h) => ({
+    date: h.date as string,
+    label: (h.label as string | null) ?? "Holiday",
+    appliesTo: h.applies_to as "all" | "office",
+  }));
+}
+
+/** Super_admin/hr only: declare a company holiday (upserts by date). */
+export async function addHolidayAction(input: HolidayInput): Promise<ActionResult> {
+  if (!isSupabaseConfigured()) return { id: "mock" };
+  const ctx = await getAuthContext();
+  if (!ctx?.orgId || !(ctx.role === "super_admin" || ctx.role === "hr")) return { error: "Not authorized." };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.date)) return { error: "Enter a valid date." };
+  if (!input.label.trim()) return { error: "Enter a label for the holiday." };
+
+  // org_holidays has no authenticated write policy — same admin-client
+  // pattern as the office geofence on orgs.
+  const admin = createAdminClient();
+  const { error } = await admin.from("org_holidays").upsert(
+    {
+      org_id: ctx.orgId,
+      date: input.date,
+      label: input.label.trim(),
+      applies_to: input.appliesTo,
+      created_by: ctx.userId,
+    },
+    { onConflict: "org_id,date" }
+  );
+  if (error) return { error: error.message };
+
+  await logActivity({
+    action: "created",
+    entityType: "org",
+    entityId: ctx.orgId,
+    summary: `${ctx.name} declared ${input.date} a holiday (${input.label.trim()}) — ${input.appliesTo === "office" ? "office staff" : "everyone"}`,
+  });
+  return { id: input.date };
+}
+
+/** Super_admin/hr only: remove a declared holiday. */
+export async function deleteHolidayAction(date: string): Promise<ActionResult> {
+  if (!isSupabaseConfigured()) return { id: "mock" };
+  const ctx = await getAuthContext();
+  if (!ctx?.orgId || !(ctx.role === "super_admin" || ctx.role === "hr")) return { error: "Not authorized." };
+
+  const admin = createAdminClient();
+  const { error } = await admin.from("org_holidays").delete().eq("org_id", ctx.orgId).eq("date", date);
+  if (error) return { error: error.message };
+
+  await logActivity({
+    action: "deleted",
+    entityType: "org",
+    entityId: ctx.orgId,
+    summary: `${ctx.name} removed the ${date} holiday`,
+  });
+  return { id: date };
+}
+
 /**
  * One-tap office punch-in: no project, no selfie — just GPS. Mirrors
  * checkInAction's late-arrival evaluation and notifications exactly; the
