@@ -10,8 +10,17 @@ export interface MyAttendanceData {
   unclosedPreviousShift?: EmployeeAttendance | null;
   /** All of the caller's records in `month`. */
   records: EmployeeAttendance[];
-  /** Projects the caller may check in to (all org projects for super_admin). */
+  /** Projects the caller is actually rostered to (via project_members). */
   assignedProjects: Project[];
+  /**
+   * True when the caller has a real project_members roster entry — the
+   * site (project-based, selfie) flow. False means the office (one-tap,
+   * no project) flow applies instead. Determined purely from assignment,
+   * not role.
+   */
+  hasExplicitProjectAssignment: boolean;
+  /** Org's shared office location for the office punch flow (all null = fence disabled). */
+  officeGeofence: { lat: number | null; lng: number | null; radiusM: number | null };
   employeeId: string;
   userName: string;
   month: string; // "YYYY-MM"
@@ -156,7 +165,10 @@ export type ShiftCreditType =
   | "late_grace"           // Checked in 09:31..10:15 AM (within 3 allowed per month) -> 1.0 day credit
   | "late_half_day"        // Checked in 09:31..10:15 AM (4th or later late arrival) -> 0.5 day credit
   | "late_cutoff_half_day" // Checked in > 10:15 AM (after grace cutoff) -> 0.5 day credit
-  | "manual_present";      // Admin marked without check_in_at -> 1.0 day credit
+  | "manual_present"       // Admin marked without check_in_at -> 1.0 day credit
+  | "leave"                // Admin explicitly marked Leave -> 1.0 day credit (paid)
+  | "explicit_half_day"    // Admin explicitly marked Half-Day -> 0.5 day credit
+  | "explicit_absent";     // Admin explicitly marked Absent -> 0 day credit
 
 export interface EvaluatedAttendanceRecord {
   record: EmployeeAttendance;
@@ -210,7 +222,29 @@ export function evaluateEmployeeMonthAttendance(
     let glyph = r.source === "admin" ? "P*" : "P";
     let reason = "";
 
-    if (!r.checkInAt) {
+    // Explicit admin-declared status wins outright — no punch-time logic
+    // applies to a day that was never actually punched.
+    if (r.status === "leave") {
+      creditType = "leave";
+      dayCredit = 1.0;
+      fullDays += 1;
+      badgeLabel = "Leave";
+      glyph = "LV";
+      reason = r.note ? `Marked Leave — ${r.note}` : "Marked Leave.";
+    } else if (r.status === "half_day") {
+      creditType = "explicit_half_day";
+      dayCredit = 0.5;
+      halfDays += 1;
+      badgeLabel = "Half Day";
+      glyph = "HD";
+      reason = r.note ? `Marked Half Day — ${r.note}` : "Marked Half Day.";
+    } else if (r.status === "absent") {
+      creditType = "explicit_absent";
+      dayCredit = 0;
+      badgeLabel = "Absent";
+      glyph = "A";
+      reason = r.note ? `Marked Absent — ${r.note}` : "Marked Absent.";
+    } else if (!r.checkInAt) {
       creditType = "manual_present";
       dayCredit = 1.0;
       fullDays += 1;
@@ -283,12 +317,13 @@ export function evaluateEmployeeMonthAttendance(
 }
 
 export interface MonthlySummary {
-  present: number;           // Full days (1.0 credits)
-  halfDay: number;           // Half days (0.5 credits)
+  present: number;           // Full days (1.0 credits) — includes on-time, late-grace, leave, manual
+  halfDay: number;           // Half days (0.5 credits) — includes auto-derived and explicit
   lateCount: number;         // Total late arrivals
   lateGraceUsed: number;     // Late arrivals within quota (<= 3)
   effectivePaidDays: number; // present + 0.5 * halfDay
-  absent: number;
+  leave: number;             // Explicit Leave days (also counted in `present`'s paid-day weight)
+  absent: number;            // No-record days + explicit Absent days
   holiday: number;
 }
 
@@ -305,11 +340,22 @@ export function monthlySummary(
   today: string = orgToday()
 ): MonthlySummary {
   const evalResult = evaluateEmployeeMonthAttendance(records, month);
+  // Days with an explicit-absent row already have a record, so dayStatus()
+  // (which only knows "does a row exist") would wrongly call them present —
+  // count them separately and add them in.
+  const explicitAbsentDates = new Set(
+    evalResult.evaluatedRecords.filter((e) => e.creditType === "explicit_absent").map((e) => e.record.date)
+  );
+  const leave = evalResult.evaluatedRecords.filter((e) => e.creditType === "leave").length;
   const recorded = new Set(records.filter((r) => r.date.startsWith(month)).map((r) => r.date));
   let absent = 0;
   let holiday = 0;
 
   for (const date of daysOfMonth(month)) {
+    if (explicitAbsentDates.has(date)) {
+      absent += 1;
+      continue;
+    }
     const status = dayStatus(date, recorded.has(date), today);
     if (status === "absent") absent += 1;
     else if (status === "holiday") holiday += 1;
@@ -321,6 +367,7 @@ export function monthlySummary(
     lateCount: evalResult.lateCount,
     lateGraceUsed: evalResult.lateGraceUsed,
     effectivePaidDays: evalResult.effectivePaidDays,
+    leave,
     absent,
     holiday,
   };

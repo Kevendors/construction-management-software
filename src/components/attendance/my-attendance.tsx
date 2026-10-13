@@ -16,6 +16,7 @@ import {
 import type { EmployeeAttendance } from "@/lib/types";
 import { CheckInCard } from "./check-in-card";
 import { CheckInFlow, type FlowSuccess } from "./check-in-flow";
+import { OfficeCheckInFlow } from "./office-check-in-flow";
 import { HistoryCalendar } from "./history-calendar";
 import { HistoryList } from "./history-list";
 import { MonthlySummary } from "./monthly-summary";
@@ -70,6 +71,7 @@ export function MyAttendance({ data }: { data: MyAttendanceData }) {
         source: "self",
         markedByName: "",
         note: "",
+        status: "present",
       });
     } else if (today) {
       const total = minutesBetween(today.checkInAt, result.at);
@@ -101,7 +103,7 @@ export function MyAttendance({ data }: { data: MyAttendanceData }) {
 
         <CheckInCard
           today={today}
-          hasProjects={data.assignedProjects.length > 0}
+          hasExplicitProjectAssignment={data.hasExplicitProjectAssignment}
           onStart={setFlowMode}
         />
 
@@ -156,14 +158,24 @@ export function MyAttendance({ data }: { data: MyAttendanceData }) {
         </Card>
       </div>
 
-      <CheckInFlow
-        open={flowMode !== null}
-        mode={flowMode ?? "in"}
-        projects={data.assignedProjects}
-        activeProjectId={today?.projectId}
-        onClose={() => setFlowMode(null)}
-        onSuccess={handleSuccess}
-      />
+      {data.hasExplicitProjectAssignment ? (
+        <CheckInFlow
+          open={flowMode !== null}
+          mode={flowMode ?? "in"}
+          projects={data.assignedProjects}
+          activeProjectId={today?.projectId}
+          onClose={() => setFlowMode(null)}
+          onSuccess={handleSuccess}
+        />
+      ) : (
+        <OfficeCheckInFlow
+          open={flowMode !== null}
+          mode={flowMode ?? "in"}
+          officeGeofence={data.officeGeofence}
+          onClose={() => setFlowMode(null)}
+          onSuccess={handleSuccess}
+        />
+      )}
     </>
   );
 }

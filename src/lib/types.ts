@@ -569,6 +569,13 @@ export interface EmployeeAttendance {
   markedByName: string;
   /** Required reason for an admin-marked entry ("" for self-verified records). */
   note: string;
+  /**
+   * "present" (default, incl. ordinary self/admin punches) | "half_day" /
+   * "leave" / "absent" when a super_admin/hr explicitly declared the day's
+   * type rather than correcting real punch times. Leave counts as a full
+   * paid day; Half-Day 0.5; Absent 0 — see evaluateEmployeeMonthAttendance.
+   */
+  status: "present" | "half_day" | "leave" | "absent";
 }
 
 export interface Advance {

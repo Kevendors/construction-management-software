@@ -52,20 +52,27 @@ export function AdminMarkAttendanceDialog({
   const [userId, setUserId] = React.useState("");
   const [date, setDate] = React.useState(defaultDate);
   const [projectId, setProjectId] = React.useState("");
+  const [status, setStatus] = React.useState<"present" | "half_day" | "leave" | "absent">("present");
   const [checkInTime, setCheckInTime] = React.useState(SHIFT_START_TIME);
   const [checkOutTime, setCheckOutTime] = React.useState("");
   const [note, setNote] = React.useState("");
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
+  // An "open shift" (needs closing, not correcting from scratch) only ever
+  // applies to a real present-status punch — a declarative Half-Day/Leave/
+  // Absent record has no check-out to close in the first place.
+  const isOpenShift = Boolean(existing && existing.status === "present" && !existing.checkOutAt);
+
   React.useEffect(() => {
     if (!open) return;
     setUserId(existing?.userId ?? defaultUserId ?? "");
     setDate(existing?.date ?? defaultDate);
     setProjectId(existing?.projectId ?? "");
+    setStatus(existing?.status ?? "present");
     const inTime = existing ? isoToHHMM(existing.checkInAt) || SHIFT_START_TIME : SHIFT_START_TIME;
     setCheckInTime(inTime);
-    if (existing && !existing.checkOutAt) {
+    if (existing && existing.status === "present" && !existing.checkOutAt) {
       setCheckOutTime(SHIFT_END_TIME);
       setNote(existing.note || "Shift closed by admin");
     } else {
@@ -74,6 +81,8 @@ export function AdminMarkAttendanceDialog({
     }
     setError(null);
   }, [open, existing, defaultUserId, defaultDate]);
+
+  const isDeclarative = status !== "present";
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -84,6 +93,7 @@ export function AdminMarkAttendanceDialog({
       userId,
       date,
       projectId: projectId || null,
+      status,
       checkInTime,
       checkOutTime,
       note,
@@ -99,16 +109,16 @@ export function AdminMarkAttendanceDialog({
       open={open}
       onClose={onClose}
       title={
-        existing && !existing.checkOutAt
+        isOpenShift
           ? "Close Open Shift"
           : existing
           ? "Correct Attendance"
           : "Mark Attendance Manually"
       }
       description={
-        existing && !existing.checkOutAt
+        isOpenShift
           ? "Close this employee's open shift by confirming check-out time and details."
-          : "No GPS or selfie required — use this only when the employee genuinely couldn't self check-in. A reason is required and this stays visibly flagged as a manual entry."
+          : "No GPS or selfie required — use this only when the employee genuinely couldn't self check-in, or to declare a Half-Day/Leave/Absent day. A reason is required and this stays visibly flagged as a manual entry."
       }
       className="max-w-lg"
     >
@@ -131,24 +141,44 @@ export function AdminMarkAttendanceDialog({
             <Input id="am-date" type="date" value={date} max={orgToday()} onChange={(e) => setDate(e.target.value)} />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="am-project">Project</Label>
-            <Select id="am-project" value={projectId} onChange={(e) => setProjectId(e.target.value)}>
-              <option value="">—</option>
-              {projects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.code} · {p.name}
-                </option>
-              ))}
+            <Label htmlFor="am-status">Status</Label>
+            <Select
+              id="am-status"
+              value={status}
+              disabled={isOpenShift}
+              onChange={(e) => setStatus(e.target.value as typeof status)}
+            >
+              <option value="present">Present</option>
+              <option value="half_day">Half-Day</option>
+              <option value="leave">Leave (paid)</option>
+              <option value="absent">Absent</option>
             </Select>
           </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="am-in">Check-in time</Label>
-            <Input id="am-in" type="time" value={checkInTime} onChange={(e) => setCheckInTime(e.target.value)} />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="am-out">Check-out time (optional)</Label>
-            <Input id="am-out" type="time" value={checkOutTime} onChange={(e) => setCheckOutTime(e.target.value)} />
-          </div>
+          {!isDeclarative && (
+            <div className="space-y-1.5">
+              <Label htmlFor="am-project">Project</Label>
+              <Select id="am-project" value={projectId} onChange={(e) => setProjectId(e.target.value)}>
+                <option value="">—</option>
+                {projects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.code} · {p.name}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          )}
+          {!isDeclarative && (
+            <>
+              <div className="space-y-1.5">
+                <Label htmlFor="am-in">Check-in time</Label>
+                <Input id="am-in" type="time" value={checkInTime} onChange={(e) => setCheckInTime(e.target.value)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="am-out">Check-out time (optional)</Label>
+                <Input id="am-out" type="time" value={checkOutTime} onChange={(e) => setCheckOutTime(e.target.value)} />
+              </div>
+            </>
+          )}
           <div className="col-span-2 space-y-1.5">
             <Label htmlFor="am-note">Reason (required)</Label>
             <Textarea

@@ -690,6 +690,7 @@ function buildEmployeeAttendance(): EmployeeAttendance[] {
         source: isAdminMarked ? "admin" : "self",
         markedByName: isAdminMarked ? "KeyVendors Admin" : "",
         note: isAdminMarked ? "Phone died on site — confirmed present by supervisor call." : "",
+        status: "present",
       });
     });
   }

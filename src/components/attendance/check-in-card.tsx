@@ -1,21 +1,22 @@
 "use client";
 
 import * as React from "react";
-import { CheckCircle2, Fingerprint, LogOut, ShieldAlert } from "lucide-react";
+import { Building2, CheckCircle2, Fingerprint, LogOut } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { formatDuration, formatTime, minutesBetween } from "@/lib/attendance/compute";
 import type { EmployeeAttendance } from "@/lib/types";
 
-/** Big mobile-first status card: Mark Attendance → live session → day done. */
+/** Big mobile-first status card: punch in → live session → day done. */
 export function CheckInCard({
   today,
-  hasProjects,
+  hasExplicitProjectAssignment,
   onStart,
 }: {
   today: EmployeeAttendance | null;
-  hasProjects: boolean;
+  /** True = site flow (project + GPS + selfie). False = office flow (one-tap GPS only). */
+  hasExplicitProjectAssignment: boolean;
   onStart: (mode: "in" | "out") => void;
 }) {
   const isOpen = Boolean(today && !today.checkOutAt);
@@ -35,21 +36,19 @@ export function CheckInCard({
             <div>
               <p className="text-sm font-medium">Today&apos;s Attendance</p>
               <p className="text-xs text-muted-foreground">
-                Not marked yet — check in with a live selfie and GPS.
+                {hasExplicitProjectAssignment
+                  ? "Not marked yet — check in with a live selfie and GPS."
+                  : "Not marked yet — punch in with your live location."}
               </p>
             </div>
-            {hasProjects ? (
+            {hasExplicitProjectAssignment ? (
               <Button className="h-14 w-full text-base" onClick={() => onStart("in")}>
                 <Fingerprint className="!size-5" /> Mark Attendance
               </Button>
             ) : (
-              <div className="flex items-start gap-2 rounded-lg bg-warning/10 p-3 text-sm">
-                <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-                <span>
-                  You&apos;re not assigned to a project yet — ask your admin to add you from the
-                  project&apos;s Team tab.
-                </span>
-              </div>
+              <Button className="h-14 w-full text-base" onClick={() => onStart("in")}>
+                <Building2 className="!size-5" /> Punch In
+              </Button>
             )}
           </>
         )}
@@ -68,7 +67,7 @@ export function CheckInCard({
               <Badge variant="success">Present</Badge>
             </div>
             <Button variant="accent" className="h-14 w-full text-base" onClick={() => onStart("out")}>
-              <LogOut className="!size-5" /> Check Out
+              <LogOut className="!size-5" /> {hasExplicitProjectAssignment ? "Check Out" : "Punch Out"}
             </Button>
           </>
         )}

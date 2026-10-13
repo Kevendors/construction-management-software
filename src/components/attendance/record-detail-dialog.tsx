@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { AlertCircle, ExternalLink, Info } from "lucide-react";
+import { AlertCircle, ExternalLink, History, Info } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Dialog } from "@/components/ui/dialog";
 import {
@@ -9,7 +9,11 @@ import {
   formatTime,
   type EvaluatedAttendanceRecord,
 } from "@/lib/attendance/compute";
-import { getAttendanceSelfieUrls } from "@/app/attendance/actions";
+import {
+  getAttendanceEditHistoryAction,
+  getAttendanceSelfieUrls,
+  type AttendanceEditHistoryEntry,
+} from "@/app/attendance/actions";
 import type { EmployeeAttendance } from "@/lib/types";
 
 function mapsLink(lat: number | null, lng: number | null): string | null {
@@ -33,14 +37,20 @@ export function RecordDetailDialog({
   showName?: boolean;
 }) {
   const [selfies, setSelfies] = React.useState<{ in?: string; out?: string }>({});
+  const [history, setHistory] = React.useState<AttendanceEditHistoryEntry[]>([]);
 
   React.useEffect(() => {
     if (!record) return;
     setSelfies({});
+    setHistory([]);
     getAttendanceSelfieUrls([record.id]).then((urls) => setSelfies(urls[record.id] ?? {}));
+    getAttendanceEditHistoryAction(record.id).then(setHistory);
   }, [record]);
 
   if (!record) return null;
+
+  const isOffice = !record.projectId;
+  const isDeclarative = record.status !== "present";
 
   const dateLabel = new Date(`${record.date}T00:00:00`).toLocaleDateString("en-IN", {
     weekday: "short",
@@ -70,7 +80,15 @@ export function RecordDetailDialog({
     >
       <div className="space-y-4">
         <div className="flex flex-wrap items-center gap-2">
-          {evaluated?.creditType === "on_time" || !evaluated ? (
+          {evaluated?.creditType === "leave" ? (
+            <Badge variant="success">Leave (1.0d paid)</Badge>
+          ) : evaluated?.creditType === "explicit_absent" ? (
+            <Badge variant="destructive">Absent (0d)</Badge>
+          ) : evaluated?.creditType === "explicit_half_day" ? (
+            <Badge variant="warning" className="border-amber-400 bg-amber-500/15 text-amber-800 dark:text-amber-400 font-semibold">
+              Half Day (0.5d)
+            </Badge>
+          ) : evaluated?.creditType === "on_time" || !evaluated ? (
             <Badge variant="success">Present (1.0d)</Badge>
           ) : evaluated.creditType === "late_grace" ? (
             <Badge variant="warning">{evaluated.badgeLabel} (1.0d)</Badge>
@@ -82,6 +100,7 @@ export function RecordDetailDialog({
             <Badge variant="outline">Manual</Badge>
           )}
 
+          {isOffice && !isDeclarative && <Badge variant="outline">Office</Badge>}
           {record.source === "admin" && <Badge variant="warning">Manual Entry</Badge>}
           {record.totalMinutes > 0 && (
             <span className="text-sm font-medium tabular-nums text-foreground">
@@ -139,42 +158,77 @@ export function RecordDetailDialog({
           </div>
         )}
 
-        <div className="grid grid-cols-2 gap-3">
-          {sides.map((s) => {
-            const link = mapsLink(s.lat, s.lng);
-            const selfieUrl = selfies[s.key];
-            return (
-              <div key={s.key} className="space-y-2 rounded-lg border border-border p-3">
-                <p className="text-xs font-medium text-muted-foreground">{s.label}</p>
-                <p className="text-lg font-semibold tabular-nums">{formatTime(s.at)}</p>
-                {selfieUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={selfieUrl}
-                    alt={`${s.label} selfie`}
-                    className="aspect-square w-full rounded-md object-cover"
-                  />
-                ) : (
-                  s.at && (
-                    <div className="flex aspect-square w-full items-center justify-center rounded-md bg-muted p-2 text-center text-xs text-muted-foreground">
-                      {record.source === "admin" ? "Not required (manual entry)" : "No selfie"}
-                    </div>
-                  )
-                )}
-                {link && (
-                  <a
-                    href={link}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                  >
-                    <ExternalLink className="h-3 w-3" /> View on map
-                  </a>
-                )}
-              </div>
-            );
-          })}
-        </div>
+        {isDeclarative ? (
+          <div className="rounded-lg border border-border bg-secondary/40 p-3 text-sm text-muted-foreground">
+            No punch times — this day was declared {evaluated?.badgeLabel.toLowerCase() ?? record.status} directly.
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-3">
+            {sides.map((s) => {
+              const link = mapsLink(s.lat, s.lng);
+              const selfieUrl = selfies[s.key];
+              return (
+                <div key={s.key} className="space-y-2 rounded-lg border border-border p-3">
+                  <p className="text-xs font-medium text-muted-foreground">{s.label}</p>
+                  <p className="text-lg font-semibold tabular-nums">{formatTime(s.at)}</p>
+                  {selfieUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={selfieUrl}
+                      alt={`${s.label} selfie`}
+                      className="aspect-square w-full rounded-md object-cover"
+                    />
+                  ) : (
+                    s.at && (
+                      <div className="flex aspect-square w-full items-center justify-center rounded-md bg-muted p-2 text-center text-xs text-muted-foreground">
+                        {record.source === "admin"
+                          ? "Not required (manual entry)"
+                          : isOffice
+                          ? "No selfie — Office punch-in"
+                          : "No selfie"}
+                      </div>
+                    )
+                  )}
+                  {link && (
+                    <a
+                      href={link}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                    >
+                      <ExternalLink className="h-3 w-3" /> View on map
+                    </a>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {history.length > 0 && (
+          <div className="space-y-2">
+            <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+              <History className="h-3.5 w-3.5" /> Edit History
+            </p>
+            <div className="max-h-48 space-y-2 overflow-y-auto rounded-lg border border-border p-3">
+              {history.map((h) => (
+                <div key={h.id} className="text-xs">
+                  <p className="text-foreground">{h.summary}</p>
+                  <p className="text-muted-foreground">
+                    {h.actorName} ·{" "}
+                    {new Date(h.createdAt).toLocaleString("en-IN", {
+                      day: "2-digit",
+                      month: "short",
+                      hour: "numeric",
+                      minute: "2-digit",
+                      hour12: true,
+                    })}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </Dialog>
   );

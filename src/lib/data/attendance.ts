@@ -45,6 +45,9 @@ export interface EmployeeAttendanceRow {
   source?: string | null;
   marked_by?: string | null;
   note?: string | null;
+  // present/half_day/leave/absent — column exists since 0016 ("present" by
+  // default), typed optional defensively like the others above.
+  status?: string | null;
 }
 
 /**
@@ -76,6 +79,7 @@ export const mapEmployeeAttendance = (
     source,
     markedByName: source === "admin" ? (identity.markedByName ?? "") : "",
     note: r.note ?? "",
+    status: (r.status === "half_day" || r.status === "leave" || r.status === "absent" ? r.status : "present"),
   };
 };
 
@@ -112,16 +116,19 @@ export async function getMyAttendancePage(month?: string): Promise<MyAttendanceD
     const assignedIds = new Set(
       mockProjectMembers.filter((m) => m.userId === mockCurrentUser.id).map((m) => m.projectId)
     );
+    const mockAssigned =
+      mockCurrentUser.role === "super_admin"
+        ? mockProjects
+        : mockProjects.filter((p) => assignedIds.has(p.id));
     return {
       today: mine.find((r) => r.date === today) ?? null,
       unclosedPreviousShift: null,
       records: mine
         .filter((r) => r.date.startsWith(activeMonth))
         .sort((a, b) => b.date.localeCompare(a.date)),
-      assignedProjects:
-        mockCurrentUser.role === "super_admin"
-          ? mockProjects
-          : mockProjects.filter((p) => assignedIds.has(p.id)),
+      assignedProjects: mockAssigned,
+      hasExplicitProjectAssignment: mockAssigned.length > 0,
+      officeGeofence: { lat: null, lng: null, radiusM: null },
       employeeId: "KV001",
       userName: mockCurrentUser.name,
       month: activeMonth,
@@ -135,6 +142,8 @@ export async function getMyAttendancePage(month?: string): Promise<MyAttendanceD
       unclosedPreviousShift: null,
       records: [],
       assignedProjects: [],
+      hasExplicitProjectAssignment: false,
+      officeGeofence: { lat: null, lng: null, radiusM: null },
       employeeId: "",
       userName: "",
       month: activeMonth,
@@ -145,7 +154,7 @@ export async function getMyAttendancePage(month?: string): Promise<MyAttendanceD
   const { from, to } = monthRange(activeMonth);
   // Explicit user_id filter: super_admin's RLS read is org-wide, but this
   // page is always "my own attendance".
-  const [monthRes, todayRes, unclosedRes, pmRes, projRes, employeeId] = await Promise.all([
+  const [monthRes, todayRes, unclosedRes, pmRes, projRes, employeeId, orgRes] = await Promise.all([
     supabase
       .from("employee_attendance")
       .select("*")
@@ -171,6 +180,7 @@ export async function getMyAttendancePage(month?: string): Promise<MyAttendanceD
     supabase.from("project_members").select("project_id").eq("user_id", ctx.userId),
     supabase.rpc("list_org_projects"),
     myEmployeeId(supabase, ctx.userId),
+    supabase.from("orgs").select("office_lat, office_lng, office_radius_m").eq("id", ctx.orgId).maybeSingle(),
   ]);
   if (monthRes.error) throw monthRes.error;
 
@@ -203,19 +213,26 @@ export async function getMyAttendancePage(month?: string): Promise<MyAttendanceD
   );
   const projects = ((projRes.data ?? []) as ProjectRow[]).map(mapProject);
 
-  // If the user has specific assigned projects, show those.
-  // If unassigned (assignedIds is empty) or super_admin/pm, allow all org projects so
-  // roving supervisors and new employees are never locked out of marking attendance.
-  const assignedProjects =
-    ctx.role === "super_admin" || ctx.role === "pm" || assignedIds.size === 0
-      ? projects
-      : projects.filter((p) => assignedIds.has(p.id));
+  // Show only the user's real roster. Someone with zero project_members rows
+  // (regardless of role, including super_admin/pm) gets the office punch
+  // flow instead of a project list — see hasExplicitProjectAssignment below.
+  // (Previously this fell back to "every org project" for anyone unassigned;
+  // the office flow now covers that case properly instead of handing them a
+  // site-check-in project picker that was never a real fit for them.)
+  const assignedProjects = projects.filter((p) => assignedIds.has(p.id));
+  const officeRow = orgRes?.data as { office_lat: number | null; office_lng: number | null; office_radius_m: number | null } | null;
 
   return {
     today: todayRow ? mapEmployeeAttendance(todayRow, identityFor(todayRow)) : null,
     unclosedPreviousShift: unclosedRow ? mapEmployeeAttendance(unclosedRow, identityFor(unclosedRow)) : null,
     records: monthRows.map((r) => mapEmployeeAttendance(r, identityFor(r))),
-    assignedProjects: assignedProjects.length > 0 ? assignedProjects : projects,
+    assignedProjects,
+    hasExplicitProjectAssignment: assignedIds.size > 0,
+    officeGeofence: {
+      lat: officeRow?.office_lat ?? null,
+      lng: officeRow?.office_lng ?? null,
+      radiusM: officeRow?.office_radius_m ?? null,
+    },
     employeeId,
     userName: ctx.name,
     month: activeMonth,

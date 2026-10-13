@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Download, Eye, Pencil, Plus, Search, UserPlus } from "lucide-react";
+import { Building2, Download, Eye, Pencil, Plus, Search, UserPlus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -30,6 +30,13 @@ import {
 import type { EmployeeAttendance, Project } from "@/lib/types";
 import { RecordDetailDialog } from "./record-detail-dialog";
 import { AdminMarkAttendanceDialog } from "./admin-mark-attendance-dialog";
+import { OfficeLocationCard } from "./office-location-card";
+
+const STATUS_LABEL: Record<string, string> = {
+  half_day: "Half Day",
+  leave: "Leave",
+  absent: "Absent",
+};
 
 interface MarkContext {
   userId?: string;
@@ -124,6 +131,9 @@ export function AdminAttendanceTab({
   }
 
   function exportCsv() {
+    const projectLabel = (r: EmployeeAttendance) =>
+      r.status !== "present" ? "" : r.projectId ? projectById.get(r.projectId)?.name ?? "" : "Office";
+
     if (view === "employee") {
       downloadCsv(
         `attendance-${employee?.employeeId || employee?.name || "employee"}-${fromDate}-to-${toDate}.csv`,
@@ -132,12 +142,12 @@ export function AdminAttendanceTab({
           r.date,
           employee?.name ?? "",
           employee?.employeeId || "—",
-          projectById.get(r.projectId)?.name ?? "",
-          formatTime(r.checkInAt),
-          formatTime(r.checkOutAt),
+          projectLabel(r),
+          r.status === "present" ? formatTime(r.checkInAt) : "",
+          r.status === "present" ? formatTime(r.checkOutAt) : "",
           r.totalMinutes > 0 ? formatDuration(r.totalMinutes) : "",
           r.overtimeMinutes > 0 ? formatDuration(r.overtimeMinutes) : "",
-          r.source === "admin" ? "Manual" : "Self",
+          r.status !== "present" ? STATUS_LABEL[r.status] : r.source === "admin" ? "Manual" : "Self",
         ])
       );
       return;
@@ -150,22 +160,24 @@ export function AdminAttendanceTab({
           date,
           member.name,
           member.employeeId || "—",
-          record ? projectById.get(record.projectId)?.name ?? "" : "",
-          record ? formatTime(record.checkInAt) : "",
-          record ? formatTime(record.checkOutAt) : "",
+          record ? projectLabel(record) : "",
+          record && record.status === "present" ? formatTime(record.checkInAt) : "",
+          record && record.status === "present" ? formatTime(record.checkOutAt) : "",
           record && record.totalMinutes > 0 ? formatDuration(record.totalMinutes) : "",
           record && record.overtimeMinutes > 0 ? formatDuration(record.overtimeMinutes) : "",
-          record ? "Present" : "Missed",
+          record ? (record.status !== "present" ? STATUS_LABEL[record.status] : "Present") : "Missed",
         ])
       );
     } else {
       downloadCsv(
         `attendance-${month}.csv`,
-        ["Employee", "Employee ID", "Present", "Absent", "Holiday", "Overtime"],
+        ["Employee", "Employee ID", "Present", "Leave", "Half-Day", "Absent", "Holiday", "Overtime"],
         monthlyRows.map(({ member, records, summary }) => [
           member.name,
           member.employeeId || "—",
           summary.present,
+          summary.leave,
+          summary.halfDay,
           summary.absent,
           summary.holiday,
           formatDuration(records.reduce((s, r) => s + r.overtimeMinutes, 0)),
@@ -176,6 +188,8 @@ export function AdminAttendanceTab({
 
   return (
     <div className="space-y-4">
+      <OfficeLocationCard />
+
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex rounded-md border border-border p-0.5">
           <Button
@@ -331,6 +345,8 @@ export function AdminAttendanceTab({
                       (r) => r.userId === member.userId && r.date.startsWith(date.slice(0, 7))
                     );
                     const evalRecord = evaluateEmployeeMonthAttendance(memberMonthRecords, date.slice(0, 7)).recordMap.get(date);
+                    const isDeclarative = Boolean(record && record.status !== "present");
+                    const isOpenShift = Boolean(record && record.status === "present" && !record.checkOutAt);
 
                     return (
                     <TableRow key={member.userId}>
@@ -348,13 +364,19 @@ export function AdminAttendanceTab({
                         {member.employeeId || "—"}
                       </TableCell>
                       <TableCell className="text-muted-foreground">
-                        {record ? projectById.get(record.projectId)?.name ?? "—" : "—"}
+                        {!record
+                          ? "—"
+                          : isDeclarative
+                          ? "—"
+                          : record.projectId
+                          ? projectById.get(record.projectId)?.name ?? "—"
+                          : "Office"}
                       </TableCell>
                       <TableCell className="tabular-nums">
-                        {record ? formatTime(record.checkInAt) : "—"}
+                        {record && !isDeclarative ? formatTime(record.checkInAt) : "—"}
                       </TableCell>
                       <TableCell className="tabular-nums">
-                        {record ? formatTime(record.checkOutAt) : "—"}
+                        {record && !isDeclarative ? formatTime(record.checkOutAt) : "—"}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
                         {record && record.totalMinutes > 0 ? formatDuration(record.totalMinutes) : "—"}
@@ -367,7 +389,14 @@ export function AdminAttendanceTab({
                       <TableCell>
                         {record ? (
                           <div className="flex items-center gap-1.5">
-                            {!record.checkOutAt ? (
+                            {isDeclarative ? (
+                              <Badge
+                                variant={record.status === "absent" ? "destructive" : record.status === "leave" ? "success" : "warning"}
+                                className={record.status === "half_day" ? "border-amber-400 bg-amber-500/15 text-amber-800 dark:text-amber-400 font-semibold" : undefined}
+                              >
+                                {STATUS_LABEL[record.status]}
+                              </Badge>
+                            ) : isOpenShift ? (
                               <Badge variant="warning">Open Shift</Badge>
                             ) : evalRecord?.creditType === "late_half_day" || evalRecord?.creditType === "late_cutoff_half_day" ? (
                               <Badge variant="warning" className="border-amber-400 bg-amber-500/15 text-amber-800 dark:text-amber-400 font-semibold" title={evalRecord.reason}>
@@ -400,7 +429,7 @@ export function AdminAttendanceTab({
                               <Eye />
                             </Button>
                           )}
-                          {record && !record.checkOutAt ? (
+                          {isOpenShift ? (
                             <Button
                               size="sm"
                               variant="outline"
@@ -457,7 +486,8 @@ export function AdminAttendanceTab({
             <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 rounded-md border border-border bg-secondary/30 px-3 py-2 text-[11px] text-muted-foreground">
               <LegendDot className="bg-success" label="Present" />
               <LegendDot className="bg-amber-500" label="Late grace (≤10:15, 1–3/mo)" />
-              <LegendDot className="bg-orange-500" label="Half day (4th late / after 10:15)" />
+              <LegendDot className="bg-orange-500" label="Half day (4th late / after 10:15 / manual)" />
+              <LegendDot className="bg-blue-500" label="Leave (paid)" />
               <LegendDot className="bg-destructive" label="Absent" />
               <LegendDot className="bg-muted-foreground/40" label="Sunday" />
               <span className="ml-auto text-muted-foreground/70">Click any day to mark or correct it</span>
@@ -512,13 +542,19 @@ export function AdminAttendanceTab({
                         {monthDays.map((d) => {
                           const ev = evaluation.recordMap.get(d);
                           const record = ev?.record;
-                          const status = dayStatus(d, Boolean(record));
+                          const rawStatus = dayStatus(d, Boolean(record));
+                          // explicit_absent has a real row, so dayStatus() (which only
+                          // knows "does a row exist") would otherwise call it present.
+                          const status = ev?.creditType === "explicit_absent" ? "absent" : rawStatus;
+                          const isLeave = ev?.creditType === "leave";
                           const glyph =
-                            status === "present"
+                            isLeave
+                              ? "LV"
+                              : status === "present"
                               ? ev?.glyph || (record?.source === "admin" ? "P*" : "P")
                               : status === "absent" ? "A" : status === "holiday" ? "" : "";
                           const isGrace = ev?.creditType === "late_grace";
-                          const isHalf = ev?.creditType === "late_half_day" || ev?.creditType === "late_cutoff_half_day";
+                          const isHalf = ev?.creditType === "late_half_day" || ev?.creditType === "late_cutoff_half_day" || ev?.creditType === "explicit_half_day";
                           const tooltip =
                             ev?.reason ||
                             (record?.source === "admin" ? `Manually marked — ${record.note}` : undefined) ||
@@ -533,7 +569,9 @@ export function AdminAttendanceTab({
                                 onClick={() => setMarkContext({ userId: member.userId, date: d, existing: record ?? null })}
                                 className={
                                   "mx-auto flex h-6 w-6 items-center justify-center rounded-md text-[11px] font-semibold transition-colors hover:ring-2 hover:ring-primary/40 " +
-                                  (status === "present" && isHalf
+                                  (isLeave
+                                    ? "bg-blue-500/20 text-blue-700 dark:text-blue-300"
+                                    : status === "present" && isHalf
                                     ? "bg-orange-500/20 text-orange-700 dark:text-orange-300"
                                     : status === "present" && isGrace
                                     ? "bg-amber-500/20 text-amber-700 dark:text-amber-400"
@@ -555,6 +593,7 @@ export function AdminAttendanceTab({
                           </div>
                           <div className="mt-0.5 flex justify-end gap-1.5 whitespace-nowrap text-[10px] tabular-nums text-muted-foreground">
                             <span className="text-success">{summary.present}P</span>
+                            {summary.leave > 0 && <span className="text-blue-600 dark:text-blue-400">{summary.leave}LV</span>}
                             {summary.halfDay > 0 && <span className="text-orange-600 dark:text-orange-400">{summary.halfDay}HD</span>}
                             {summary.lateCount > 0 && <span className="text-amber-600 dark:text-amber-400">{summary.lateCount}L</span>}
                             <span className="text-destructive">{summary.absent}A</span>
@@ -632,7 +671,10 @@ export function AdminAttendanceTab({
                         </TableCell>
                       </TableRow>
                     )}
-                    {employeeRecords.map((record) => (
+                    {employeeRecords.map((record) => {
+                      const isDeclarative = record.status !== "present";
+                      const isOpenShift = record.status === "present" && !record.checkOutAt;
+                      return (
                       <TableRow key={record.id}>
                         <TableCell className="font-medium tabular-nums">
                           {new Date(`${record.date}T00:00:00`).toLocaleDateString("en-IN", {
@@ -642,10 +684,10 @@ export function AdminAttendanceTab({
                           })}
                         </TableCell>
                         <TableCell className="text-muted-foreground">
-                          {projectById.get(record.projectId)?.name ?? "—"}
+                          {isDeclarative ? "—" : record.projectId ? projectById.get(record.projectId)?.name ?? "—" : "Office"}
                         </TableCell>
-                        <TableCell className="tabular-nums">{formatTime(record.checkInAt)}</TableCell>
-                        <TableCell className="tabular-nums">{formatTime(record.checkOutAt)}</TableCell>
+                        <TableCell className="tabular-nums">{isDeclarative ? "—" : formatTime(record.checkInAt)}</TableCell>
+                        <TableCell className="tabular-nums">{isDeclarative ? "—" : formatTime(record.checkOutAt)}</TableCell>
                         <TableCell className="text-right tabular-nums">
                           {record.totalMinutes > 0 ? formatDuration(record.totalMinutes) : "—"}
                         </TableCell>
@@ -653,7 +695,14 @@ export function AdminAttendanceTab({
                           {record.overtimeMinutes > 0 ? formatDuration(record.overtimeMinutes) : "—"}
                         </TableCell>
                         <TableCell>
-                          {!record.checkOutAt ? (
+                          {isDeclarative ? (
+                            <Badge
+                              variant={record.status === "absent" ? "destructive" : record.status === "leave" ? "success" : "warning"}
+                              className={record.status === "half_day" ? "border-amber-400 bg-amber-500/15 text-amber-800 dark:text-amber-400 font-semibold" : undefined}
+                            >
+                              {STATUS_LABEL[record.status]}
+                            </Badge>
+                          ) : isOpenShift ? (
                             <Badge variant="warning">Open Shift</Badge>
                           ) : record.source === "admin" ? (
                             <Badge variant="outline">Manual</Badge>
@@ -671,7 +720,7 @@ export function AdminAttendanceTab({
                             >
                               <Eye />
                             </Button>
-                            {!record.checkOutAt ? (
+                            {isOpenShift ? (
                               <Button
                                 size="sm"
                                 variant="outline"
@@ -698,7 +747,8 @@ export function AdminAttendanceTab({
                           </div>
                         </TableCell>
                       </TableRow>
-                    ))}
+                      );
+                    })}
                   </TableBody>
                 </Table>
               </div>
