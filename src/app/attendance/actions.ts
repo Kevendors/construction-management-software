@@ -14,6 +14,7 @@ import {
   isAfterLateGrace,
   isLateArrival,
   minutesBetween,
+  OFFICE_SHIFT_START_TIME,
   orgToday,
   ORG_UTC_OFFSET,
   overtimeOf,
@@ -497,7 +498,7 @@ export async function officeCheckInAction(input: OfficePunchInput): Promise<Chec
   let userNotificationTitle = "Punched In (On Time)";
   let userNotificationBody = `Punched in on time at ${formatTime(nowIso)}. Full Day (1.0d) credited.`;
 
-  if (isLateArrival(nowIso)) {
+  if (isLateArrival(nowIso, OFFICE_SHIFT_START_TIME)) {
     const curMonth = date.slice(0, 7);
     const { data: monthRows } = await supabase
       .from("employee_attendance")
@@ -508,7 +509,7 @@ export async function officeCheckInAction(input: OfficePunchInput): Promise<Chec
 
     let priorLates = 0;
     for (const mr of monthRows ?? []) {
-      if (mr.check_in_at && isLateArrival(mr.check_in_at) && mr.check_in_at !== nowIso) {
+      if (mr.check_in_at && isLateArrival(mr.check_in_at, OFFICE_SHIFT_START_TIME) && mr.check_in_at !== nowIso) {
         priorLates += 1;
       }
     }
@@ -543,7 +544,7 @@ export async function officeCheckInAction(input: OfficePunchInput): Promise<Chec
     orgId: ctx.orgId,
     roles: ["super_admin"],
     excludeUserId: ctx.userId,
-    kind: isLateArrival(nowIso) ? "delay" : "info",
+    kind: isLateArrival(nowIso, OFFICE_SHIFT_START_TIME) ? "delay" : "info",
     title: `${ctx.name} Punched In (Office)${lateMsg ? " (Late)" : ""}`,
     body: `${ctx.name} punched in at the office (${formatTime(nowIso)})${lateMsg}`,
     href: "/attendance",

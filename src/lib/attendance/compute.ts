@@ -43,10 +43,13 @@ export const ORG_TIMEZONE = "Asia/Kolkata";
 /** India has no DST, so this fixed offset is always correct for ORG_TIMEZONE. */
 export const ORG_UTC_OFFSET = "+05:30";
 
-/** Standard workday shift: 9:30 AM to 6:00 PM (8h 30m / 510 minutes); minutes beyond this count as overtime. */
+/** Standard (site) workday shift: 9:30 AM to 6:00 PM (8h 30m / 510 minutes); minutes beyond this count as overtime. */
 export const SHIFT_START_TIME = "09:30";
 export const SHIFT_END_TIME = "18:00";
 export const STANDARD_WORKDAY_MINUTES = 8 * 60 + 30; // 510 minutes (9:30 to 18:00)
+
+/** Office staff shift starts later than site (10:00 AM, same 6:00 PM end) — same grace cutoff/allowance below. */
+export const OFFICE_SHIFT_START_TIME = "10:00";
 
 /** Late arrivals policy: Up to 3 late arrivals allowed until 10:15 AM per month; 4th+ or past 10:15 AM counts as half day. */
 export const LATE_ARRIVAL_CUTOFF = "10:15";
@@ -72,16 +75,16 @@ export function timeInOrgTimezone(iso: string): string {
   }
 }
 
-/** Check if check-in time is late (> 09:30 AM). */
-export function isLateArrival(iso: string): boolean {
+/** Check if check-in time is late (after `startTime`, default site 09:30 AM — pass OFFICE_SHIFT_START_TIME for office punches). */
+export function isLateArrival(iso: string, startTime: string = SHIFT_START_TIME): boolean {
   const t = timeInOrgTimezone(iso);
-  return Boolean(t && t > SHIFT_START_TIME);
+  return Boolean(t && t > startTime);
 }
 
-/** Check if check-in time is within the allowed late grace buffer (09:31..10:15 AM). */
-export function isWithinLateGrace(iso: string): boolean {
+/** Check if check-in time is within the allowed late grace buffer (just after `startTime`..10:15 AM). */
+export function isWithinLateGrace(iso: string, startTime: string = SHIFT_START_TIME): boolean {
   const t = timeInOrgTimezone(iso);
-  return Boolean(t && t > SHIFT_START_TIME && t <= LATE_ARRIVAL_CUTOFF);
+  return Boolean(t && t > startTime && t <= LATE_ARRIVAL_CUTOFF);
 }
 
 /** Check if check-in time is strictly after the 10:15 AM grace cut-off. */
@@ -259,7 +262,7 @@ export function evaluateEmployeeMonthAttendance(
       badgeLabel = "Half Day (>10:15 AM)";
       glyph = "HD";
       reason = `Checked in at ${formatTime(r.checkInAt)} (after 10:15 AM cutoff). Counted as Half Day.`;
-    } else if (isWithinLateGrace(r.checkInAt)) {
+    } else if (isWithinLateGrace(r.checkInAt, r.projectId ? SHIFT_START_TIME : OFFICE_SHIFT_START_TIME)) {
       isLate = true;
       lateCount += 1;
       lateIndex = lateCount;
