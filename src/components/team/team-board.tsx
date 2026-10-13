@@ -25,6 +25,7 @@ import {
   setMemberActiveAction,
   setMemberPoAccessAction,
   setMemberRoleAction,
+  updateMemberPhoneAction,
 } from "@/app/team/actions";
 import { roleLabel } from "@/lib/labels";
 import type { Role } from "@/lib/types";
@@ -252,6 +253,54 @@ function RenameMemberDialog({ member, onClose }: { member: TeamMember | null; on
   );
 }
 
+function EditPhoneDialog({ member, onClose }: { member: TeamMember | null; onClose: () => void }) {
+  const router = useRouter();
+  const [phone, setPhone] = React.useState(member?.phone ?? "");
+  const [saving, setSaving] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    setPhone(member?.phone ?? "");
+    setError(null);
+  }, [member]);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!member) return;
+    setSaving(true);
+    setError(null);
+    const res = await updateMemberPhoneAction(member.userId, phone);
+    setSaving(false);
+    if (res.error) return setError(res.error);
+    onClose();
+    router.refresh();
+  }
+
+  return (
+    <Dialog
+      open={!!member}
+      onClose={onClose}
+      title="Edit Login Phone"
+      description={member ? `Change the phone number ${member.name} logs in with.` : ""}
+    >
+      <form onSubmit={submit} className="space-y-4">
+        <div className="space-y-1.5">
+          <Label htmlFor="ph-phone">Phone number</Label>
+          <Input id="ph-phone" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="9XXXXXXXXX" autoFocus required />
+          <p className="text-xs text-muted-foreground">
+            They&apos;ll need to log in with this new number from now on — their password stays the same.
+          </p>
+        </div>
+        {error && <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
+        <div className="flex justify-end gap-2 pt-2">
+          <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+          <Button type="submit" disabled={saving}>{saving ? "Saving…" : "Save"}</Button>
+        </div>
+      </form>
+    </Dialog>
+  );
+}
+
 export function TeamBoard({
   members,
   currentUserId,
@@ -266,6 +315,7 @@ export function TeamBoard({
   const [busy, setBusy] = React.useState<string | null>(null);
   const [resetting, setResetting] = React.useState<TeamMember | null>(null);
   const [renaming, setRenaming] = React.useState<TeamMember | null>(null);
+  const [editingPhone, setEditingPhone] = React.useState<TeamMember | null>(null);
 
   async function changeRole(userId: string, role: Role) {
     setBusy(userId);
@@ -347,7 +397,23 @@ export function TeamBoard({
                       </div>
                     </TableCell>
                     <TableCell className="font-mono text-xs text-muted-foreground">{m.employeeId || "—"}</TableCell>
-                    <TableCell className="text-muted-foreground">{m.phone || m.email || "—"}</TableCell>
+                    <TableCell className="text-muted-foreground">
+                      <div className="flex items-center gap-1.5">
+                        <span>{m.phone || m.email || "—"}</span>
+                        {!m.email && (
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                            aria-label={`Edit ${m.name}'s login phone`}
+                            title="Edit login phone"
+                            onClick={() => setEditingPhone(m)}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
                     <TableCell>
                       <Select
                         value={m.role}
@@ -427,6 +493,11 @@ export function TeamBoard({
         key={`rename-${renaming?.userId ?? "none"}`}
         member={renaming}
         onClose={() => setRenaming(null)}
+      />
+      <EditPhoneDialog
+        key={`phone-${editingPhone?.userId ?? "none"}`}
+        member={editingPhone}
+        onClose={() => setEditingPhone(null)}
       />
     </>
   );

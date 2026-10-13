@@ -164,6 +164,58 @@ export async function renameMemberAction(userId: string, name: string): Promise<
   return { id: userId };
 }
 
+/**
+ * Admin-only: change a member's login phone number. Phone logins are really
+ * an email alias (`<digits>@sitehub.phone`) under the hood, so this updates
+ * both the Auth user's email (what they actually log in with) and the
+ * `phone` kept in user_metadata (what /team reads for display) — see
+ * src/app/team/page.tsx's `meta.phone || au?.phone` fallback.
+ */
+export async function updateMemberPhoneAction(userId: string, phone: string): Promise<ActionResult> {
+  const ctx = await getAuthContext();
+  if (!ctx || !isAdminRole(ctx.role)) return { error: "Not authorized." };
+  if (!ctx.orgId) return { error: "No organization found." };
+
+  const { digits, email } = phoneAlias(phone);
+  if (digits.length < 6) return { error: "Enter a valid phone number." };
+
+  const admin = createAdminClient();
+  const { data: member, error: lookupErr } = await admin
+    .from("memberships")
+    .select("user_id")
+    .eq("org_id", ctx.orgId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (lookupErr) return { error: lookupErr.message };
+  if (!member) return { error: "That member isn't in your organization." };
+
+  const { data: existing, error: getErr } = await admin.auth.admin.getUserById(userId);
+  if (getErr) return { error: getErr.message };
+  const prevPhone = (existing.user?.user_metadata as { phone?: string } | undefined)?.phone ?? "";
+
+  const { error } = await admin.auth.admin.updateUserById(userId, {
+    email,
+    email_confirm: true,
+    user_metadata: { ...(existing.user?.user_metadata ?? {}), phone: phone.trim() },
+  });
+  if (error) {
+    // Supabase surfaces a duplicate-email conflict as a generic message —
+    // reword it in terms the admin actually typed (a phone, not an email).
+    if (error.message.toLowerCase().includes("already been registered")) {
+      return { error: "That phone number is already used by another account." };
+    }
+    return { error: error.message };
+  }
+
+  await logActivity({
+    action: "updated",
+    entityType: "member",
+    entityId: userId,
+    summary: prevPhone ? `Changed login phone from ${prevPhone} to ${phone.trim()}` : `Set login phone to ${phone.trim()}`,
+  });
+  return { id: userId };
+}
+
 /** Admin-only: grant/revoke a member's access to Purchase Orders. */
 export async function setMemberPoAccessAction(userId: string, canView: boolean): Promise<ActionResult> {
   const ctx = await getAuthContext();
