@@ -9,7 +9,6 @@ import {
   ORG_TIMEZONE,
   orgToday,
   SHIFT_START_TIME,
-  SHIFT_END_TIME,
   type AttendanceMember,
 } from "@/lib/attendance/compute";
 import { adminMarkAttendanceAction } from "@/app/attendance/actions";
@@ -72,19 +71,13 @@ export function AdminMarkAttendanceDialog({
     setStatus(existing?.status ?? "present");
     const inTime = existing ? isoToHHMM(existing.checkInAt) || SHIFT_START_TIME : SHIFT_START_TIME;
     setCheckInTime(inTime);
-    if (existing && existing.status === "present" && !existing.checkOutAt) {
-      // SHIFT_END_TIME (6 PM) is only a valid default when the check-in was
-      // before it — a late/night check-in (e.g. 10 PM) needs a later default
-      // or the pre-filled pair fails "check-out must be after check-in"
-      // before the admin has touched anything.
-      const nowHHMM = isoToHHMM(new Date().toISOString());
-      const defaultOut = inTime < SHIFT_END_TIME ? SHIFT_END_TIME : nowHHMM > inTime ? nowHHMM : "";
-      setCheckOutTime(defaultOut);
-      setNote(existing.note || "Shift closed by admin");
-    } else {
-      setCheckOutTime(existing ? isoToHHMM(existing.checkOutAt) : "");
-      setNote(existing?.note ?? "");
-    }
+    // Never auto-fill a check-out time or canned reason: an admin opening
+    // this dialog to fix the check-in time on an open shift (the only entry
+    // point open shifts have — see "Close Shift" in admin-attendance-tab)
+    // must not have a check-out silently saved just because they didn't
+    // notice the field. Blank check-out keeps the shift open, same as before.
+    setCheckOutTime(existing ? isoToHHMM(existing.checkOutAt) : "");
+    setNote(existing?.note ?? "");
     setError(null);
   }, [open, existing, defaultUserId, defaultDate]);
 
@@ -123,7 +116,7 @@ export function AdminMarkAttendanceDialog({
       }
       description={
         isOpenShift
-          ? "Close this employee's open shift by confirming check-out time and details."
+          ? "Fix the check-in time, or set a check-out to close the shift — leave check-out blank to keep it open."
           : "No GPS or selfie required — use this only when the employee genuinely couldn't self check-in, or to declare a Half-Day/Leave/Absent day. A reason is required and this stays visibly flagged as a manual entry."
       }
       className="max-w-lg"
