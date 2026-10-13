@@ -140,6 +140,62 @@ entry, same layout) rather than introducing a new input pattern like a
 map picker or "use my current location" button — consistent with how
 project geofences are already configured today.
 
+## 5. Super Admin manual edit + audit trail (added 2026-10-13, same session)
+
+Additional requirement, folded into this same spec since it extends the
+existing admin attendance-correction tooling (`AdminMarkAttendanceDialog`,
+`AdminAttendanceTab`) rather than introducing a new surface. Confirmed via
+one targeted question: **Leave = a full paid day (1.0d)**, tracked
+distinctly from Present only for reporting — same paid-day weight.
+
+**Status selector.** `employee_attendance.status` already exists as a plain
+`text` column (currently always `'present'`, unused otherwise). Extend
+`AdminMarkAttendanceDialog` with an explicit status choice: **Present /
+Half-Day / Leave / Absent**. Present and Half-Day keep the existing
+check-in/check-out time fields; Leave and Absent hide them (not
+applicable — nothing was punched) and only require the existing reason
+field, already mandatory.
+
+**No schema relaxation of `check_in_at` (stays `NOT NULL`, untouched),
+avoiding a change that would otherwise ripple through all 12 files that
+currently assume a real timestamp.** For Leave/Absent/declarative Half-Day
+rows (no real punch), `adminMarkAttendanceAction` writes `check_in_at` as
+that date's local midnight — an internal placeholder, never shown as a
+"punch time" anywhere — with `check_out_at: null`, `total_minutes: null`.
+`src/lib/attendance/compute.ts`'s day-evaluation (`dayStatus`,
+`evaluateEmployeeMonthAttendance`, `monthlySummary`) checks `record.status`
+**first**: a non-`'present'` explicit status short-circuits straight to its
+credit (Leave → 1.0d, Half-Day → 0.5d, Absent → 0d) and its own grid glyph
+(`LV` for Leave, distinct from the existing `L` late-grace glyph; explicit
+Half-Day shares `HD` with the auto-derived late-arrival one, since the
+paid-day effect is identical — the detail dialog's reason text still says
+which). This keeps every existing late-arrival/grace/half-day computation
+for genuine punches completely untouched; it only adds a short-circuit
+ahead of it.
+
+An explicitly-marked Absent day is a real, visible row for the first time
+(today, "Absent" is just the *absence* of any row) — a deliberate
+improvement, since "view and update attendance records for all employees"
+implies an admin should be able to see and edit a declared absence like any
+other record, not have it be an invisible non-event.
+
+**Audit trail — reuses `activity_log` (no new table).** `logActivity` is
+already called on every admin mark/correct, with `entityType: 'attendance'`
+and `entityId` set to the record's id — this is already "who (actor_name)
++ when (created_at) + why (summary/note)". The one gap is a field-level
+diff. `adminMarkAttendanceAction` now reads the existing row (when
+correcting one) before writing, and passes
+`meta: { before: {...changed fields...}, after: {...} }` so the log entry
+also captures *what* changed, not just that something did.
+
+New `getAttendanceEditHistoryAction(attendanceId)` queries `activity_log`
+by `entity_type = 'attendance' AND entity_id = attendanceId`, newest first.
+Surfaced as a small "Edit History" section in `RecordDetailDialog`,
+rendered only when it's non-empty — each entry showing who, when, and a
+plain-language summary of the change (reusing the existing `summary` field,
+extended to describe the diff, e.g. *"Changed check-out 18:00 → 18:45;
+marked Half-Day — reason: left early for a doctor's appointment"*).
+
 ## Out of scope
 
 - Multiple office branches/locations — explicitly declined; one shared
