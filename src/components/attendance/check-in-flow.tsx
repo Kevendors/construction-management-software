@@ -27,9 +27,10 @@ type Step =
   | "error";
 
 /**
- * Guided check-in / check-out: pick project (skipped when obvious) → GPS fix
- * (+ client geo-fence pre-check) → live selfie → confirm → submit. The server
- * re-validates assignment and the fence; this flow just fails fast.
+ * Guided check-in / check-out: pick project → GPS fix (+ client geo-fence
+ * pre-check) → live selfie → confirm → submit. Check-out skips the project
+ * step (it closes the shift already open under `activeProjectId`). The
+ * server re-validates assignment and the fence; this flow just fails fast.
  */
 export function CheckInFlow({
   open,
@@ -74,9 +75,6 @@ export function CheckInFlow({
       setEvalInfo(null);
       if (mode === "out") {
         setProjectId(activeProjectId ?? "");
-        setStep("locate");
-      } else if (projects.length === 1) {
-        setProjectId(projects[0].id);
         setStep("locate");
       } else {
         setProjectId("");
