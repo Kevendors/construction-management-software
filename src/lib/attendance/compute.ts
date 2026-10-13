@@ -52,13 +52,13 @@ export const SHIFT_END_TIME = "18:00";
 export const STANDARD_WORKDAY_MINUTES = 8 * 60 + 30; // 510 minutes (9:30 to 18:00)
 
 /**
- * Late-arrival policy: check-in by 10:15 AM (site or office) is simply on
- * time, full day, no flag at all. A check-in after 10:15 AM is a "late
+ * Late-arrival policy: check-in by 10:30 AM (site or office) is simply on
+ * time, full day, no flag at all. A check-in after 10:30 AM is a "late
  * arrival" — the first ALLOWED_LATE_ARRIVALS per month are forgiven (still a
  * full paid day, just flagged for visibility); the next one onward is a
  * Half Day (0.5 paid day).
  */
-export const LATE_ARRIVAL_CUTOFF = "10:15";
+export const LATE_ARRIVAL_CUTOFF = "10:30";
 export const ALLOWED_LATE_ARRIVALS = 3;
 
 /** "HH:mm" in ORG_TIMEZONE (24-hour clock, zero-padded). */
@@ -81,7 +81,7 @@ export function timeInOrgTimezone(iso: string): string {
   }
 }
 
-/** Check if check-in time is strictly after the 10:15 AM cut-off. */
+/** Check if check-in time is strictly after the 10:30 AM cut-off. */
 export function isAfterLateGrace(iso: string): boolean {
   const t = timeInOrgTimezone(iso);
   return Boolean(t && t > LATE_ARRIVAL_CUTOFF);
@@ -173,9 +173,9 @@ export function dayStatus(
 }
 
 export type ShiftCreditType =
-  | "on_time"           // Checked in <= 10:15 AM -> 1.0 day credit, no flag
-  | "late_grace"        // Checked in > 10:15 AM, within 3 allowed per month -> 1.0 day credit
-  | "late_half_day"     // Checked in > 10:15 AM, 4th+ late arrival this month -> 0.5 day credit
+  | "on_time"           // Checked in <= 10:30 AM -> 1.0 day credit, no flag
+  | "late_grace"        // Checked in > 10:30 AM, within 3 allowed per month -> 1.0 day credit
+  | "late_half_day"     // Checked in > 10:30 AM, 4th+ late arrival this month -> 0.5 day credit
   | "manual_present"    // Admin marked without check_in_at -> 1.0 day credit
   | "leave"             // Admin explicitly marked Leave -> 1.0 day credit (paid)
   | "explicit_half_day" // Admin explicitly marked Half-Day -> 0.5 day credit
@@ -184,7 +184,7 @@ export type ShiftCreditType =
 export interface EvaluatedAttendanceRecord {
   record: EmployeeAttendance;
   timeStr: string;        // "09:45"
-  isLate: boolean;        // true for late_grace and late_half_day (checked in after 10:15 AM)
+  isLate: boolean;        // true for late_grace and late_half_day (checked in after 10:30 AM)
   lateIndex: number;      // 1-based index among late arrivals of the month (0 if on-time)
   creditType: ShiftCreditType;
   dayCredit: number;      // 1.0 for full day, 0.5 for half day
@@ -199,15 +199,15 @@ export interface MonthlyAttendanceEvaluation {
   totalDaysAttended: number; // raw record count
   fullDays: number;          // count of 1.0 day credits
   halfDays: number;          // count of 0.5 day credits
-  lateCount: number;         // total late arrivals (checked in after 10:15 AM)
+  lateCount: number;         // total late arrivals (checked in after 10:30 AM)
   lateGraceUsed: number;     // min(lateCount, ALLOWED_LATE_ARRIVALS)
   effectivePaidDays: number; // fullDays + 0.5 * halfDays
 }
 
 /**
  * Evaluates an employee's attendance records for a month in chronological order.
- * Check-in by 10:15 AM is simply on time (Full Day), no flag. A check-in after
- * 10:15 AM is a late arrival — the first ALLOWED_LATE_ARRIVALS per month are
+ * Check-in by 10:30 AM is simply on time (Full Day), no flag. A check-in after
+ * 10:30 AM is a late arrival — the first ALLOWED_LATE_ARRIVALS per month are
  * forgiven (still Full Day, just flagged); the next one onward is a Half Day.
  */
 export function evaluateEmployeeMonthAttendance(
@@ -321,7 +321,7 @@ export function evaluateEmployeeMonthAttendance(
 export interface MonthlySummary {
   present: number;           // Full days (1.0 credits) — includes on-time, late-grace, leave, manual
   halfDay: number;           // Half days (0.5 credits) — includes auto-derived (4th+ late) and explicit
-  lateCount: number;         // Total late arrivals (after 10:15 AM)
+  lateCount: number;         // Total late arrivals (after 10:30 AM)
   lateGraceUsed: number;     // Late arrivals within quota (<= ALLOWED_LATE_ARRIVALS)
   effectivePaidDays: number; // present + 0.5 * halfDay
   leave: number;             // Explicit Leave days (also counted in `present`'s paid-day weight)

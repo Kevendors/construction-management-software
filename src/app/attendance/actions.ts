@@ -229,7 +229,7 @@ export async function checkInAction(input: CheckInInput): Promise<CheckInResult>
   let userNotificationTitle = "Attendance Marked (On Time)";
   let userNotificationBody = `Checked in on time at ${formatTime(nowIso)} (${(project as { name: string }).name}). Full Day (1.0d) credited.`;
 
-  // Check-in by 10:15 AM is simply on time, no flag. Past 10:15 AM is a late
+  // Check-in by 10:30 AM is simply on time, no flag. Past 10:30 AM is a late
   // arrival — the first ALLOWED_LATE_ARRIVALS this month are forgiven (full
   // day, just flagged); the next one onward is a Half Day.
   if (isAfterLateGrace(nowIso)) {
@@ -571,7 +571,7 @@ export async function officeCheckInAction(input: OfficePunchInput): Promise<Chec
   let userNotificationTitle = "Punched In (On Time)";
   let userNotificationBody = `Punched in on time at ${formatTime(nowIso)}. Full Day (1.0d) credited.`;
 
-  // Office shares the same 10:15 AM cutoff and 3-per-month grace as site.
+  // Office shares the same 10:30 AM cutoff and 3-per-month grace as site.
   if (isAfterLateGrace(nowIso)) {
     const curMonth = date.slice(0, 7);
     const { data: monthRows } = await supabase

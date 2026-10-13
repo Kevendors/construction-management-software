@@ -91,7 +91,7 @@ export function HistoryCalendar({
           <span className="h-2.5 w-2.5 rounded-full bg-amber-500" /> Late Grace (1-3 allowed)
         </span>
         <span className="inline-flex items-center gap-1.5">
-          <span className="h-2.5 w-2.5 rounded-full bg-orange-600" /> Half Day (4th late / &gt;10:15)
+          <span className="h-2.5 w-2.5 rounded-full bg-orange-600" /> Half Day (4th late / &gt;10:30)
         </span>
         <span className="inline-flex items-center gap-1.5">
           <span className="h-2.5 w-2.5 rounded-full bg-destructive/60" /> Absent

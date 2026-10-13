@@ -120,7 +120,7 @@ export function RecordDetailDialog({
             <div>
               <p className="font-semibold">Late Arrival #{evaluated.lateIndex} of {ALLOWED_LATE_ARRIVALS} Allowed (Grace)</p>
               <p className="mt-0.5 text-amber-800/90 dark:text-amber-300/90">
-                Checked in at {formatTime(record.checkInAt)}, after 10:15 AM. Within monthly allowance of {ALLOWED_LATE_ARRIVALS} late arrivals. Credited as a full day (1.0).
+                Checked in at {formatTime(record.checkInAt)}, after 10:30 AM. Within monthly allowance of {ALLOWED_LATE_ARRIVALS} late arrivals. Credited as a full day (1.0).
               </p>
             </div>
           </div>
@@ -132,7 +132,7 @@ export function RecordDetailDialog({
             <div>
               <p className="font-semibold">Half Day Applied — Exceeded {ALLOWED_LATE_ARRIVALS} Late Arrivals</p>
               <p className="mt-0.5 text-orange-900/90 dark:text-orange-300/90">
-                This is late arrival #{evaluated.lateIndex} this month (checked in at {formatTime(record.checkInAt)}, after 10:15 AM). Per company policy, after {ALLOWED_LATE_ARRIVALS} late arrivals, subsequent late arrivals are counted as a <strong>Half Day (0.5 paid day)</strong>.
+                This is late arrival #{evaluated.lateIndex} this month (checked in at {formatTime(record.checkInAt)}, after 10:30 AM). Per company policy, after {ALLOWED_LATE_ARRIVALS} late arrivals, subsequent late arrivals are counted as a <strong>Half Day (0.5 paid day)</strong>.
               </p>
             </div>
           </div>

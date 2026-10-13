@@ -487,8 +487,8 @@ export function AdminAttendanceTab({
           </CardHeader>
           <CardContent className="pt-0">
             <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 rounded-md border border-border bg-secondary/30 px-3 py-2 text-[11px] text-muted-foreground">
-              <LegendDot className="bg-success" label="Present (by 10:15 AM)" />
-              <LegendDot className="bg-amber-500" label="Late (after 10:15, 1–3/mo allowed)" />
+              <LegendDot className="bg-success" label="Present (by 10:30 AM)" />
+              <LegendDot className="bg-amber-500" label="Late (after 10:30, 1–3/mo allowed)" />
               <LegendDot className="bg-orange-500" label="Half day (4th+ late / manual)" />
               <LegendDot className="bg-blue-500" label="Leave (paid)" />
               <LegendDot className="bg-destructive" label="Absent" />

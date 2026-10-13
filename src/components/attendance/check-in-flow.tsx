@@ -241,7 +241,7 @@ export function CheckInFlow({
               {evalInfo.creditType === "on_time" && (
                 <div className="flex items-center gap-2 font-medium text-success">
                   <span className="inline-block h-2 w-2 rounded-full bg-success" />
-                  <span>On-time arrival (by 10:15 AM) — Full Day (1.0d) credited</span>
+                  <span>On-time arrival (by 10:30 AM) — Full Day (1.0d) credited</span>
                 </div>
               )}
               {evalInfo.creditType === "late_grace" && (
@@ -250,7 +250,7 @@ export function CheckInFlow({
                     <span>⚠️ Late Arrival #{evalInfo.lateIndex} of {ALLOWED_LATE_ARRIVALS} Allowed</span>
                   </div>
                   <p className="mt-1 text-[11px] text-muted-foreground">
-                    Checked in after 10:15 AM but covered under monthly grace allowance. Full Day (1.0d) credited.
+                    Checked in after 10:30 AM but covered under monthly grace allowance. Full Day (1.0d) credited.
                   </p>
                 </div>
               )}
