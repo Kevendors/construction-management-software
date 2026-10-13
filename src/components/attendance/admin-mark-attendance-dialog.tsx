@@ -73,7 +73,13 @@ export function AdminMarkAttendanceDialog({
     const inTime = existing ? isoToHHMM(existing.checkInAt) || SHIFT_START_TIME : SHIFT_START_TIME;
     setCheckInTime(inTime);
     if (existing && existing.status === "present" && !existing.checkOutAt) {
-      setCheckOutTime(SHIFT_END_TIME);
+      // SHIFT_END_TIME (6 PM) is only a valid default when the check-in was
+      // before it — a late/night check-in (e.g. 10 PM) needs a later default
+      // or the pre-filled pair fails "check-out must be after check-in"
+      // before the admin has touched anything.
+      const nowHHMM = isoToHHMM(new Date().toISOString());
+      const defaultOut = inTime < SHIFT_END_TIME ? SHIFT_END_TIME : nowHHMM > inTime ? nowHHMM : "";
+      setCheckOutTime(defaultOut);
       setNote(existing.note || "Shift closed by admin");
     } else {
       setCheckOutTime(existing ? isoToHHMM(existing.checkOutAt) : "");
