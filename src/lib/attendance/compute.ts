@@ -43,17 +43,18 @@ export const ORG_TIMEZONE = "Asia/Kolkata";
 /** India has no DST, so this fixed offset is always correct for ORG_TIMEZONE. */
 export const ORG_UTC_OFFSET = "+05:30";
 
-/** Standard (site) workday shift: 9:30 AM to 6:00 PM (8h 30m / 510 minutes); minutes beyond this count as overtime. */
+/** Standard workday shift: starts 9:30 AM (used only as a UI default now — see note on LATE_ARRIVAL_CUTOFF), ends 6:00 PM (8h 30m / 510 minutes); minutes beyond this count as overtime. */
 export const SHIFT_START_TIME = "09:30";
 export const SHIFT_END_TIME = "18:00";
 export const STANDARD_WORKDAY_MINUTES = 8 * 60 + 30; // 510 minutes (9:30 to 18:00)
 
-/** Office staff shift starts later than site (10:00 AM, same 6:00 PM end) — same grace cutoff/allowance below. */
-export const OFFICE_SHIFT_START_TIME = "10:00";
-
-/** Late arrivals policy: Up to 3 late arrivals allowed until 10:15 AM per month; 4th+ or past 10:15 AM counts as half day. */
+/**
+ * Late-arrival policy: check-in by 10:15 AM (site or office) is simply on
+ * time, full day — there's no partial "late but forgiven" state or monthly
+ * grace count anymore. Only a check-in strictly after 10:15 AM counts as
+ * late, and it's always a Half Day, every time.
+ */
 export const LATE_ARRIVAL_CUTOFF = "10:15";
-export const ALLOWED_LATE_ARRIVALS = 3;
 
 /** "HH:mm" in ORG_TIMEZONE (24-hour clock, zero-padded). */
 export function timeInOrgTimezone(iso: string): string {
@@ -75,19 +76,7 @@ export function timeInOrgTimezone(iso: string): string {
   }
 }
 
-/** Check if check-in time is late (after `startTime`, default site 09:30 AM — pass OFFICE_SHIFT_START_TIME for office punches). */
-export function isLateArrival(iso: string, startTime: string = SHIFT_START_TIME): boolean {
-  const t = timeInOrgTimezone(iso);
-  return Boolean(t && t > startTime);
-}
-
-/** Check if check-in time is within the allowed late grace buffer (just after `startTime`..10:15 AM). */
-export function isWithinLateGrace(iso: string, startTime: string = SHIFT_START_TIME): boolean {
-  const t = timeInOrgTimezone(iso);
-  return Boolean(t && t > startTime && t <= LATE_ARRIVAL_CUTOFF);
-}
-
-/** Check if check-in time is strictly after the 10:15 AM grace cut-off. */
+/** Check if check-in time is strictly after the 10:15 AM cut-off. */
 export function isAfterLateGrace(iso: string): boolean {
   const t = timeInOrgTimezone(iso);
   return Boolean(t && t > LATE_ARRIVAL_CUTOFF);
@@ -164,10 +153,8 @@ export function dayStatus(
 }
 
 export type ShiftCreditType =
-  | "on_time"              // Checked in <= 09:30 AM -> 1.0 day credit
-  | "late_grace"           // Checked in 09:31..10:15 AM (within 3 allowed per month) -> 1.0 day credit
-  | "late_half_day"        // Checked in 09:31..10:15 AM (4th or later late arrival) -> 0.5 day credit
-  | "late_cutoff_half_day" // Checked in > 10:15 AM (after grace cutoff) -> 0.5 day credit
+  | "on_time"              // Checked in <= 10:15 AM -> 1.0 day credit
+  | "late_cutoff_half_day" // Checked in > 10:15 AM -> 0.5 day credit
   | "manual_present"       // Admin marked without check_in_at -> 1.0 day credit
   | "leave"                // Admin explicitly marked Leave -> 1.0 day credit (paid)
   | "explicit_half_day"    // Admin explicitly marked Half-Day -> 0.5 day credit
@@ -176,12 +163,11 @@ export type ShiftCreditType =
 export interface EvaluatedAttendanceRecord {
   record: EmployeeAttendance;
   timeStr: string;        // "09:45"
-  isLate: boolean;
-  lateIndex: number;      // 1-based index among late arrivals of the month (0 if on-time)
+  isLate: boolean;        // true only for late_cutoff_half_day (checked in after 10:15 AM)
   creditType: ShiftCreditType;
   dayCredit: number;      // 1.0 for full day, 0.5 for half day
-  badgeLabel: string;     // "Present", "Late (1/3)", "Half Day (Late)", "Half Day (>10:15)"
-  glyph: string;          // "P", "L", "HD"
+  badgeLabel: string;     // "Present", "Half Day (>10:15 AM)"
+  glyph: string;          // "P", "HD"
   reason?: string;
 }
 
@@ -191,15 +177,14 @@ export interface MonthlyAttendanceEvaluation {
   totalDaysAttended: number; // raw record count
   fullDays: number;          // count of 1.0 day credits
   halfDays: number;          // count of 0.5 day credits
-  lateCount: number;         // total times late (>09:30)
-  lateGraceUsed: number;     // min(lateCount, ALLOWED_LATE_ARRIVALS)
+  lateCount: number;         // total times checked in after 10:15 AM (always Half Day)
   effectivePaidDays: number; // fullDays + 0.5 * halfDays
 }
 
 /**
- * Evaluates an employee's attendance records for a month in chronological order,
- * applying the 3 allowed late arrivals rule (up to 10:15 AM). 4th late arrival onward
- * or any arrival past 10:15 AM is converted to a Half Day (0.5 paid day).
+ * Evaluates an employee's attendance records for a month in chronological order.
+ * Check-in by 10:15 AM is simply on time (Full Day); any later check-in is a
+ * Half Day (0.5 paid day) — no monthly grace count, no partial "late" state.
  */
 export function evaluateEmployeeMonthAttendance(
   records: EmployeeAttendance[],
@@ -219,7 +204,6 @@ export function evaluateEmployeeMonthAttendance(
     const timeStr = timeInOrgTimezone(r.checkInAt);
     let creditType: ShiftCreditType = "on_time";
     let isLate = false;
-    let lateIndex = 0;
     let dayCredit = 1.0;
     let badgeLabel = "Present";
     let glyph = r.source === "admin" ? "P*" : "P";
@@ -255,32 +239,12 @@ export function evaluateEmployeeMonthAttendance(
     } else if (isAfterLateGrace(r.checkInAt)) {
       isLate = true;
       lateCount += 1;
-      lateIndex = lateCount;
       creditType = "late_cutoff_half_day";
       dayCredit = 0.5;
       halfDays += 1;
       badgeLabel = "Half Day (>10:15 AM)";
       glyph = "HD";
       reason = `Checked in at ${formatTime(r.checkInAt)} (after 10:15 AM cutoff). Counted as Half Day.`;
-    } else if (isWithinLateGrace(r.checkInAt, r.projectId ? SHIFT_START_TIME : OFFICE_SHIFT_START_TIME)) {
-      isLate = true;
-      lateCount += 1;
-      lateIndex = lateCount;
-      if (lateCount <= ALLOWED_LATE_ARRIVALS) {
-        creditType = "late_grace";
-        dayCredit = 1.0;
-        fullDays += 1;
-        badgeLabel = `Late (${lateCount}/${ALLOWED_LATE_ARRIVALS})`;
-        glyph = "L";
-        reason = `Checked in at ${formatTime(r.checkInAt)} (Late arrival #${lateIndex} of ${ALLOWED_LATE_ARRIVALS} allowed — Full Day credited).`;
-      } else {
-        creditType = "late_half_day";
-        dayCredit = 0.5;
-        halfDays += 1;
-        badgeLabel = `Half Day (Late #${lateIndex})`;
-        glyph = "HD";
-        reason = `Checked in at ${formatTime(r.checkInAt)} (Late arrival #${lateIndex} exceeds monthly allowance of ${ALLOWED_LATE_ARRIVALS} — counted as Half Day).`;
-      }
     } else {
       creditType = "on_time";
       dayCredit = 1.0;
@@ -292,7 +256,6 @@ export function evaluateEmployeeMonthAttendance(
       record: r,
       timeStr,
       isLate,
-      lateIndex,
       creditType,
       dayCredit,
       badgeLabel,
@@ -305,7 +268,6 @@ export function evaluateEmployeeMonthAttendance(
   }
 
   const effectivePaidDays = fullDays + halfDays * 0.5;
-  const lateGraceUsed = Math.min(lateCount, ALLOWED_LATE_ARRIVALS);
 
   return {
     evaluatedRecords,
@@ -314,16 +276,14 @@ export function evaluateEmployeeMonthAttendance(
     fullDays,
     halfDays,
     lateCount,
-    lateGraceUsed,
     effectivePaidDays,
   };
 }
 
 export interface MonthlySummary {
-  present: number;           // Full days (1.0 credits) — includes on-time, late-grace, leave, manual
-  halfDay: number;           // Half days (0.5 credits) — includes auto-derived and explicit
-  lateCount: number;         // Total late arrivals
-  lateGraceUsed: number;     // Late arrivals within quota (<= 3)
+  present: number;           // Full days (1.0 credits) — includes on-time, leave, manual
+  halfDay: number;           // Half days (0.5 credits) — includes auto-derived (>10:15 AM) and explicit
+  lateCount: number;         // Total check-ins after the 10:15 AM cutoff
   effectivePaidDays: number; // present + 0.5 * halfDay
   leave: number;             // Explicit Leave days (also counted in `present`'s paid-day weight)
   absent: number;            // No-record days + explicit Absent days
@@ -368,7 +328,6 @@ export function monthlySummary(
     present: evalResult.fullDays,
     halfDay: evalResult.halfDays,
     lateCount: evalResult.lateCount,
-    lateGraceUsed: evalResult.lateGraceUsed,
     effectivePaidDays: evalResult.effectivePaidDays,
     leave,
     absent,

@@ -55,8 +55,7 @@ export function CheckInFlow({
   const [errorMsg, setErrorMsg] = React.useState("");
   const [doneAt, setDoneAt] = React.useState("");
   const [evalInfo, setEvalInfo] = React.useState<{
-    creditType?: "on_time" | "late_grace" | "late_half_day" | "late_cutoff_half_day";
-    lateIndex?: number;
+    creditType?: "on_time" | "late_cutoff_half_day";
     lateMessage?: string;
   } | null>(null);
   const geo = useGeolocation();
@@ -115,7 +114,6 @@ export function CheckInFlow({
       }
       setEvalInfo({
         creditType: checkInRes.creditType,
-        lateIndex: checkInRes.lateIndex,
         lateMessage: checkInRes.lateMessage,
       });
     } else {
@@ -241,27 +239,7 @@ export function CheckInFlow({
               {evalInfo.creditType === "on_time" && (
                 <div className="flex items-center gap-2 font-medium text-success">
                   <span className="inline-block h-2 w-2 rounded-full bg-success" />
-                  <span>On-time arrival (by 9:30 AM) — Full Day (1.0d) credited</span>
-                </div>
-              )}
-              {evalInfo.creditType === "late_grace" && (
-                <div className="rounded border border-amber-500/30 bg-amber-500/10 p-2.5 text-amber-900 dark:text-amber-300">
-                  <div className="flex items-center gap-1.5 font-semibold">
-                    <span>⚠️ Late Arrival #{evalInfo.lateIndex} of 3 Allowed</span>
-                  </div>
-                  <p className="mt-1 text-[11px] text-muted-foreground">
-                    Covered under monthly grace allowance (up to 10:15 AM). Full Day (1.0d) credited.
-                  </p>
-                </div>
-              )}
-              {evalInfo.creditType === "late_half_day" && (
-                <div className="rounded border border-orange-500/30 bg-orange-500/10 p-2.5 text-orange-900 dark:text-orange-300">
-                  <div className="flex items-center gap-1.5 font-semibold">
-                    <span>⚠️ 4th Late Arrival — Counted as Half Day</span>
-                  </div>
-                  <p className="mt-1 text-[11px] text-muted-foreground">
-                    Exceeded 3 monthly grace late arrivals. Today is marked as a Half Day (0.5 paid day).
-                  </p>
+                  <span>On-time arrival (by 10:15 AM) — Full Day (1.0d) credited</span>
                 </div>
               )}
               {evalInfo.creditType === "late_cutoff_half_day" && (
