@@ -7,6 +7,7 @@ import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { logActivity } from "@/lib/activity/log";
 import { dispatchNotification } from "@/lib/notifications/dispatch";
 import {
+  ALLOWED_LATE_ARRIVALS,
   formatDuration,
   formatTime,
   haversineMeters,
@@ -30,7 +31,8 @@ export interface ActionResult {
 
 export interface CheckInResult extends ActionResult {
   lateMessage?: string;
-  creditType?: "on_time" | "late_cutoff_half_day";
+  creditType?: "on_time" | "late_grace" | "late_half_day";
+  lateIndex?: number;
 }
 
 export interface CheckInInput {
@@ -222,17 +224,41 @@ export async function checkInAction(input: CheckInInput): Promise<CheckInResult>
 
   const nowIso = new Date().toISOString();
   let lateMsg = "";
-  let creditType: "on_time" | "late_cutoff_half_day" = "on_time";
+  let creditType: "on_time" | "late_grace" | "late_half_day" = "on_time";
+  let lateNum = 0;
   let userNotificationTitle = "Attendance Marked (On Time)";
   let userNotificationBody = `Checked in on time at ${formatTime(nowIso)} (${(project as { name: string }).name}). Full Day (1.0d) credited.`;
 
-  // Check-in by 10:15 AM is simply on time — no partial "late but forgiven"
-  // state or monthly grace count; only past 10:15 AM is ever a Half Day.
+  // Check-in by 10:15 AM is simply on time, no flag. Past 10:15 AM is a late
+  // arrival — the first ALLOWED_LATE_ARRIVALS this month are forgiven (full
+  // day, just flagged); the next one onward is a Half Day.
   if (isAfterLateGrace(nowIso)) {
-    creditType = "late_cutoff_half_day";
-    lateMsg = ` [Half Day — checked in after 10:15 AM]`;
-    userNotificationTitle = "Attendance Marked (Half Day — Late Cutoff)";
-    userNotificationBody = `Checked in at ${formatTime(nowIso)} (after 10:15 AM cutoff). Counted as Half Day (0.5 paid day).`;
+    const curMonth = date.slice(0, 7);
+    const { data: monthRows } = await supabase
+      .from("employee_attendance")
+      .select("check_in_at")
+      .eq("user_id", ctx.userId)
+      .like("date", `${curMonth}%`)
+      .not("check_in_at", "is", null);
+
+    let priorLates = 0;
+    for (const mr of monthRows ?? []) {
+      if (mr.check_in_at && isAfterLateGrace(mr.check_in_at) && mr.check_in_at !== nowIso) {
+        priorLates += 1;
+      }
+    }
+    lateNum = priorLates + 1;
+    if (lateNum > ALLOWED_LATE_ARRIVALS) {
+      creditType = "late_half_day";
+      lateMsg = ` [Half Day — late #${lateNum} exceeds allowed ${ALLOWED_LATE_ARRIVALS}]`;
+      userNotificationTitle = "Attendance Marked (Half Day — Grace Exceeded)";
+      userNotificationBody = `Checked in at ${formatTime(nowIso)} (late #${lateNum} this month, exceeds ${ALLOWED_LATE_ARRIVALS} allowed). Counted as Half Day (0.5 paid day).`;
+    } else {
+      creditType = "late_grace";
+      lateMsg = ` [Late #${lateNum} of ${ALLOWED_LATE_ARRIVALS} allowed]`;
+      userNotificationTitle = `Attendance Marked (Late Grace ${lateNum}/${ALLOWED_LATE_ARRIVALS})`;
+      userNotificationBody = `Checked in at ${formatTime(nowIso)}. Late arrival ${lateNum} of ${ALLOWED_LATE_ARRIVALS} allowed grace. Full Day (1.0d) credited.`;
+    }
   }
 
   await logActivity({
@@ -248,7 +274,7 @@ export async function checkInAction(input: CheckInInput): Promise<CheckInResult>
     orgId: ctx.orgId,
     roles: ["super_admin"],
     excludeUserId: ctx.userId,
-    kind: creditType === "late_cutoff_half_day" ? "delay" : "info",
+    kind: creditType === "late_half_day" ? "delay" : "info",
     title: `${ctx.name} Checked In${lateMsg ? " (Late)" : ""}`,
     body: `${ctx.name} checked in at ${(project as { name: string }).name} (${formatTime(nowIso)})${lateMsg}`,
     href: "/attendance",
@@ -258,7 +284,7 @@ export async function checkInAction(input: CheckInInput): Promise<CheckInResult>
   await dispatchNotification({
     orgId: ctx.orgId,
     userIds: [ctx.userId],
-    kind: creditType === "late_cutoff_half_day" ? "delay" : "info",
+    kind: creditType === "late_half_day" ? "delay" : "info",
     title: userNotificationTitle,
     body: userNotificationBody,
     href: "/attendance",
@@ -268,6 +294,7 @@ export async function checkInAction(input: CheckInInput): Promise<CheckInResult>
     id: row.id,
     lateMessage: lateMsg.trim(),
     creditType,
+    lateIndex: lateNum > 0 ? lateNum : undefined,
   };
 }
 
@@ -462,17 +489,39 @@ export async function officeCheckInAction(input: OfficePunchInput): Promise<Chec
 
   const nowIso = new Date().toISOString();
   let lateMsg = "";
-  let creditType: "on_time" | "late_cutoff_half_day" = "on_time";
+  let creditType: "on_time" | "late_grace" | "late_half_day" = "on_time";
+  let lateNum = 0;
   let userNotificationTitle = "Punched In (On Time)";
   let userNotificationBody = `Punched in on time at ${formatTime(nowIso)}. Full Day (1.0d) credited.`;
 
-  // Office shares the same 10:15 AM cutoff as site — on time up to then,
-  // Half Day after, no partial "late but forgiven" state or grace count.
+  // Office shares the same 10:15 AM cutoff and 3-per-month grace as site.
   if (isAfterLateGrace(nowIso)) {
-    creditType = "late_cutoff_half_day";
-    lateMsg = ` [Half Day — checked in after 10:15 AM]`;
-    userNotificationTitle = "Punched In (Half Day — Late Cutoff)";
-    userNotificationBody = `Punched in at ${formatTime(nowIso)} (after 10:15 AM cutoff). Counted as Half Day (0.5 paid day).`;
+    const curMonth = date.slice(0, 7);
+    const { data: monthRows } = await supabase
+      .from("employee_attendance")
+      .select("check_in_at")
+      .eq("user_id", ctx.userId)
+      .like("date", `${curMonth}%`)
+      .not("check_in_at", "is", null);
+
+    let priorLates = 0;
+    for (const mr of monthRows ?? []) {
+      if (mr.check_in_at && isAfterLateGrace(mr.check_in_at) && mr.check_in_at !== nowIso) {
+        priorLates += 1;
+      }
+    }
+    lateNum = priorLates + 1;
+    if (lateNum > ALLOWED_LATE_ARRIVALS) {
+      creditType = "late_half_day";
+      lateMsg = ` [Half Day — late #${lateNum} exceeds allowed ${ALLOWED_LATE_ARRIVALS}]`;
+      userNotificationTitle = "Punched In (Half Day — Grace Exceeded)";
+      userNotificationBody = `Punched in at ${formatTime(nowIso)} (late #${lateNum} this month, exceeds ${ALLOWED_LATE_ARRIVALS} allowed). Counted as Half Day (0.5 paid day).`;
+    } else {
+      creditType = "late_grace";
+      lateMsg = ` [Late #${lateNum} of ${ALLOWED_LATE_ARRIVALS} allowed]`;
+      userNotificationTitle = `Punched In (Late Grace ${lateNum}/${ALLOWED_LATE_ARRIVALS})`;
+      userNotificationBody = `Punched in at ${formatTime(nowIso)}. Late arrival ${lateNum} of ${ALLOWED_LATE_ARRIVALS} allowed grace. Full Day (1.0d) credited.`;
+    }
   }
 
   await logActivity({
@@ -487,7 +536,7 @@ export async function officeCheckInAction(input: OfficePunchInput): Promise<Chec
     orgId: ctx.orgId,
     roles: ["super_admin"],
     excludeUserId: ctx.userId,
-    kind: creditType === "late_cutoff_half_day" ? "delay" : "info",
+    kind: creditType === "late_half_day" ? "delay" : "info",
     title: `${ctx.name} Punched In (Office)${lateMsg ? " (Late)" : ""}`,
     body: `${ctx.name} punched in at the office (${formatTime(nowIso)})${lateMsg}`,
     href: "/attendance",
@@ -496,7 +545,7 @@ export async function officeCheckInAction(input: OfficePunchInput): Promise<Chec
   await dispatchNotification({
     orgId: ctx.orgId,
     userIds: [ctx.userId],
-    kind: creditType === "late_cutoff_half_day" ? "delay" : "info",
+    kind: creditType === "late_half_day" ? "delay" : "info",
     title: userNotificationTitle,
     body: userNotificationBody,
     href: "/attendance",
@@ -506,6 +555,7 @@ export async function officeCheckInAction(input: OfficePunchInput): Promise<Chec
     id: row.id,
     lateMessage: lateMsg.trim(),
     creditType,
+    lateIndex: lateNum > 0 ? lateNum : undefined,
   };
 }
 

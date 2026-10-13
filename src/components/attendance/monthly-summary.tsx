@@ -1,7 +1,7 @@
 "use client";
 
 import { Info } from "lucide-react";
-import { monthlySummary } from "@/lib/attendance/compute";
+import { ALLOWED_LATE_ARRIVALS, monthlySummary } from "@/lib/attendance/compute";
 import type { EmployeeAttendance } from "@/lib/types";
 
 /** Present / Half Day / Late / Absent / Holiday counts for the viewed month. */
@@ -17,7 +17,7 @@ export function MonthlySummary({
   const chips = [
     { label: "Full Present", value: String(summary.present), hint: "1.0 day credit", className: "bg-success/15 text-success" },
     { label: "Half Days", value: String(summary.halfDay), hint: "0.5 day credit", className: summary.halfDay > 0 ? "bg-amber-500/20 text-amber-700 dark:text-amber-400 font-semibold" : "bg-muted text-muted-foreground" },
-    { label: "Late Arrivals", value: String(summary.lateCount), hint: "after 10:15 AM", className: summary.lateCount > 0 ? "bg-orange-500/20 text-orange-700 dark:text-orange-400 font-semibold" : "bg-muted text-muted-foreground" },
+    { label: "Late Arrivals", value: `${summary.lateGraceUsed}/${ALLOWED_LATE_ARRIVALS}`, hint: "allowed after 10:15 AM", className: summary.lateCount > ALLOWED_LATE_ARRIVALS ? "bg-orange-500/20 text-orange-700 dark:text-orange-400 font-semibold" : "bg-muted text-muted-foreground" },
     { label: "Effective Paid", value: `${summary.effectivePaidDays}d`, hint: "salary credit", className: "bg-primary/10 text-primary font-semibold" },
     { label: "Absent", value: String(summary.absent), hint: "unexcused", className: summary.absent > 0 ? "bg-destructive/15 text-destructive" : "bg-muted text-muted-foreground" },
     { label: "Holiday", value: String(summary.holiday), hint: "Sundays", className: "bg-muted text-muted-foreground" },
@@ -39,7 +39,7 @@ export function MonthlySummary({
         <Info className="h-3.5 w-3.5 shrink-0 mt-0.5 text-primary" />
         <div>
           <span className="font-medium text-foreground">Attendance &amp; Late Policy: </span>
-          Shift runs until <strong>6:00 PM</strong>. Checking in any time up to <strong>10:15 AM</strong> is on time, full day. Checking in after <strong>10:15 AM</strong> is counted as a <strong>Half Day (0.5 paid day)</strong>.
+          Shift runs until <strong>6:00 PM</strong>. Checking in any time up to <strong>10:15 AM</strong> is on time, full day. Up to <strong>{ALLOWED_LATE_ARRIVALS} late arrivals</strong> (after 10:15 AM) are allowed per month. The next one onward is counted as a <strong>Half Day (0.5 paid day)</strong>.
         </div>
       </div>
     </div>

@@ -52,7 +52,8 @@ export function HistoryCalendar({
           const status = dayStatus(date, Boolean(record));
           const dayNum = Number(date.slice(-2));
 
-          const isHalfDay = ev?.creditType === "late_cutoff_half_day";
+          const isGraceLate = ev?.creditType === "late_grace";
+          const isHalfDay = ev?.creditType === "late_half_day";
 
           return (
             <button
@@ -63,7 +64,8 @@ export function HistoryCalendar({
               title={ev?.reason || undefined}
               className={cn(
                 "relative flex aspect-square flex-col items-center justify-center gap-0.5 rounded-lg text-sm tabular-nums transition-colors",
-                status === "present" && !isHalfDay && "bg-success/15 font-medium text-success hover:bg-success/25",
+                status === "present" && !isGraceLate && !isHalfDay && "bg-success/15 font-medium text-success hover:bg-success/25",
+                status === "present" && isGraceLate && "bg-amber-500/20 font-medium text-amber-800 dark:text-amber-400 hover:bg-amber-500/30",
                 status === "present" && isHalfDay && "bg-orange-500/25 font-bold text-orange-900 dark:text-orange-300 hover:bg-orange-500/35 border border-orange-400/40",
                 status === "absent" && "bg-destructive/10 text-destructive",
                 status === "holiday" && "bg-muted text-muted-foreground",
@@ -73,7 +75,7 @@ export function HistoryCalendar({
               <span>{dayNum}</span>
               {ev && record && (
                 <span className="text-[9px] font-semibold leading-none">
-                  {isHalfDay ? "HD (0.5)" : record.totalMinutes > 0 ? formatDuration(record.totalMinutes) : "P"}
+                  {isHalfDay ? "HD (0.5)" : isGraceLate ? `L (${ev.lateIndex})` : record.totalMinutes > 0 ? formatDuration(record.totalMinutes) : "P"}
                 </span>
               )}
             </button>
