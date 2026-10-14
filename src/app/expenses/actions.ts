@@ -116,6 +116,102 @@ export async function logExpense(input: LogExpenseInput): Promise<ActionResult> 
   return { id: expenseId };
 }
 
+/**
+ * Self-service: the person an expense is logged for (or an admin) can
+ * correct its details while it's still Pending — approving/rejecting stays
+ * a separate, admin-only action (setExpenseStatus) so nobody can edit their
+ * way around their own approval.
+ */
+export async function updateOwnExpenseAction(
+  id: string,
+  input: Omit<LogExpenseInput, "status">
+): Promise<ActionResult> {
+  const ctx = await getAuthContext();
+  if (!ctx?.userId) return { error: "You must be signed in." };
+  if (!input.projectId) return { error: "Project is required." };
+  if (!input.byId) return { error: "Employee / person is required." };
+
+  const supabase = await createClient();
+  const { data: existing } = await supabase
+    .from("expenses")
+    .select("by_id, status")
+    .eq("id", id)
+    .maybeSingle();
+  if (!existing) return { error: "Expense not found." };
+  const canEdit = (existing.by_id === ctx.userId || isAdminRole(ctx.role)) && existing.status === "pending";
+  if (!canEdit) return { error: "You can only edit your own expense while it's still pending." };
+
+  const { error } = await supabase
+    .from("expenses")
+    .update({
+      title: input.title || null,
+      project_id: input.projectId,
+      by_id: input.byId,
+      date: input.date,
+      category: input.category,
+      amount: input.amount,
+      payment_mode: input.paymentMode || null,
+      note: input.note || null,
+    })
+    .eq("id", id);
+  if (error) return { error: error.message };
+
+  if (input.billDataUrl) {
+    const decoded = decodeDataUrl(input.billDataUrl);
+    if (decoded) {
+      const { orgId } = await currentContext(supabase);
+      if (orgId) {
+        const path = `${orgId}/${id}.${decoded.ext}`;
+        const admin = createAdminClient();
+        const { error: upErr } = await admin.storage
+          .from(BILL_BUCKET)
+          .upload(path, decoded.buffer, { contentType: decoded.contentType, upsert: true });
+        if (!upErr) await supabase.from("expenses").update({ bill_path: path }).eq("id", id);
+      }
+    }
+  }
+
+  await logActivity({
+    action: "updated",
+    entityType: "expense",
+    entityId: id,
+    summary: `Updated expense${input.title ? ` "${input.title}"` : ""}`,
+  });
+  return { id };
+}
+
+/** Self-service: withdraw (delete) your own expense while it's still Pending. */
+export async function withdrawOwnExpenseAction(id: string): Promise<ActionResult> {
+  const ctx = await getAuthContext();
+  if (!ctx?.userId) return { error: "You must be signed in." };
+
+  const supabase = await createClient();
+  const { data: existing } = await supabase
+    .from("expenses")
+    .select("by_id, status, bill_path, title")
+    .eq("id", id)
+    .maybeSingle();
+  if (!existing) return { error: "Expense not found." };
+  if (existing.by_id !== ctx.userId || existing.status !== "pending") {
+    return { error: "You can only withdraw your own expense while it's still pending." };
+  }
+
+  const { error } = await supabase.from("expenses").delete().eq("id", id);
+  if (error) return { error: error.message };
+  if (existing.bill_path) {
+    const admin = createAdminClient();
+    await admin.storage.from(BILL_BUCKET).remove([existing.bill_path as string]);
+  }
+
+  await logActivity({
+    action: "deleted",
+    entityType: "expense",
+    entityId: id,
+    summary: `Withdrew expense${existing.title ? ` "${existing.title}"` : ""}`,
+  });
+  return { id };
+}
+
 /** Approve or reject a pending expense — Super Admin only. */
 export async function setExpenseStatus(
   id: string,

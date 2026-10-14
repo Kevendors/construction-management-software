@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Check, X, FileText, UploadCloud, FileUp, Trash2 } from "lucide-react";
+import { Plus, Check, X, FileText, UploadCloud, FileUp, Trash2, Pencil } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -17,13 +17,20 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { logExpense, setExpenseStatus, addExpenseCategoryAction, deleteExpenseAction } from "@/app/expenses/actions";
+import {
+  logExpense,
+  setExpenseStatus,
+  addExpenseCategoryAction,
+  deleteExpenseAction,
+  updateOwnExpenseAction,
+  withdrawOwnExpenseAction,
+} from "@/app/expenses/actions";
 import { fileToResizedDataUrl } from "@/lib/image";
 import type { ExpensesBoard, ExpenseCategoryOption } from "@/lib/data/expenses";
 import { useRole } from "@/components/layout/role-provider";
 import { approvalMeta, categoryLabel } from "@/lib/labels";
 import { formatINR } from "@/lib/utils";
-import type { ApprovalStatus } from "@/lib/types";
+import type { ApprovalStatus, Expense } from "@/lib/types";
 
 const ADD_NEW = "__add_new__";
 const PAYMENT_MODES = ["Cash", "UPI", "Bank Transfer", "Card", "Cheque"];
@@ -44,10 +51,13 @@ function LogExpenseDialog({
   board,
   open,
   onClose,
+  editing,
 }: {
   board: ExpensesBoard;
   open: boolean;
   onClose: () => void;
+  /** Set to correct an existing (still-pending) expense instead of logging a new one. */
+  editing?: Expense | null;
 }) {
   const router = useRouter();
   const { projects, users } = board;
@@ -74,9 +84,23 @@ function LogExpenseDialog({
 
   React.useEffect(() => {
     if (!open) return;
-    setProjectId((v) => v || projects[0]?.id || "");
-    setById((v) => v || users[0]?.id || "");
-  }, [open, projects, users]);
+    if (editing) {
+      setTitle(editing.title ?? "");
+      setProjectId(editing.projectId);
+      setById(editing.byId);
+      setCategory(editing.category);
+      setAmount(String(editing.amount));
+      setPaymentMode(editing.paymentMode || "Cash");
+      setDate(editing.date);
+      setNote(editing.note ?? "");
+      clearBill();
+    } else {
+      setProjectId((v) => v || projects[0]?.id || "");
+      setById((v) => v || users[0]?.id || "");
+    }
+    setError(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, editing, projects, users]);
 
   async function handleFile(file: File) {
     if (!file.type.startsWith("image/") && file.type !== "application/pdf") {
@@ -140,7 +164,7 @@ function LogExpenseDialog({
     if (date > today()) return setError("Expense date can't be in the future.");
     setSaving(true);
     setError(null);
-    const res = await logExpense({
+    const payload = {
       title: title.trim(),
       projectId,
       byId,
@@ -148,10 +172,10 @@ function LogExpenseDialog({
       category,
       amount: amt,
       paymentMode,
-      status,
       note: note.trim(),
       billDataUrl: billDataUrl || undefined,
-    });
+    };
+    const res = editing ? await updateOwnExpenseAction(editing.id, payload) : await logExpense({ ...payload, status });
     setSaving(false);
     if (res.error) return setError(res.error);
     onClose();
@@ -164,7 +188,13 @@ function LogExpenseDialog({
   }
 
   return (
-    <Dialog open={open} onClose={onClose} title="Log Expense" description="Track who spent how much, on which project." className="max-w-xl">
+    <Dialog
+      open={open}
+      onClose={onClose}
+      title={editing ? "Edit Expense" : "Log Expense"}
+      description={editing ? "Correct the details of this expense — still allowed while it's pending." : "Track who spent how much, on which project."}
+      className="max-w-xl"
+    >
       <form onSubmit={submit} className="space-y-4">
         <div className="space-y-1.5">
           <Label htmlFor="x-title">Expense Title *</Label>
@@ -228,12 +258,14 @@ function LogExpenseDialog({
             <Label htmlFor="x-date">Date</Label>
             <Input id="x-date" type="date" value={date} max={today()} onChange={(e) => setDate(e.target.value)} />
           </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="x-status">Status</Label>
-            <Select id="x-status" value={status} onChange={(e) => setStatus(e.target.value as ApprovalStatus)}>
-              {STATUSES.map((s) => <option key={s} value={s}>{approvalMeta[s].label}</option>)}
-            </Select>
-          </div>
+          {!editing && (
+            <div className="space-y-1.5">
+              <Label htmlFor="x-status">Status</Label>
+              <Select id="x-status" value={status} onChange={(e) => setStatus(e.target.value as ApprovalStatus)}>
+                {STATUSES.map((s) => <option key={s} value={s}>{approvalMeta[s].label}</option>)}
+              </Select>
+            </div>
+          )}
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="x-note">Notes</Label>
@@ -305,7 +337,9 @@ function LogExpenseDialog({
         {error && <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
         <div className="flex justify-end gap-2 pt-2">
           <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
-          <Button type="submit" disabled={saving}>{saving ? "Saving…" : "Log Expense"}</Button>
+          <Button type="submit" disabled={saving}>
+            {saving ? "Saving…" : editing ? "Save Changes" : "Log Expense"}
+          </Button>
         </div>
       </form>
     </Dialog>
@@ -319,9 +353,10 @@ export function ExpensesApprovalTab({ board }: { board: ExpensesBoard }) {
   const projectById = new Map(projects.map((p) => [p.id, p]));
   const catLabelOf = (slug: string) =>
     board.categories.find((c) => c.slug === slug)?.label ?? categoryLabel[slug] ?? slug;
-  const { role } = useRole();
+  const { role, userId } = useRole();
   const isSuper = role === "super_admin";
   const [open, setOpen] = React.useState(false);
+  const [editingExpense, setEditingExpense] = React.useState<Expense | null>(null);
   const [busyId, setBusyId] = React.useState<string | null>(null);
   const [projectFilter, setProjectFilter] = React.useState("all");
   const [personFilter, setPersonFilter] = React.useState("all");
@@ -343,6 +378,14 @@ export function ExpensesApprovalTab({ board }: { board: ExpensesBoard }) {
     if (!confirm("Permanently delete this expense? This cannot be undone.")) return;
     setBusyId(id);
     const res = await deleteExpenseAction(id);
+    setBusyId(null);
+    if (!res.error) router.refresh();
+  }
+
+  async function withdraw(id: string) {
+    if (!confirm("Withdraw this expense? This cannot be undone.")) return;
+    setBusyId(id);
+    const res = await withdrawOwnExpenseAction(id);
     setBusyId(null);
     if (!res.error) router.refresh();
   }
@@ -436,6 +479,15 @@ export function ExpensesApprovalTab({ board }: { board: ExpensesBoard }) {
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
+                    ) : e.byId === userId && e.status === "pending" ? (
+                      <div className="flex justify-end gap-1">
+                        <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:text-foreground" disabled={busyId === e.id} onClick={() => setEditingExpense(e)} title="Edit expense">
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:text-destructive" disabled={busyId === e.id} onClick={() => withdraw(e.id)} title="Withdraw expense">
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
                     ) : (
                       <span className="text-xs text-muted-foreground">—</span>
                     )}
@@ -454,6 +506,13 @@ export function ExpensesApprovalTab({ board }: { board: ExpensesBoard }) {
         </Table>
       </CardContent>
       <LogExpenseDialog board={board} open={open} onClose={() => setOpen(false)} />
+      <LogExpenseDialog
+        key={editingExpense?.id ?? "none"}
+        board={board}
+        open={editingExpense !== null}
+        onClose={() => setEditingExpense(null)}
+        editing={editingExpense}
+      />
     </Card>
   );
 }
