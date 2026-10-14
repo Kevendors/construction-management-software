@@ -16,9 +16,12 @@ import { DEFAULT_SIGNATURE, DEFAULT_TERMS } from "@/lib/quotation/company";
 import { saveQuotationAction, getQuotationPayloadAction, findClientIdByNameAction } from "../actions";
 import { getQuotationSourceAction } from "../upload-actions";
 import { listOrgItemMasterAction, syncCustomItemsToMasterAction } from "@/app/item-master/actions";
+import { UnitSelect } from "@/components/shared/unit-select";
 import { fileToResizedDataUrl } from "@/lib/image";
 import { formatINR, todayISO } from "@/lib/utils";
 import { toggleBoldInTextarea } from "@/lib/quotation/rich-text";
+
+const BASE_UNITS = ["SQFT", "SQM", "RFT", "RMT", "FEET", "CUM", "KG", "MT", "BAG", "NOS", "POINT", "LUMPSUM"];
 
 const today = () => new Date().toISOString().slice(0, 10);
 const plusDays = (n: number) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
@@ -524,10 +527,12 @@ export default function NewQuotationPage() {
                   </div>
                   <div className="grid grid-cols-5 gap-2">
                     <Field label="Unit" small>
-                      <Select value={l.unit} onChange={(e) => updateLine(l.id, { unit: e.target.value as QuoteLine["unit"] })} className="h-8 text-xs">
-                        <option value="">—</option>
-                        {["SQFT", "SQM", "RFT", "RMT", "FEET", "CUM", "KG", "MT", "BAG", "NOS", "POINT", "LUMPSUM"].map((u) => <option key={u} value={u}>{u}</option>)}
-                      </Select>
+                      <UnitSelect
+                        value={l.unit}
+                        onChange={(unit) => updateLine(l.id, { unit })}
+                        baseUnits={BASE_UNITS}
+                        className="h-8 text-xs"
+                      />
                     </Field>
                     <Field label="Qty" small>
                       {lm === "qty" || lm === "qty_rate" ? (

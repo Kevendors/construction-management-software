@@ -16,8 +16,11 @@ import { fileToResizedDataUrl } from "@/lib/image";
 import { linkQuotationToInvoiceAction } from "@/app/quotations/actions";
 import { saveInvoiceAction, getInvoicePayloadAction } from "../actions";
 import { listOrgItemMasterAction, syncCustomItemsToMasterAction } from "@/app/item-master/actions";
+import { UnitSelect } from "@/components/shared/unit-select";
 import { formatINR, todayISO } from "@/lib/utils";
 import { toggleBoldInTextarea } from "@/lib/quotation/rich-text";
+
+const BASE_UNITS = ["SQFT", "SQM", "RFT", "RMT", "FEET", "CUM", "KG", "MT", "BAG", "NOS", "POINT", "LS"];
 
 const today = () => new Date().toISOString().slice(0, 10);
 const plusDays = (n: number) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
@@ -387,9 +390,12 @@ export default function NewInvoicePage() {
                   </div>
                   <div className="grid grid-cols-5 gap-2">
                     <Field label="Unit" small>
-                      <Select value={l.unit} onChange={(e) => updateLine(l.id, { unit: e.target.value })} className="h-8 text-xs">
-                        {["SQFT", "SQM", "RFT", "RMT", "FEET", "CUM", "KG", "MT", "BAG", "NOS", "POINT", "LS"].map((u) => <option key={u} value={u}>{u}</option>)}
-                      </Select>
+                      <UnitSelect
+                        value={l.unit}
+                        onChange={(unit) => updateLine(l.id, { unit })}
+                        baseUnits={BASE_UNITS}
+                        className="h-8 text-xs"
+                      />
                     </Field>
                     <Field label="Qty" small>
                       {lm === "qty" || lm === "qty_rate" ? (

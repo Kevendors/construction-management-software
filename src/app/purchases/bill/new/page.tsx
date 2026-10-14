@@ -18,12 +18,15 @@ import {
   type LumpsumMode,
 } from "@/lib/purchases/compute";
 import { savePurchaseBillAction, getPurchaseBillPayloadAction } from "@/app/purchases/actions";
+import { UnitSelect } from "@/components/shared/unit-select";
 import { todayISO } from "@/lib/utils";
 import { toggleBoldInTextarea } from "@/lib/quotation/rich-text";
 
 const today = () => new Date().toISOString().slice(0, 10);
 const plusDays = (n: number) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
 const uid = () => Math.random().toString(36).slice(2, 9);
+
+const BASE_UNITS = ["SQFT", "SQM", "RFT", "RMT", "FEET", "CUM", "KG", "MT", "BAG", "NOS", "POINT", "LUMPSUM"];
 
 const DEFAULT_BILL_TERMS = `1. Payment is due within 30 days of bill date.
 2. Please share proof of delivery/completion before payment is released.
@@ -259,9 +262,12 @@ export default function NewPurchaseBillPage() {
                   </div>
                   <div className="grid grid-cols-5 gap-2">
                     <Field label="Unit" small>
-                      <Select value={l.unit} onChange={(e) => updateLine(l.id, { unit: e.target.value })} className="h-8 text-xs">
-                        {["SQFT", "SQM", "RFT", "RMT", "FEET", "CUM", "KG", "MT", "BAG", "NOS", "POINT", "LUMPSUM"].map((u) => <option key={u} value={u}>{u}</option>)}
-                      </Select>
+                      <UnitSelect
+                        value={l.unit}
+                        onChange={(unit) => updateLine(l.id, { unit })}
+                        baseUnits={BASE_UNITS}
+                        className="h-8 text-xs"
+                      />
                     </Field>
                     <Field label="Qty" small>
                       {lm === "qty" || lm === "qty_rate" ? (

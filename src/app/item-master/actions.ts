@@ -137,6 +137,36 @@ export async function syncCustomItemsToMasterAction(
   return map;
 }
 
+/**
+ * An org's custom units (beyond the built-in SQFT/SQM/.../LS list) — merge
+ * into the Unit dropdown in the Quotation/Invoice/Purchase Bill builders.
+ * Empty (never throws) before 0038 is applied or when signed out.
+ */
+export async function listOrgUnitsAction(): Promise<string[]> {
+  if (!isSupabaseConfigured()) return [];
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("org_units").select("unit").order("unit", { ascending: true });
+  if (error || !data) return [];
+  return (data as { unit: string }[]).map((r) => r.unit);
+}
+
+/** Add a custom unit to the org's list so it's offered in the dropdown next time. */
+export async function addOrgUnitAction(unit: string): Promise<{ error?: string }> {
+  if (!isSupabaseConfigured()) return {};
+  const trimmed = unit.trim().toUpperCase();
+  if (!trimmed) return { error: "Enter a unit." };
+  if (trimmed.length > 20) return { error: "Keep the unit short (max 20 characters)." };
+
+  const supabase = await createClient();
+  const orgId = await currentOrgId(supabase);
+  if (!orgId) return { error: "Signed out" };
+
+  const { error } = await supabase.from("org_units").insert({ org_id: orgId, unit: trimmed });
+  // 23505 = someone already added this exact unit (case-insensitive) — not an error from the user's POV.
+  if (error && error.code !== "23505") return { error: error.message };
+  return {};
+}
+
 export async function deleteOrgMasterItemAction(id: string): Promise<{ error?: string }> {
   if (!isSupabaseConfigured()) return {};
   const supabase = await createClient();

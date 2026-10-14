@@ -1,4 +1,3 @@
-import type { QuoteUnit } from "./item-master";
 import { amountInWords } from "./amount-in-words";
 
 /**
@@ -14,9 +13,10 @@ export interface QuoteLine {
   id: string;
   itemId: string | null;
   description: string;
-  // "" is a deliberate third state — this item genuinely has no unit — not
-  // just an unset default; every other value comes from QuoteUnit's list.
-  unit: QuoteUnit | "";
+  // "" is a deliberate state — this item genuinely has no unit — not just an
+  // unset default. Usually one of QuoteUnit's list, but a plain string so an
+  // org can add its own custom unit (see UnitSelect/org_units) beyond it.
+  unit: string;
   usesSqft: boolean;
   rate: number; // per-unit rate, or (in either lumpsum mode) the lump-sum figure
   qty: number;
