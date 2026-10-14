@@ -1,11 +1,10 @@
 "use client";
 
 import * as React from "react";
-import { AlertCircle, ExternalLink, History, Info } from "lucide-react";
+import { ExternalLink, History, Info } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Dialog } from "@/components/ui/dialog";
 import {
-  ALLOWED_LATE_ARRIVALS,
   formatDuration,
   formatTime,
   type EvaluatedAttendanceRecord,
@@ -93,10 +92,6 @@ export function RecordDetailDialog({
             <Badge variant="success">Present (1.0d)</Badge>
           ) : evaluated.creditType === "late_grace" ? (
             <Badge variant="warning">{evaluated.badgeLabel} (1.0d)</Badge>
-          ) : evaluated.creditType === "late_half_day" ? (
-            <Badge variant="warning" className="border-amber-400 bg-amber-500/15 text-amber-800 dark:text-amber-400 font-semibold">
-              Half Day (0.5d)
-            </Badge>
           ) : (
             <Badge variant="outline">Manual</Badge>
           )}
@@ -118,21 +113,9 @@ export function RecordDetailDialog({
           <div className="rounded-lg border border-amber-300/80 bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-300 flex items-start gap-2">
             <Info className="h-4 w-4 shrink-0 text-amber-600 mt-0.5" />
             <div>
-              <p className="font-semibold">Late Arrival #{evaluated.lateIndex} of {ALLOWED_LATE_ARRIVALS} Allowed (Grace)</p>
+              <p className="font-semibold">Late Arrival #{evaluated.lateIndex} This Month</p>
               <p className="mt-0.5 text-amber-800/90 dark:text-amber-300/90">
-                Checked in at {formatTime(record.checkInAt)}, after 10:30 AM. Within monthly allowance of {ALLOWED_LATE_ARRIVALS} late arrivals. Credited as a full day (1.0).
-              </p>
-            </div>
-          </div>
-        )}
-
-        {evaluated?.creditType === "late_half_day" && (
-          <div className="rounded-lg border border-orange-300/80 bg-orange-500/10 p-3 text-xs text-orange-950 dark:text-orange-300 flex items-start gap-2">
-            <AlertCircle className="h-4 w-4 shrink-0 text-orange-600 mt-0.5" />
-            <div>
-              <p className="font-semibold">Half Day Applied — Exceeded {ALLOWED_LATE_ARRIVALS} Late Arrivals</p>
-              <p className="mt-0.5 text-orange-900/90 dark:text-orange-300/90">
-                This is late arrival #{evaluated.lateIndex} this month (checked in at {formatTime(record.checkInAt)}, after 10:30 AM). Per company policy, after {ALLOWED_LATE_ARRIVALS} late arrivals, subsequent late arrivals are counted as a <strong>Half Day (0.5 paid day)</strong>.
+                Checked in at {formatTime(record.checkInAt)}, after 10:30 AM — logged for the record. Credited as a full day (1.0), same as always.
               </p>
             </div>
           </div>

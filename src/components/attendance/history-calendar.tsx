@@ -53,7 +53,7 @@ export function HistoryCalendar({
           const dayNum = Number(date.slice(-2));
 
           const isGraceLate = ev?.creditType === "late_grace";
-          const isHalfDay = ev?.creditType === "late_half_day";
+          const isHalfDay = ev?.creditType === "explicit_half_day";
 
           return (
             <button

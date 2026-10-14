@@ -4,7 +4,7 @@ import * as React from "react";
 import { AlertTriangle, CheckCircle2, LocateFixed, MapPin } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
-import { ALLOWED_LATE_ARRIVALS, haversineMeters, formatTime } from "@/lib/attendance/compute";
+import { haversineMeters, formatTime } from "@/lib/attendance/compute";
 import type { Project } from "@/lib/types";
 import { checkInAction, checkOutAction } from "@/app/attendance/actions";
 import { CameraCapture } from "./camera-capture";
@@ -55,7 +55,7 @@ export function CheckInFlow({
   const [errorMsg, setErrorMsg] = React.useState("");
   const [doneAt, setDoneAt] = React.useState("");
   const [evalInfo, setEvalInfo] = React.useState<{
-    creditType?: "on_time" | "late_grace" | "late_half_day";
+    creditType?: "on_time" | "late_grace";
     lateIndex?: number;
     lateMessage?: string;
   } | null>(null);
@@ -247,20 +247,10 @@ export function CheckInFlow({
               {evalInfo.creditType === "late_grace" && (
                 <div className="rounded border border-amber-500/30 bg-amber-500/10 p-2.5 text-amber-900 dark:text-amber-300">
                   <div className="flex items-center gap-1.5 font-semibold">
-                    <span>⚠️ Late Arrival #{evalInfo.lateIndex} of {ALLOWED_LATE_ARRIVALS} Allowed</span>
+                    <span>⚠️ Late Arrival #{evalInfo.lateIndex} This Month</span>
                   </div>
                   <p className="mt-1 text-[11px] text-muted-foreground">
-                    Checked in after 10:30 AM but covered under monthly grace allowance. Full Day (1.0d) credited.
-                  </p>
-                </div>
-              )}
-              {evalInfo.creditType === "late_half_day" && (
-                <div className="rounded border border-orange-500/30 bg-orange-500/10 p-2.5 text-orange-900 dark:text-orange-300">
-                  <div className="flex items-center gap-1.5 font-semibold">
-                    <span>⚠️ Late Arrival #{evalInfo.lateIndex} — Exceeds Allowance</span>
-                  </div>
-                  <p className="mt-1 text-[11px] text-muted-foreground">
-                    Exceeded {ALLOWED_LATE_ARRIVALS} monthly grace late arrivals. Today is marked as a Half Day (0.5 paid day).
+                    Checked in after 10:30 AM — logged for the record. Full Day (1.0d) credited.
                   </p>
                 </div>
               )}
