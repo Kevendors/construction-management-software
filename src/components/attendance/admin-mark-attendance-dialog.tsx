@@ -116,7 +116,7 @@ export function AdminMarkAttendanceDialog({
       }
       description={
         isOpenShift
-          ? "Fix the check-in time, or set a check-out to close the shift — leave check-out blank to keep it open."
+          ? "Fix the check-in time, or set a check-out to close the shift — leave check-out blank to keep it open. Change Status below if this check-in was a mistake and the day should be Half-Day/Leave/Absent instead."
           : "No GPS or selfie required — use this only when the employee genuinely couldn't self check-in, or to declare a Half-Day/Leave/Absent day. A reason is required and this stays visibly flagged as a manual entry."
       }
       className="max-w-lg"
@@ -144,7 +144,6 @@ export function AdminMarkAttendanceDialog({
             <Select
               id="am-status"
               value={status}
-              disabled={isOpenShift}
               onChange={(e) => setStatus(e.target.value as typeof status)}
             >
               <option value="present">Present</option>
