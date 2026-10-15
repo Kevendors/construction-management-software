@@ -377,14 +377,23 @@ export function AdminAttendanceTab({
                     return (
                     <TableRow key={member.userId}>
                       <TableCell className="font-medium">
-                        <button
-                          type="button"
-                          onClick={() => openEmployee(member.userId)}
-                          className="text-left hover:text-primary hover:underline"
-                          title="See this employee's attendance"
-                        >
-                          {member.name}
-                        </button>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => openEmployee(member.userId)}
+                            className="text-left hover:text-primary hover:underline"
+                            title="See this employee's attendance"
+                          >
+                            {member.name}
+                          </button>
+                          <Badge
+                            variant="outline"
+                            className="text-[10px]"
+                            title={member.isOffice ? "No project assigned — office punch flow, office leave/holiday rules" : "Assigned to a project — site punch flow, no leave cap"}
+                          >
+                            {member.isOffice ? "Office" : "Site"}
+                          </Badge>
+                        </div>
                       </TableCell>
                       <TableCell className="tabular-nums text-muted-foreground">
                         {member.employeeId || "—"}
@@ -556,14 +565,19 @@ export function AdminAttendanceTab({
                         <td
                           className={`sticky left-0 z-10 whitespace-nowrap border-r border-border px-3 py-1.5 font-medium ${rowBg}`}
                         >
-                          <button
-                            type="button"
-                            onClick={() => openEmployee(member.userId)}
-                            className="text-left hover:text-primary hover:underline"
-                            title="See this employee's attendance"
-                          >
-                            {member.name}
-                          </button>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => openEmployee(member.userId)}
+                              className="text-left hover:text-primary hover:underline"
+                              title="See this employee's attendance"
+                            >
+                              {member.name}
+                            </button>
+                            <Badge variant="outline" className="text-[10px]">
+                              {member.isOffice ? "Office" : "Site"}
+                            </Badge>
+                          </div>
                         </td>
                         {monthDays.map((d) => {
                           const ev = evaluation.recordMap.get(d);
@@ -665,11 +679,14 @@ export function AdminAttendanceTab({
         ) : (
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">
+              <CardTitle className="flex items-center gap-2 text-base">
                 {employee.name}
                 {employee.employeeId && (
-                  <span className="ml-2 font-normal text-muted-foreground">{employee.employeeId}</span>
+                  <span className="font-normal text-muted-foreground">{employee.employeeId}</span>
                 )}
+                <Badge variant="outline" className="text-[10px] font-normal">
+                  {employee.isOffice ? "Office" : "Site"}
+                </Badge>
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4 pt-0">
