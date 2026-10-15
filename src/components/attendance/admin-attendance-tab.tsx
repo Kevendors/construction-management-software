@@ -514,6 +514,7 @@ export function AdminAttendanceTab({
               <LegendDot className="bg-blue-500" label="Leave (paid)" />
               <LegendDot className="bg-slate-500" label="Leave (unpaid, office 2nd+/mo)" />
               <LegendDot className="bg-destructive" label="Absent" />
+              <LegendDot className="bg-indigo-500" label="Company Holiday" />
               <LegendDot className="bg-muted-foreground/40" label="Sunday" />
               <span className="ml-auto text-muted-foreground/70">Click any day to mark or correct it</span>
             </div>
@@ -580,7 +581,9 @@ export function AdminAttendanceTab({
                           const isLeave = ev?.creditType === "leave";
                           const isUnpaidLeave = ev?.creditType === "leave_unpaid";
                           const glyph =
-                            isLeave
+                            isDeclaredHoliday
+                              ? "H"
+                              : isLeave
                               ? "LV"
                               : isUnpaidLeave
                               ? "LU"
@@ -607,7 +610,9 @@ export function AdminAttendanceTab({
                                 onClick={() => setMarkContext({ userId: member.userId, date: d, existing: record ?? null })}
                                 className={
                                   "mx-auto flex h-6 w-6 items-center justify-center rounded-md text-[11px] font-semibold transition-colors hover:ring-2 hover:ring-primary/40 " +
-                                  (isLeave
+                                  (isDeclaredHoliday
+                                    ? "bg-indigo-500/15 text-indigo-700 dark:text-indigo-300"
+                                    : isLeave
                                     ? "bg-blue-500/20 text-blue-700 dark:text-blue-300"
                                     : isUnpaidLeave
                                     ? "bg-slate-500/20 text-slate-700 dark:text-slate-300 border border-slate-400/40"
