@@ -68,7 +68,14 @@ export function EmployeesTab({
       return false;
     });
     if (matching.length === 0) return null;
-    const ev = evaluateEmployeeMonthAttendance(matching, month);
+    const isOffice =
+      attendanceBoard.members.find(
+        (m) =>
+          (emp.profileId && m.userId === emp.profileId) ||
+          m.employeeId.toLowerCase() === emp.id.toLowerCase() ||
+          m.name.toLowerCase() === emp.name.toLowerCase()
+      )?.isOffice ?? false;
+    const ev = evaluateEmployeeMonthAttendance(matching, month, isOffice);
     return {
       rawDays: matching.length,
       fullDays: ev.fullDays,

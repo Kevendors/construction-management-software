@@ -4,19 +4,24 @@ import { Info } from "lucide-react";
 import { monthlySummary } from "@/lib/attendance/compute";
 import type { EmployeeAttendance } from "@/lib/types";
 
-/** Present / Half Day / Late / Absent / Holiday counts for the viewed month. */
+/** Present / Half Day / Leave / Absent / Holiday counts for the viewed month. */
 export function MonthlySummary({
   records,
   month,
+  isOffice = false,
 }: {
   records: EmployeeAttendance[];
   month: string;
+  isOffice?: boolean;
 }) {
-  const summary = monthlySummary(records, month);
+  const summary = monthlySummary(records, month, undefined, undefined, isOffice);
 
   const chips = [
     { label: "Full Present", value: String(summary.present), hint: "1.0 day credit", className: "bg-success/15 text-success" },
     { label: "Half Days", value: String(summary.halfDay), hint: "manual only", className: summary.halfDay > 0 ? "bg-amber-500/20 text-amber-700 dark:text-amber-400 font-semibold" : "bg-muted text-muted-foreground" },
+    ...(isOffice
+      ? [{ label: "Leave (Unpaid)", value: String(summary.unpaidLeave), hint: "2nd+ this month", className: summary.unpaidLeave > 0 ? "bg-slate-500/20 text-slate-700 dark:text-slate-300 font-semibold" : "bg-muted text-muted-foreground" }]
+      : []),
     { label: "Effective Paid", value: `${summary.effectivePaidDays}d`, hint: "salary credit", className: "bg-primary/10 text-primary font-semibold" },
     { label: "Absent", value: String(summary.absent), hint: "unexcused", className: summary.absent > 0 ? "bg-destructive/15 text-destructive" : "bg-muted text-muted-foreground" },
     { label: "Holiday", value: String(summary.holiday), hint: "Sundays", className: "bg-muted text-muted-foreground" },
@@ -24,7 +29,7 @@ export function MonthlySummary({
 
   return (
     <div className="space-y-2.5">
-      <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
+      <div className={`grid grid-cols-3 gap-2 ${isOffice ? "sm:grid-cols-6" : "sm:grid-cols-5"}`}>
         {chips.map((c) => (
           <div key={c.label} className={`rounded-lg p-2.5 text-center ${c.className}`}>
             <p className="text-lg font-bold tabular-nums">{c.value}</p>
@@ -39,6 +44,11 @@ export function MonthlySummary({
         <div>
           <span className="font-medium text-foreground">Attendance Policy: </span>
           Shift runs until <strong>6:00 PM</strong>. Any real check-in counts as a full paid day, regardless of what time it happened — a Half-Day or Absent only ever comes from a Super Admin marking it by hand.
+          {isOffice && (
+            <>
+              {" "}Office staff get <strong>1 paid Leave per month</strong> — taking a 2nd makes both unpaid.
+            </>
+          )}
         </div>
       </div>
     </div>

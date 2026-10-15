@@ -90,6 +90,18 @@ export function AdminAttendanceTab({
   const recordFor = (userId: string, d: string) =>
     board.records.find((r) => r.userId === userId && r.date === d);
 
+  /** Office staff's 1-paid-Leave-per-month rule — status='leave' alone can't tell paid from unpaid. */
+  const isLeaveUnpaidFor = (userId: string, d: string, isOffice: boolean) => {
+    const recordMonth = d.slice(0, 7);
+    return (
+      evaluateEmployeeMonthAttendance(
+        board.records.filter((r) => r.userId === userId && r.date.startsWith(recordMonth)),
+        recordMonth,
+        isOffice
+      ).recordMap.get(d)?.creditType === "leave_unpaid"
+    );
+  };
+
   /* ---- daily view rows: one per member, "Missed" when no record ---- */
   const dailyRows = members
     .map((m) => ({ member: m, record: recordFor(m.userId, date) }))
@@ -149,7 +161,11 @@ export function AdminAttendanceTab({
           r.status === "present" ? formatTime(r.checkOutAt) : "",
           r.totalMinutes > 0 ? formatDuration(r.totalMinutes) : "",
           r.overtimeMinutes > 0 ? formatDuration(r.overtimeMinutes) : "",
-          r.status !== "present" ? STATUS_LABEL[r.status] : r.source === "admin" ? "Manual" : "Self",
+          r.status !== "present"
+            ? r.status === "leave" && isLeaveUnpaidFor(r.userId, r.date, employee?.isOffice ?? false)
+              ? "Leave (Unpaid)"
+              : STATUS_LABEL[r.status]
+            : r.source === "admin" ? "Manual" : "Self",
         ])
       );
       return;
@@ -167,18 +183,25 @@ export function AdminAttendanceTab({
           record && record.status === "present" ? formatTime(record.checkOutAt) : "",
           record && record.totalMinutes > 0 ? formatDuration(record.totalMinutes) : "",
           record && record.overtimeMinutes > 0 ? formatDuration(record.overtimeMinutes) : "",
-          record ? (record.status !== "present" ? STATUS_LABEL[record.status] : "Present") : "Missed",
+          record
+            ? record.status !== "present"
+              ? record.status === "leave" && isLeaveUnpaidFor(member.userId, date, member.isOffice)
+                ? "Leave (Unpaid)"
+                : STATUS_LABEL[record.status]
+              : "Present"
+            : "Missed",
         ])
       );
     } else {
       downloadCsv(
         `attendance-${month}.csv`,
-        ["Employee", "Employee ID", "Present", "Leave", "Half-Day", "Absent", "Holiday", "Overtime"],
+        ["Employee", "Employee ID", "Present", "Leave", "Leave (Unpaid)", "Half-Day", "Absent", "Holiday", "Overtime"],
         monthlyRows.map(({ member, records, summary }) => [
           member.name,
           member.employeeId || "—",
           summary.present,
           summary.leave,
+          summary.unpaidLeave,
           summary.halfDay,
           summary.absent,
           summary.holiday,
@@ -346,6 +369,9 @@ export function AdminAttendanceTab({
                   {dailyRows.map(({ member, record }) => {
                     const isDeclarative = Boolean(record && record.status !== "present");
                     const isOpenShift = Boolean(record && record.status === "present" && !record.checkOutAt);
+                    const isUnpaidLeave = Boolean(
+                      record?.status === "leave" && isLeaveUnpaidFor(member.userId, date, member.isOffice)
+                    );
 
                     return (
                     <TableRow key={member.userId}>
@@ -390,10 +416,11 @@ export function AdminAttendanceTab({
                           <div className="flex items-center gap-1.5">
                             {isDeclarative ? (
                               <Badge
-                                variant={record.status === "absent" ? "destructive" : record.status === "leave" ? "success" : "warning"}
+                                variant={record.status === "absent" || isUnpaidLeave ? "destructive" : record.status === "leave" ? "success" : "warning"}
                                 className={record.status === "half_day" ? "border-amber-400 bg-amber-500/15 text-amber-800 dark:text-amber-400 font-semibold" : undefined}
+                                title={isUnpaidLeave ? "2nd+ Leave this month — unpaid per office policy" : undefined}
                               >
-                                {STATUS_LABEL[record.status]}
+                                {record.status === "leave" && isUnpaidLeave ? "Leave (Unpaid)" : STATUS_LABEL[record.status]}
                               </Badge>
                             ) : isOpenShift ? (
                               <Badge variant="warning">Open Shift</Badge>
@@ -478,6 +505,7 @@ export function AdminAttendanceTab({
               <LegendDot className="bg-success" label="Present" />
               <LegendDot className="bg-orange-500" label="Half day (manual only)" />
               <LegendDot className="bg-blue-500" label="Leave (paid)" />
+              <LegendDot className="bg-slate-500" label="Leave (unpaid, office 2nd+/mo)" />
               <LegendDot className="bg-destructive" label="Absent" />
               <LegendDot className="bg-muted-foreground/40" label="Sunday" />
               <span className="ml-auto text-muted-foreground/70">Click any day to mark or correct it</span>
@@ -513,7 +541,7 @@ export function AdminAttendanceTab({
                     </tr>
                   )}
                   {monthlyRows.map(({ member, records, summary }, rowIdx) => {
-                    const evaluation = evaluateEmployeeMonthAttendance(records, month);
+                    const evaluation = evaluateEmployeeMonthAttendance(records, month, member.isOffice);
                     const rowBg = rowIdx % 2 === 1 ? "bg-muted" : "bg-card";
                     return (
                       <tr key={member.userId} className={rowBg}>
@@ -538,9 +566,12 @@ export function AdminAttendanceTab({
                           // knows "does a row exist") would otherwise call it present.
                           const status = ev?.creditType === "explicit_absent" ? "absent" : rawStatus;
                           const isLeave = ev?.creditType === "leave";
+                          const isUnpaidLeave = ev?.creditType === "leave_unpaid";
                           const glyph =
                             isLeave
                               ? "LV"
+                              : isUnpaidLeave
+                              ? "LU"
                               : status === "present"
                               ? ev?.glyph || (record?.source === "admin" ? "P*" : "P")
                               : status === "absent" ? "A" : status === "holiday" ? "" : "";
@@ -566,6 +597,8 @@ export function AdminAttendanceTab({
                                   "mx-auto flex h-6 w-6 items-center justify-center rounded-md text-[11px] font-semibold transition-colors hover:ring-2 hover:ring-primary/40 " +
                                   (isLeave
                                     ? "bg-blue-500/20 text-blue-700 dark:text-blue-300"
+                                    : isUnpaidLeave
+                                    ? "bg-slate-500/20 text-slate-700 dark:text-slate-300 border border-slate-400/40"
                                     : status === "present" && isHalf
                                     ? "bg-orange-500/20 text-orange-700 dark:text-orange-300"
                                     : status === "present"
@@ -587,6 +620,7 @@ export function AdminAttendanceTab({
                           <div className="mt-0.5 flex justify-end gap-1.5 whitespace-nowrap text-[10px] tabular-nums text-muted-foreground">
                             <span className="text-success">{summary.present}P</span>
                             {summary.leave > 0 && <span className="text-blue-600 dark:text-blue-400">{summary.leave}LV</span>}
+                            {summary.unpaidLeave > 0 && <span className="text-slate-600 dark:text-slate-400">{summary.unpaidLeave}LU</span>}
                             {summary.halfDay > 0 && <span className="text-orange-600 dark:text-orange-400">{summary.halfDay}HD</span>}
                             <span className="text-destructive">{summary.absent}A</span>
                           </div>
@@ -666,6 +700,8 @@ export function AdminAttendanceTab({
                     {employeeRecords.map((record) => {
                       const isDeclarative = record.status !== "present";
                       const isOpenShift = record.status === "present" && !record.checkOutAt;
+                      const isUnpaidLeave =
+                        record.status === "leave" && isLeaveUnpaidFor(record.userId, record.date, employee?.isOffice ?? false);
                       return (
                       <TableRow key={record.id}>
                         <TableCell className="font-medium tabular-nums">
@@ -689,10 +725,11 @@ export function AdminAttendanceTab({
                         <TableCell>
                           {isDeclarative ? (
                             <Badge
-                              variant={record.status === "absent" ? "destructive" : record.status === "leave" ? "success" : "warning"}
+                              variant={record.status === "absent" || isUnpaidLeave ? "destructive" : record.status === "leave" ? "success" : "warning"}
                               className={record.status === "half_day" ? "border-amber-400 bg-amber-500/15 text-amber-800 dark:text-amber-400 font-semibold" : undefined}
+                              title={isUnpaidLeave ? "2nd+ Leave this month — unpaid per office policy" : undefined}
                             >
-                              {STATUS_LABEL[record.status]}
+                              {record.status === "leave" && isUnpaidLeave ? "Leave (Unpaid)" : STATUS_LABEL[record.status]}
                             </Badge>
                           ) : isOpenShift ? (
                             <Badge variant="warning">Open Shift</Badge>
@@ -755,7 +792,8 @@ export function AdminAttendanceTab({
           evaluated={
             evaluateEmployeeMonthAttendance(
               board.records.filter((r) => r.userId === selected.userId),
-              selected.date.slice(0, 7)
+              selected.date.slice(0, 7),
+              board.members.find((m) => m.userId === selected.userId)?.isOffice ?? false
             ).recordMap.get(selected.date)
           }
           onClose={() => setSelected(null)}

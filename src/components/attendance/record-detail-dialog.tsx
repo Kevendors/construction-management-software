@@ -82,6 +82,8 @@ export function RecordDetailDialog({
         <div className="flex flex-wrap items-center gap-2">
           {evaluated?.creditType === "leave" ? (
             <Badge variant="success">Leave (1.0d paid)</Badge>
+          ) : evaluated?.creditType === "leave_unpaid" ? (
+            <Badge variant="destructive">Leave (Unpaid, 0d)</Badge>
           ) : evaluated?.creditType === "explicit_absent" ? (
             <Badge variant="destructive">Absent (0d)</Badge>
           ) : evaluated?.creditType === "explicit_half_day" ? (

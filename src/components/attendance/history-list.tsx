@@ -21,7 +21,7 @@ import type { EmployeeAttendance } from "@/lib/types";
 import { RecordDetailDialog } from "./record-detail-dialog";
 
 /** List view of the month's records with a from/to date filter and late policy badges. */
-export function HistoryList({ records }: { records: EmployeeAttendance[] }) {
+export function HistoryList({ records, isOffice = false }: { records: EmployeeAttendance[]; isOffice?: boolean }) {
   const [from, setFrom] = React.useState("");
   const [to, setTo] = React.useState("");
   const [selected, setSelected] = React.useState<EmployeeAttendance | null>(null);
@@ -30,13 +30,13 @@ export function HistoryList({ records }: { records: EmployeeAttendance[] }) {
     const months = new Set(records.map((r) => r.date.slice(0, 7)));
     const map = new Map<string, EvaluatedAttendanceRecord>();
     for (const m of months) {
-      const res = evaluateEmployeeMonthAttendance(records, m);
+      const res = evaluateEmployeeMonthAttendance(records, m, isOffice);
       for (const [d, ev] of res.recordMap) {
         map.set(d, ev);
       }
     }
     return map;
-  }, [records]);
+  }, [records, isOffice]);
 
   const rows = records.filter((r) => (!from || r.date >= from) && (!to || r.date <= to));
 
@@ -91,6 +91,14 @@ export function HistoryList({ records }: { records: EmployeeAttendance[] }) {
                   {ev ? (
                     ev.creditType === "on_time" ? (
                       <Badge variant="success">Present</Badge>
+                    ) : ev.creditType === "leave" ? (
+                      <Badge variant="success">Leave</Badge>
+                    ) : ev.creditType === "leave_unpaid" ? (
+                      <Badge variant="destructive">Leave (Unpaid)</Badge>
+                    ) : ev.creditType === "explicit_half_day" ? (
+                      <Badge variant="warning">Half Day</Badge>
+                    ) : ev.creditType === "explicit_absent" ? (
+                      <Badge variant="destructive">Absent</Badge>
                     ) : (
                       <Badge variant="outline">Manual</Badge>
                     )

@@ -159,7 +159,8 @@ export function dayStatus(
 export type ShiftCreditType =
   | "on_time"           // Any real check-in -> 1.0 day credit, no flag regardless of time
   | "manual_present"    // Admin marked without check_in_at -> 1.0 day credit
-  | "leave"             // Admin explicitly marked Leave -> 1.0 day credit (paid)
+  | "leave"             // Admin explicitly marked Leave, within the paid allowance -> 1.0 day credit (paid)
+  | "leave_unpaid"      // Office staff only: 2nd+ Leave this month -> 0 day credit, and retroactively so does the 1st
   | "explicit_half_day" // Admin explicitly marked Half-Day -> 0.5 day credit
   | "explicit_absent";  // Admin explicitly marked Absent -> 0 day credit
 
@@ -179,6 +180,7 @@ export interface MonthlyAttendanceEvaluation {
   totalDaysAttended: number; // raw record count
   fullDays: number;          // count of 1.0 day credits
   halfDays: number;          // count of 0.5 day credits
+  unpaidLeave: number;       // count of Leave days converted to unpaid (office staff, 2nd+ Leave this month)
   effectivePaidDays: number; // fullDays + 0.5 * halfDays
 }
 
@@ -187,17 +189,27 @@ export interface MonthlyAttendanceEvaluation {
  * Any real check-in is simply Present (Full Day) regardless of what time it
  * happened — there is no late-arrival tracking or flagging at all. Only an
  * explicit admin-declared Leave/Half-Day/Absent changes the day's credit.
+ *
+ * Office staff get 1 paid Leave per month — `isOffice` only matters for this.
+ * Taking a 2nd Leave in the same month makes BOTH (every Leave that month,
+ * not just the extra one) unpaid, so the whole month is re-evaluated as a
+ * unit rather than deciding each Leave record in isolation as it's reached.
  */
 export function evaluateEmployeeMonthAttendance(
   records: EmployeeAttendance[],
-  month: string
+  month: string,
+  isOffice: boolean = false
 ): MonthlyAttendanceEvaluation {
   const monthRecords = records
     .filter((r) => r.date.startsWith(month))
     .sort((a, b) => a.date.localeCompare(b.date) || a.checkInAt.localeCompare(b.checkInAt));
 
+  const totalLeaveCount = monthRecords.filter((r) => r.status === "leave").length;
+  const leavesAreUnpaid = isOffice && totalLeaveCount > 1;
+
   let fullDays = 0;
   let halfDays = 0;
+  let unpaidLeave = 0;
   const evaluatedRecords: EvaluatedAttendanceRecord[] = [];
   const recordMap = new Map<string, EvaluatedAttendanceRecord>();
 
@@ -212,12 +224,23 @@ export function evaluateEmployeeMonthAttendance(
     // Explicit admin-declared status wins outright — no punch-time logic
     // applies to a day that was never actually punched.
     if (r.status === "leave") {
-      creditType = "leave";
-      dayCredit = 1.0;
-      fullDays += 1;
-      badgeLabel = "Leave";
-      glyph = "LV";
-      reason = r.note ? `Marked Leave — ${r.note}` : "Marked Leave.";
+      if (leavesAreUnpaid) {
+        creditType = "leave_unpaid";
+        dayCredit = 0;
+        unpaidLeave += 1;
+        badgeLabel = "Leave (Unpaid)";
+        glyph = "LU";
+        reason = `Office staff get 1 paid Leave per month — this is Leave #${
+          monthRecords.filter((x) => x.status === "leave" && x.date <= r.date).length
+        } this month, so it (and the earlier one) is unpaid.${r.note ? ` ${r.note}` : ""}`;
+      } else {
+        creditType = "leave";
+        dayCredit = 1.0;
+        fullDays += 1;
+        badgeLabel = "Leave";
+        glyph = "LV";
+        reason = r.note ? `Marked Leave — ${r.note}` : "Marked Leave.";
+      }
     } else if (r.status === "half_day") {
       creditType = "explicit_half_day";
       dayCredit = 0.5;
@@ -265,15 +288,17 @@ export function evaluateEmployeeMonthAttendance(
     totalDaysAttended: monthRecords.length,
     fullDays,
     halfDays,
+    unpaidLeave,
     effectivePaidDays,
   };
 }
 
 export interface MonthlySummary {
-  present: number;           // Full days (1.0 credits) — includes on-time, leave, manual
+  present: number;           // Full days (1.0 credits) — includes on-time, leave (within allowance), manual
   halfDay: number;           // Half days (0.5 credits) — explicit admin-marked Half-Day only
   effectivePaidDays: number; // present + 0.5 * halfDay
-  leave: number;             // Explicit Leave days (also counted in `present`'s paid-day weight)
+  leave: number;             // Paid Leave days (also counted in `present`'s paid-day weight)
+  unpaidLeave: number;       // Office staff only: Leave days converted to unpaid (2nd+ in the month)
   absent: number;            // No-record days + explicit Absent days
   holiday: number;
 }
@@ -292,7 +317,7 @@ export function monthlySummary(
   holidays: OrgHoliday[] = [],
   isOffice: boolean = false
 ): MonthlySummary {
-  const evalResult = evaluateEmployeeMonthAttendance(records, month);
+  const evalResult = evaluateEmployeeMonthAttendance(records, month, isOffice);
   // Days with an explicit-absent row already have a record, so dayStatus()
   // (which only knows "does a row exist") would wrongly call them present —
   // count them separately and add them in.
@@ -319,6 +344,7 @@ export function monthlySummary(
     halfDay: evalResult.halfDays,
     effectivePaidDays: evalResult.effectivePaidDays,
     leave,
+    unpaidLeave: evalResult.unpaidLeave,
     absent,
     holiday,
   };

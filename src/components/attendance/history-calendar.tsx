@@ -15,20 +15,22 @@ import { RecordDetailDialog } from "./record-detail-dialog";
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 /**
- * Month grid with late policy and half day indicators.
+ * Month grid with half day / unpaid leave indicators.
  */
 export function HistoryCalendar({
   records,
   month,
+  isOffice = false,
 }: {
   records: EmployeeAttendance[];
   month: string;
+  isOffice?: boolean;
 }) {
   const [selected, setSelected] = React.useState<EmployeeAttendance | null>(null);
 
   const evalResult = React.useMemo(
-    () => evaluateEmployeeMonthAttendance(records, month),
-    [records, month]
+    () => evaluateEmployeeMonthAttendance(records, month, isOffice),
+    [records, month, isOffice]
   );
 
   const days = daysOfMonth(month);
@@ -53,6 +55,7 @@ export function HistoryCalendar({
           const dayNum = Number(date.slice(-2));
 
           const isHalfDay = ev?.creditType === "explicit_half_day";
+          const isUnpaidLeave = ev?.creditType === "leave_unpaid";
 
           return (
             <button
@@ -63,8 +66,9 @@ export function HistoryCalendar({
               title={ev?.reason || undefined}
               className={cn(
                 "relative flex aspect-square flex-col items-center justify-center gap-0.5 rounded-lg text-sm tabular-nums transition-colors",
-                status === "present" && !isHalfDay && "bg-success/15 font-medium text-success hover:bg-success/25",
+                status === "present" && !isHalfDay && !isUnpaidLeave && "bg-success/15 font-medium text-success hover:bg-success/25",
                 status === "present" && isHalfDay && "bg-orange-500/25 font-bold text-orange-900 dark:text-orange-300 hover:bg-orange-500/35 border border-orange-400/40",
+                status === "present" && isUnpaidLeave && "bg-slate-500/20 font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-500/30 border border-slate-400/40",
                 status === "absent" && "bg-destructive/10 text-destructive",
                 status === "holiday" && "bg-muted text-muted-foreground",
                 status === "future" && "text-muted-foreground/50"
@@ -73,7 +77,7 @@ export function HistoryCalendar({
               <span>{dayNum}</span>
               {ev && record && (
                 <span className="text-[9px] font-semibold leading-none">
-                  {isHalfDay ? "HD (0.5)" : record.totalMinutes > 0 ? formatDuration(record.totalMinutes) : "P"}
+                  {isHalfDay ? "HD (0.5)" : isUnpaidLeave ? "LU (0)" : record.totalMinutes > 0 ? formatDuration(record.totalMinutes) : "P"}
                 </span>
               )}
             </button>
@@ -86,11 +90,13 @@ export function HistoryCalendar({
           <span className="h-2.5 w-2.5 rounded-full bg-success/70" /> Present (1.0d)
         </span>
         <span className="inline-flex items-center gap-1.5">
-          <span className="h-2.5 w-2.5 rounded-full bg-amber-500" /> Late Grace (1-3 allowed)
+          <span className="h-2.5 w-2.5 rounded-full bg-orange-600" /> Half Day (manual, 0.5d)
         </span>
-        <span className="inline-flex items-center gap-1.5">
-          <span className="h-2.5 w-2.5 rounded-full bg-orange-600" /> Half Day (4th late / &gt;10:30)
-        </span>
+        {isOffice && (
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-2.5 w-2.5 rounded-full bg-slate-500" /> Leave (Unpaid, 2nd+/mo)
+          </span>
+        )}
         <span className="inline-flex items-center gap-1.5">
           <span className="h-2.5 w-2.5 rounded-full bg-destructive/60" /> Absent
         </span>
