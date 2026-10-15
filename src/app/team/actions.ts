@@ -146,6 +146,15 @@ export async function renameMemberAction(userId: string, name: string): Promise<
   if (!trimmed) return { error: "Name can't be empty." };
 
   const admin = createAdminClient();
+
+  // employees (Payroll) is a separate table with its own `name` column, not
+  // derived from profiles — fetch the pre-rename name so we can find a row
+  // that was never linked by profile_id (the common case: it was created by
+  // typing a name, not tied to this login) and keep it in sync too, instead
+  // of leaving Payroll silently showing the old name forever.
+  const { data: existingProfile } = await admin.from("profiles").select("name").eq("id", userId).maybeSingle();
+  const oldName = (existingProfile?.name as string | undefined)?.trim();
+
   const { error: profileErr } = await admin
     .from("profiles")
     .upsert({ id: userId, name: trimmed, initials: initialsOf(trimmed) }, { onConflict: "id" });
@@ -154,6 +163,19 @@ export async function renameMemberAction(userId: string, name: string): Promise<
   // profiles.name is always the primary source /team reads (see page.tsx) —
   // no need to also round-trip the slower Auth Admin API to sync
   // user_metadata.name, which is only ever consulted as a fallback.
+
+  // Keep Payroll's employees.name in sync: update any row already linked by
+  // profile_id, and — for a legacy row never linked that way — match it by
+  // its old name and link it (profile_id) at the same time, so every rename
+  // after this one updates it reliably via the id instead of a name guess.
+  await admin.from("employees").update({ name: trimmed }).eq("profile_id", userId);
+  if (oldName && oldName.toLowerCase() !== trimmed.toLowerCase()) {
+    await admin
+      .from("employees")
+      .update({ name: trimmed, profile_id: userId })
+      .is("profile_id", null)
+      .ilike("name", oldName);
+  }
 
   await logActivity({
     action: "updated",
