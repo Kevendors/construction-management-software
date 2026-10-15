@@ -1,7 +1,7 @@
 "use client";
 
 import { Info } from "lucide-react";
-import { monthlySummary } from "@/lib/attendance/compute";
+import { monthlySummary, type OrgHoliday } from "@/lib/attendance/compute";
 import type { EmployeeAttendance } from "@/lib/types";
 
 /** Present / Half Day / Leave / Absent / Holiday counts for the viewed month. */
@@ -9,12 +9,14 @@ export function MonthlySummary({
   records,
   month,
   isOffice = false,
+  holidays = [],
 }: {
   records: EmployeeAttendance[];
   month: string;
   isOffice?: boolean;
+  holidays?: OrgHoliday[];
 }) {
-  const summary = monthlySummary(records, month, undefined, undefined, isOffice);
+  const summary = monthlySummary(records, month, undefined, holidays, isOffice);
 
   const chips = [
     { label: "Full Present", value: String(summary.present), hint: "1.0 day credit", className: "bg-success/15 text-success" },

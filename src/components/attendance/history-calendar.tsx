@@ -7,6 +7,7 @@ import {
   evaluateEmployeeMonthAttendance,
   formatDuration,
   formatTime,
+  type OrgHoliday,
 } from "@/lib/attendance/compute";
 import { cn } from "@/lib/utils";
 import type { EmployeeAttendance } from "@/lib/types";
@@ -21,16 +22,18 @@ export function HistoryCalendar({
   records,
   month,
   isOffice = false,
+  holidays = [],
 }: {
   records: EmployeeAttendance[];
   month: string;
   isOffice?: boolean;
+  holidays?: OrgHoliday[];
 }) {
   const [selected, setSelected] = React.useState<EmployeeAttendance | null>(null);
 
   const evalResult = React.useMemo(
-    () => evaluateEmployeeMonthAttendance(records, month, isOffice),
-    [records, month, isOffice]
+    () => evaluateEmployeeMonthAttendance(records, month, isOffice, holidays),
+    [records, month, isOffice, holidays]
   );
 
   const days = daysOfMonth(month);

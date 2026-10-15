@@ -97,7 +97,8 @@ export function AdminAttendanceTab({
       evaluateEmployeeMonthAttendance(
         board.records.filter((r) => r.userId === userId && r.date.startsWith(recordMonth)),
         recordMonth,
-        isOffice
+        isOffice,
+        board.holidays
       ).recordMap.get(d)?.creditType === "leave_unpaid"
     );
   };
@@ -541,7 +542,7 @@ export function AdminAttendanceTab({
                     </tr>
                   )}
                   {monthlyRows.map(({ member, records, summary }, rowIdx) => {
-                    const evaluation = evaluateEmployeeMonthAttendance(records, month, member.isOffice);
+                    const evaluation = evaluateEmployeeMonthAttendance(records, month, member.isOffice, board.holidays);
                     const rowBg = rowIdx % 2 === 1 ? "bg-muted" : "bg-card";
                     return (
                       <tr key={member.userId} className={rowBg}>
@@ -793,7 +794,8 @@ export function AdminAttendanceTab({
             evaluateEmployeeMonthAttendance(
               board.records.filter((r) => r.userId === selected.userId),
               selected.date.slice(0, 7),
-              board.members.find((m) => m.userId === selected.userId)?.isOffice ?? false
+              board.members.find((m) => m.userId === selected.userId)?.isOffice ?? false,
+              board.holidays
             ).recordMap.get(selected.date)
           }
           onClose={() => setSelected(null)}

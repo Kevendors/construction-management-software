@@ -130,6 +130,7 @@ export async function getMyAttendancePage(month?: string): Promise<MyAttendanceD
       assignedProjects: mockAssigned,
       hasExplicitProjectAssignment: mockAssigned.length > 0,
       officeGeofence: { lat: null, lng: null, radiusM: null },
+      holidays: [],
       employeeId: "KV001",
       userName: mockCurrentUser.name,
       month: activeMonth,
@@ -145,6 +146,7 @@ export async function getMyAttendancePage(month?: string): Promise<MyAttendanceD
       assignedProjects: [],
       hasExplicitProjectAssignment: false,
       officeGeofence: { lat: null, lng: null, radiusM: null },
+      holidays: [],
       employeeId: "",
       userName: "",
       month: activeMonth,
@@ -155,7 +157,7 @@ export async function getMyAttendancePage(month?: string): Promise<MyAttendanceD
   const { from, to } = monthRange(activeMonth);
   // Explicit user_id filter: super_admin's RLS read is org-wide, but this
   // page is always "my own attendance".
-  const [monthRes, todayRes, unclosedRes, pmRes, projRes, employeeId, orgRes] = await Promise.all([
+  const [monthRes, todayRes, unclosedRes, pmRes, projRes, employeeId, orgRes, holidaysRes] = await Promise.all([
     supabase
       .from("employee_attendance")
       .select("*")
@@ -182,6 +184,7 @@ export async function getMyAttendancePage(month?: string): Promise<MyAttendanceD
     supabase.rpc("list_org_projects"),
     myEmployeeId(supabase, ctx.userId),
     supabase.from("orgs").select("office_lat, office_lng, office_radius_m").eq("id", ctx.orgId).maybeSingle(),
+    supabase.from("org_holidays").select("date, label, applies_to").eq("org_id", ctx.orgId),
   ]);
   if (monthRes.error) throw monthRes.error;
 
@@ -222,6 +225,11 @@ export async function getMyAttendancePage(month?: string): Promise<MyAttendanceD
   // site-check-in project picker that was never a real fit for them.)
   const assignedProjects = projects.filter((p) => assignedIds.has(p.id));
   const officeRow = orgRes?.data as { office_lat: number | null; office_lng: number | null; office_radius_m: number | null } | null;
+  const holidays = (holidaysRes?.data ?? []).map((h) => ({
+    date: (h as { date: string }).date,
+    label: (h as { label: string | null }).label ?? "Holiday",
+    appliesTo: (h as { applies_to: "all" | "office" }).applies_to,
+  }));
 
   return {
     today: todayRow ? mapEmployeeAttendance(todayRow, identityFor(todayRow)) : null,
@@ -234,6 +242,7 @@ export async function getMyAttendancePage(month?: string): Promise<MyAttendanceD
       lng: officeRow?.office_lng ?? null,
       radiusM: officeRow?.office_radius_m ?? null,
     },
+    holidays,
     employeeId,
     userName: ctx.name,
     month: activeMonth,

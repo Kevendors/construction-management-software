@@ -75,7 +75,7 @@ export function EmployeesTab({
           m.employeeId.toLowerCase() === emp.id.toLowerCase() ||
           m.name.toLowerCase() === emp.name.toLowerCase()
       )?.isOffice ?? false;
-    const ev = evaluateEmployeeMonthAttendance(matching, month, isOffice);
+    const ev = evaluateEmployeeMonthAttendance(matching, month, isOffice, attendanceBoard.holidays);
     return {
       rawDays: matching.length,
       fullDays: ev.fullDays,

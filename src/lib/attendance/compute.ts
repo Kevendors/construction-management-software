@@ -21,6 +21,8 @@ export interface MyAttendanceData {
   hasExplicitProjectAssignment: boolean;
   /** Org's shared office location for the office punch flow (all null = fence disabled). */
   officeGeofence: { lat: number | null; lng: number | null; radiusM: number | null };
+  /** Declared company holidays — excluded from the office 1-paid-Leave-per-month count. */
+  holidays: OrgHoliday[];
   employeeId: string;
   userName: string;
   month: string; // "YYYY-MM"
@@ -194,17 +196,21 @@ export interface MonthlyAttendanceEvaluation {
  * Taking a 2nd Leave in the same month makes BOTH (every Leave that month,
  * not just the extra one) unpaid, so the whole month is re-evaluated as a
  * unit rather than deciding each Leave record in isolation as it's reached.
+ * A Leave dated on a declared company holiday never counts toward this (or
+ * gets converted to unpaid itself) — it's already a non-workday regardless.
  */
 export function evaluateEmployeeMonthAttendance(
   records: EmployeeAttendance[],
   month: string,
-  isOffice: boolean = false
+  isOffice: boolean = false,
+  holidays: OrgHoliday[] = []
 ): MonthlyAttendanceEvaluation {
   const monthRecords = records
     .filter((r) => r.date.startsWith(month))
     .sort((a, b) => a.date.localeCompare(b.date) || a.checkInAt.localeCompare(b.checkInAt));
 
-  const totalLeaveCount = monthRecords.filter((r) => r.status === "leave").length;
+  const isHolidayLeave = (r: EmployeeAttendance) => isHolidayFor(r.date, holidays, isOffice);
+  const totalLeaveCount = monthRecords.filter((r) => r.status === "leave" && !isHolidayLeave(r)).length;
   const leavesAreUnpaid = isOffice && totalLeaveCount > 1;
 
   let fullDays = 0;
@@ -224,14 +230,23 @@ export function evaluateEmployeeMonthAttendance(
     // Explicit admin-declared status wins outright — no punch-time logic
     // applies to a day that was never actually punched.
     if (r.status === "leave") {
-      if (leavesAreUnpaid) {
+      if (isHolidayLeave(r)) {
+        // A holiday is already a non-workday regardless of status — never
+        // counts toward, or gets caught by, the 1-paid-Leave-per-month rule.
+        creditType = "leave";
+        dayCredit = 1.0;
+        fullDays += 1;
+        badgeLabel = "Leave";
+        glyph = "LV";
+        reason = r.note ? `Marked Leave — ${r.note} (falls on a company holiday — doesn't count toward the paid Leave allowance)` : "Marked Leave (falls on a company holiday — doesn't count toward the paid Leave allowance).";
+      } else if (leavesAreUnpaid) {
         creditType = "leave_unpaid";
         dayCredit = 0;
         unpaidLeave += 1;
         badgeLabel = "Leave (Unpaid)";
         glyph = "LU";
         reason = `Office staff get 1 paid Leave per month — this is Leave #${
-          monthRecords.filter((x) => x.status === "leave" && x.date <= r.date).length
+          monthRecords.filter((x) => x.status === "leave" && !isHolidayLeave(x) && x.date <= r.date).length
         } this month, so it (and the earlier one) is unpaid.${r.note ? ` ${r.note}` : ""}`;
       } else {
         creditType = "leave";
@@ -317,7 +332,7 @@ export function monthlySummary(
   holidays: OrgHoliday[] = [],
   isOffice: boolean = false
 ): MonthlySummary {
-  const evalResult = evaluateEmployeeMonthAttendance(records, month, isOffice);
+  const evalResult = evaluateEmployeeMonthAttendance(records, month, isOffice, holidays);
   // Days with an explicit-absent row already have a record, so dayStatus()
   // (which only knows "does a row exist") would wrongly call them present —
   // count them separately and add them in.

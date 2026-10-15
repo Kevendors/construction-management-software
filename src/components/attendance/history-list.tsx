@@ -16,12 +16,21 @@ import {
   formatDuration,
   formatTime,
   type EvaluatedAttendanceRecord,
+  type OrgHoliday,
 } from "@/lib/attendance/compute";
 import type { EmployeeAttendance } from "@/lib/types";
 import { RecordDetailDialog } from "./record-detail-dialog";
 
 /** List view of the month's records with a from/to date filter and late policy badges. */
-export function HistoryList({ records, isOffice = false }: { records: EmployeeAttendance[]; isOffice?: boolean }) {
+export function HistoryList({
+  records,
+  isOffice = false,
+  holidays = [],
+}: {
+  records: EmployeeAttendance[];
+  isOffice?: boolean;
+  holidays?: OrgHoliday[];
+}) {
   const [from, setFrom] = React.useState("");
   const [to, setTo] = React.useState("");
   const [selected, setSelected] = React.useState<EmployeeAttendance | null>(null);
@@ -30,13 +39,13 @@ export function HistoryList({ records, isOffice = false }: { records: EmployeeAt
     const months = new Set(records.map((r) => r.date.slice(0, 7)));
     const map = new Map<string, EvaluatedAttendanceRecord>();
     for (const m of months) {
-      const res = evaluateEmployeeMonthAttendance(records, m, isOffice);
+      const res = evaluateEmployeeMonthAttendance(records, m, isOffice, holidays);
       for (const [d, ev] of res.recordMap) {
         map.set(d, ev);
       }
     }
     return map;
-  }, [records, isOffice]);
+  }, [records, isOffice, holidays]);
 
   const rows = records.filter((r) => (!from || r.date >= from) && (!to || r.date <= to));
 
