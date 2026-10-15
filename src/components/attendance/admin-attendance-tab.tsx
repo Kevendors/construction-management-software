@@ -90,18 +90,22 @@ export function AdminAttendanceTab({
   const recordFor = (userId: string, d: string) =>
     board.records.find((r) => r.userId === userId && r.date === d);
 
-  /** Office staff's 1-paid-Leave-per-month rule — status='leave' alone can't tell paid from unpaid. */
-  const isLeaveUnpaidFor = (userId: string, d: string, isOffice: boolean) => {
+  /**
+   * A record's `status` column alone can't tell paid Leave from unpaid, or
+   * from a declarative mark that actually falls on a company holiday — both
+   * only come out of the monthly evaluation.
+   */
+  const creditTypeFor = (userId: string, d: string, isOffice: boolean) => {
     const recordMonth = d.slice(0, 7);
-    return (
-      evaluateEmployeeMonthAttendance(
-        board.records.filter((r) => r.userId === userId && r.date.startsWith(recordMonth)),
-        recordMonth,
-        isOffice,
-        board.holidays
-      ).recordMap.get(d)?.creditType === "leave_unpaid"
-    );
+    return evaluateEmployeeMonthAttendance(
+      board.records.filter((r) => r.userId === userId && r.date.startsWith(recordMonth)),
+      recordMonth,
+      isOffice,
+      board.holidays
+    ).recordMap.get(d)?.creditType;
   };
+  const isLeaveUnpaidFor = (userId: string, d: string, isOffice: boolean) => creditTypeFor(userId, d, isOffice) === "leave_unpaid";
+  const isDeclaredHolidayFor = (userId: string, d: string, isOffice: boolean) => creditTypeFor(userId, d, isOffice) === "declared_holiday";
 
   /* ---- daily view rows: one per member, "Missed" when no record ---- */
   const dailyRows = members
@@ -148,6 +152,11 @@ export function AdminAttendanceTab({
   function exportCsv() {
     const projectLabel = (r: EmployeeAttendance) =>
       r.status !== "present" ? "" : r.projectId ? projectById.get(r.projectId)?.name ?? "" : "Office";
+    const declarativeLabel = (r: EmployeeAttendance, isOffice: boolean) => {
+      if (isDeclaredHolidayFor(r.userId, r.date, isOffice)) return "Holiday";
+      if (r.status === "leave" && isLeaveUnpaidFor(r.userId, r.date, isOffice)) return "Leave (Unpaid)";
+      return STATUS_LABEL[r.status];
+    };
 
     if (view === "employee") {
       downloadCsv(
@@ -162,11 +171,7 @@ export function AdminAttendanceTab({
           r.status === "present" ? formatTime(r.checkOutAt) : "",
           r.totalMinutes > 0 ? formatDuration(r.totalMinutes) : "",
           r.overtimeMinutes > 0 ? formatDuration(r.overtimeMinutes) : "",
-          r.status !== "present"
-            ? r.status === "leave" && isLeaveUnpaidFor(r.userId, r.date, employee?.isOffice ?? false)
-              ? "Leave (Unpaid)"
-              : STATUS_LABEL[r.status]
-            : r.source === "admin" ? "Manual" : "Self",
+          r.status !== "present" ? declarativeLabel(r, employee?.isOffice ?? false) : r.source === "admin" ? "Manual" : "Self",
         ])
       );
       return;
@@ -184,13 +189,7 @@ export function AdminAttendanceTab({
           record && record.status === "present" ? formatTime(record.checkOutAt) : "",
           record && record.totalMinutes > 0 ? formatDuration(record.totalMinutes) : "",
           record && record.overtimeMinutes > 0 ? formatDuration(record.overtimeMinutes) : "",
-          record
-            ? record.status !== "present"
-              ? record.status === "leave" && isLeaveUnpaidFor(member.userId, date, member.isOffice)
-                ? "Leave (Unpaid)"
-                : STATUS_LABEL[record.status]
-              : "Present"
-            : "Missed",
+          record ? (record.status !== "present" ? declarativeLabel(record, member.isOffice) : "Present") : "Missed",
         ])
       );
     } else {
@@ -373,6 +372,7 @@ export function AdminAttendanceTab({
                     const isUnpaidLeave = Boolean(
                       record?.status === "leave" && isLeaveUnpaidFor(member.userId, date, member.isOffice)
                     );
+                    const isDeclaredHoliday = Boolean(isDeclarative && isDeclaredHolidayFor(member.userId, date, member.isOffice));
 
                     return (
                     <TableRow key={member.userId}>
@@ -416,13 +416,19 @@ export function AdminAttendanceTab({
                         {record ? (
                           <div className="flex items-center gap-1.5">
                             {isDeclarative ? (
-                              <Badge
-                                variant={record.status === "absent" || isUnpaidLeave ? "destructive" : record.status === "leave" ? "success" : "warning"}
-                                className={record.status === "half_day" ? "border-amber-400 bg-amber-500/15 text-amber-800 dark:text-amber-400 font-semibold" : undefined}
-                                title={isUnpaidLeave ? "2nd+ Leave this month — unpaid per office policy" : undefined}
-                              >
-                                {record.status === "leave" && isUnpaidLeave ? "Leave (Unpaid)" : STATUS_LABEL[record.status]}
-                              </Badge>
+                              isDeclaredHoliday ? (
+                                <Badge variant="muted" title={`Falls on a company holiday — recorded as Holiday, not ${STATUS_LABEL[record.status]}`}>
+                                  Holiday
+                                </Badge>
+                              ) : (
+                                <Badge
+                                  variant={record.status === "absent" || isUnpaidLeave ? "destructive" : record.status === "leave" ? "success" : "warning"}
+                                  className={record.status === "half_day" ? "border-amber-400 bg-amber-500/15 text-amber-800 dark:text-amber-400 font-semibold" : undefined}
+                                  title={isUnpaidLeave ? "2nd+ Leave this month — unpaid per office policy" : undefined}
+                                >
+                                  {record.status === "leave" && isUnpaidLeave ? "Leave (Unpaid)" : STATUS_LABEL[record.status]}
+                                </Badge>
+                              )
                             ) : isOpenShift ? (
                               <Badge variant="warning">Open Shift</Badge>
                             ) : (
@@ -563,9 +569,14 @@ export function AdminAttendanceTab({
                           const record = ev?.record;
                           const isDeclaredHoliday = isHolidayFor(d, board.holidays, member.isOffice);
                           const rawStatus = dayStatus(d, Boolean(record), orgToday(), isDeclaredHoliday);
-                          // explicit_absent has a real row, so dayStatus() (which only
-                          // knows "does a row exist") would otherwise call it present.
-                          const status = ev?.creditType === "explicit_absent" ? "absent" : rawStatus;
+                          // explicit_absent/declared_holiday have a real row, so dayStatus()
+                          // (which only knows "does a row exist") would otherwise call them present.
+                          const status =
+                            ev?.creditType === "explicit_absent"
+                              ? "absent"
+                              : ev?.creditType === "declared_holiday"
+                              ? "holiday"
+                              : rawStatus;
                           const isLeave = ev?.creditType === "leave";
                           const isUnpaidLeave = ev?.creditType === "leave_unpaid";
                           const glyph =
@@ -703,6 +714,8 @@ export function AdminAttendanceTab({
                       const isOpenShift = record.status === "present" && !record.checkOutAt;
                       const isUnpaidLeave =
                         record.status === "leave" && isLeaveUnpaidFor(record.userId, record.date, employee?.isOffice ?? false);
+                      const isDeclaredHoliday =
+                        isDeclarative && isDeclaredHolidayFor(record.userId, record.date, employee?.isOffice ?? false);
                       return (
                       <TableRow key={record.id}>
                         <TableCell className="font-medium tabular-nums">
@@ -725,13 +738,19 @@ export function AdminAttendanceTab({
                         </TableCell>
                         <TableCell>
                           {isDeclarative ? (
-                            <Badge
-                              variant={record.status === "absent" || isUnpaidLeave ? "destructive" : record.status === "leave" ? "success" : "warning"}
-                              className={record.status === "half_day" ? "border-amber-400 bg-amber-500/15 text-amber-800 dark:text-amber-400 font-semibold" : undefined}
-                              title={isUnpaidLeave ? "2nd+ Leave this month — unpaid per office policy" : undefined}
-                            >
-                              {record.status === "leave" && isUnpaidLeave ? "Leave (Unpaid)" : STATUS_LABEL[record.status]}
-                            </Badge>
+                            isDeclaredHoliday ? (
+                              <Badge variant="muted" title={`Falls on a company holiday — recorded as Holiday, not ${STATUS_LABEL[record.status]}`}>
+                                Holiday
+                              </Badge>
+                            ) : (
+                              <Badge
+                                variant={record.status === "absent" || isUnpaidLeave ? "destructive" : record.status === "leave" ? "success" : "warning"}
+                                className={record.status === "half_day" ? "border-amber-400 bg-amber-500/15 text-amber-800 dark:text-amber-400 font-semibold" : undefined}
+                                title={isUnpaidLeave ? "2nd+ Leave this month — unpaid per office policy" : undefined}
+                              >
+                                {record.status === "leave" && isUnpaidLeave ? "Leave (Unpaid)" : STATUS_LABEL[record.status]}
+                              </Badge>
+                            )
                           ) : isOpenShift ? (
                             <Badge variant="warning">Open Shift</Badge>
                           ) : record.source === "admin" ? (

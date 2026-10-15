@@ -164,7 +164,8 @@ export type ShiftCreditType =
   | "leave"             // Admin explicitly marked Leave, within the paid allowance -> 1.0 day credit (paid)
   | "leave_unpaid"      // Office staff only: 2nd+ Leave this month -> 0 day credit, and retroactively so does the 1st
   | "explicit_half_day" // Admin explicitly marked Half-Day -> 0.5 day credit
-  | "explicit_absent";  // Admin explicitly marked Absent -> 0 day credit
+  | "explicit_absent"   // Admin explicitly marked Absent -> 0 day credit
+  | "declared_holiday"; // Any non-present status landing on a declared company holiday -> shown as Holiday, not Leave/Half-Day/Absent; 0 day credit (same as an ordinary unrecorded holiday)
 
 export interface EvaluatedAttendanceRecord {
   record: EmployeeAttendance;
@@ -186,6 +187,11 @@ export interface MonthlyAttendanceEvaluation {
   effectivePaidDays: number; // fullDays + 0.5 * halfDays
 }
 
+const DECLARED_STATUS_LABEL: Record<string, string> = { leave: "Leave", half_day: "Half Day", absent: "Absent" };
+function badgeLabelFor(status: string): string {
+  return DECLARED_STATUS_LABEL[status] ?? status;
+}
+
 /**
  * Evaluates an employee's attendance records for a month in chronological order.
  * Any real check-in is simply Present (Full Day) regardless of what time it
@@ -196,8 +202,11 @@ export interface MonthlyAttendanceEvaluation {
  * Taking a 2nd Leave in the same month makes BOTH (every Leave that month,
  * not just the extra one) unpaid, so the whole month is re-evaluated as a
  * unit rather than deciding each Leave record in isolation as it's reached.
- * A Leave dated on a declared company holiday never counts toward this (or
- * gets converted to unpaid itself) — it's already a non-workday regardless.
+ *
+ * A declarative mark (Leave/Half-Day/Absent) dated on a declared company
+ * holiday is shown and counted as a Holiday instead — not as Leave (paid or
+ * unpaid), Half-Day or Absent, and never counts toward the paid-Leave
+ * allowance either. A real check-in on a holiday is unaffected either way.
  */
 export function evaluateEmployeeMonthAttendance(
   records: EmployeeAttendance[],
@@ -209,8 +218,9 @@ export function evaluateEmployeeMonthAttendance(
     .filter((r) => r.date.startsWith(month))
     .sort((a, b) => a.date.localeCompare(b.date) || a.checkInAt.localeCompare(b.checkInAt));
 
-  const isHolidayLeave = (r: EmployeeAttendance) => isHolidayFor(r.date, holidays, isOffice);
-  const totalLeaveCount = monthRecords.filter((r) => r.status === "leave" && !isHolidayLeave(r)).length;
+  const isDeclaredHolidayRecord = (r: EmployeeAttendance) =>
+    r.status !== "present" && isHolidayFor(r.date, holidays, isOffice);
+  const totalLeaveCount = monthRecords.filter((r) => r.status === "leave" && !isDeclaredHolidayRecord(r)).length;
   const leavesAreUnpaid = isOffice && totalLeaveCount > 1;
 
   let fullDays = 0;
@@ -227,26 +237,24 @@ export function evaluateEmployeeMonthAttendance(
     let glyph = r.source === "admin" ? "P*" : "P";
     let reason = "";
 
-    // Explicit admin-declared status wins outright — no punch-time logic
-    // applies to a day that was never actually punched.
-    if (r.status === "leave") {
-      if (isHolidayLeave(r)) {
-        // A holiday is already a non-workday regardless of status — never
-        // counts toward, or gets caught by, the 1-paid-Leave-per-month rule.
-        creditType = "leave";
-        dayCredit = 1.0;
-        fullDays += 1;
-        badgeLabel = "Leave";
-        glyph = "LV";
-        reason = r.note ? `Marked Leave — ${r.note} (falls on a company holiday — doesn't count toward the paid Leave allowance)` : "Marked Leave (falls on a company holiday — doesn't count toward the paid Leave allowance).";
-      } else if (leavesAreUnpaid) {
+    // A declared holiday overrides any non-present status outright — it's
+    // never Leave/Half-Day/Absent, just a Holiday, same as an ordinary
+    // unrecorded one. Checked first, before the status-specific branches.
+    if (isDeclaredHolidayRecord(r)) {
+      creditType = "declared_holiday";
+      dayCredit = 0;
+      badgeLabel = "Holiday";
+      glyph = "";
+      reason = `Falls on a declared company holiday${r.note ? ` — ${r.note}` : ""} — recorded as Holiday, not ${badgeLabelFor(r.status)}.`;
+    } else if (r.status === "leave") {
+      if (leavesAreUnpaid) {
         creditType = "leave_unpaid";
         dayCredit = 0;
         unpaidLeave += 1;
         badgeLabel = "Leave (Unpaid)";
         glyph = "LU";
         reason = `Office staff get 1 paid Leave per month — this is Leave #${
-          monthRecords.filter((x) => x.status === "leave" && !isHolidayLeave(x) && x.date <= r.date).length
+          monthRecords.filter((x) => x.status === "leave" && !isDeclaredHolidayRecord(x) && x.date <= r.date).length
         } this month, so it (and the earlier one) is unpaid.${r.note ? ` ${r.note}` : ""}`;
       } else {
         creditType = "leave";
@@ -333,11 +341,14 @@ export function monthlySummary(
   isOffice: boolean = false
 ): MonthlySummary {
   const evalResult = evaluateEmployeeMonthAttendance(records, month, isOffice, holidays);
-  // Days with an explicit-absent row already have a record, so dayStatus()
-  // (which only knows "does a row exist") would wrongly call them present —
-  // count them separately and add them in.
+  // Days with an explicit-absent or declared-holiday row already have a
+  // record, so dayStatus() (which only knows "does a row exist") would
+  // wrongly call them present — count them separately and add them in.
   const explicitAbsentDates = new Set(
     evalResult.evaluatedRecords.filter((e) => e.creditType === "explicit_absent").map((e) => e.record.date)
+  );
+  const declaredHolidayDates = new Set(
+    evalResult.evaluatedRecords.filter((e) => e.creditType === "declared_holiday").map((e) => e.record.date)
   );
   const leave = evalResult.evaluatedRecords.filter((e) => e.creditType === "leave").length;
   const recorded = new Set(records.filter((r) => r.date.startsWith(month)).map((r) => r.date));
@@ -347,6 +358,10 @@ export function monthlySummary(
   for (const date of daysOfMonth(month)) {
     if (explicitAbsentDates.has(date)) {
       absent += 1;
+      continue;
+    }
+    if (declaredHolidayDates.has(date)) {
+      holiday += 1;
       continue;
     }
     const status = dayStatus(date, recorded.has(date), today, isHolidayFor(date, holidays, isOffice));

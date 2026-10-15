@@ -100,6 +100,8 @@ export function HistoryList({
                   {ev ? (
                     ev.creditType === "on_time" ? (
                       <Badge variant="success">Present</Badge>
+                    ) : ev.creditType === "declared_holiday" ? (
+                      <Badge variant="muted">Holiday</Badge>
                     ) : ev.creditType === "leave" ? (
                       <Badge variant="success">Leave</Badge>
                     ) : ev.creditType === "leave_unpaid" ? (

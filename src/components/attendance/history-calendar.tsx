@@ -54,7 +54,14 @@ export function HistoryCalendar({
         {days.map((date) => {
           const ev = evalResult.recordMap.get(date);
           const record = ev?.record;
-          const status = dayStatus(date, Boolean(record));
+          // explicit_absent/declared_holiday have a real row, so dayStatus()
+          // (which only knows "does a row exist") would otherwise call them present.
+          const status =
+            ev?.creditType === "explicit_absent"
+              ? "absent"
+              : ev?.creditType === "declared_holiday"
+              ? "holiday"
+              : dayStatus(date, Boolean(record));
           const dayNum = Number(date.slice(-2));
 
           const isHalfDay = ev?.creditType === "explicit_half_day";
@@ -78,7 +85,7 @@ export function HistoryCalendar({
               )}
             >
               <span>{dayNum}</span>
-              {ev && record && (
+              {ev && record && status !== "holiday" && (
                 <span className="text-[9px] font-semibold leading-none">
                   {isHalfDay ? "HD (0.5)" : isUnpaidLeave ? "LU (0)" : record.totalMinutes > 0 ? formatDuration(record.totalMinutes) : "P"}
                 </span>

@@ -80,7 +80,9 @@ export function RecordDetailDialog({
     >
       <div className="space-y-4">
         <div className="flex flex-wrap items-center gap-2">
-          {evaluated?.creditType === "leave" ? (
+          {evaluated?.creditType === "declared_holiday" ? (
+            <Badge variant="muted">Holiday</Badge>
+          ) : evaluated?.creditType === "leave" ? (
             <Badge variant="success">Leave (1.0d paid)</Badge>
           ) : evaluated?.creditType === "leave_unpaid" ? (
             <Badge variant="destructive">Leave (Unpaid, 0d)</Badge>
@@ -119,7 +121,9 @@ export function RecordDetailDialog({
 
         {isDeclarative ? (
           <div className="rounded-lg border border-border bg-secondary/40 p-3 text-sm text-muted-foreground">
-            No punch times — this day was declared {evaluated?.badgeLabel.toLowerCase() ?? record.status} directly.
+            {evaluated?.creditType === "declared_holiday"
+              ? "No punch times — this date is a declared company holiday, so it's recorded as Holiday rather than the manually marked status."
+              : `No punch times — this day was declared ${evaluated?.badgeLabel.toLowerCase() ?? record.status} directly.`}
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-3">
