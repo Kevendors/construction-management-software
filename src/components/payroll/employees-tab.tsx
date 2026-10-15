@@ -144,7 +144,7 @@ export function EmployeesTab({
             <TableHeader>
               <TableRow>
                 <TableHead>Employee</TableHead>
-                <TableHead>Department</TableHead>
+                <TableHead>Site / Office</TableHead>
                 <TableHead className="text-right">Monthly CTC</TableHead>
                 <TableHead className="text-right">Net Pay</TableHead>
                 <TableHead>Status</TableHead>
@@ -164,6 +164,7 @@ export function EmployeesTab({
                 const t = s ? slipTotals(s) : null;
                 const meta = s ? salarySlipStatusMeta[s.status] : null;
                 const stats = attendanceStatsFor(emp);
+                const isOffice = isOfficeFor(emp);
 
                 return (
                   <TableRow key={emp.id}>
@@ -192,7 +193,11 @@ export function EmployeesTab({
                       </div>
                     </TableCell>
                     <TableCell>
-                      <Badge variant="outline">{departmentLabel[emp.department]}</Badge>
+                      {isOffice === null ? (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      ) : (
+                        <Badge variant="outline">{isOffice ? "Office" : "Site"}</Badge>
+                      )}
                     </TableCell>
                     <TableCell className="text-right">
                       {canManageSalary ? (
