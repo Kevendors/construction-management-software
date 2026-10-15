@@ -164,7 +164,6 @@ export function EmployeesTab({
                 const t = s ? slipTotals(s) : null;
                 const meta = s ? salarySlipStatusMeta[s.status] : null;
                 const stats = attendanceStatsFor(emp);
-                const isOffice = isOfficeFor(emp);
 
                 return (
                   <TableRow key={emp.id}>
@@ -193,22 +192,7 @@ export function EmployeesTab({
                       </div>
                     </TableCell>
                     <TableCell>
-                      <div className="flex items-center gap-1.5">
-                        <Badge variant="outline">{departmentLabel[emp.department]}</Badge>
-                        {isOffice !== null && (
-                          <Badge
-                            variant="outline"
-                            className="text-[10px]"
-                            title={
-                              isOffice
-                                ? "No project assigned — office punch flow, office leave/holiday rules. This is separate from the Department label."
-                                : "Assigned to a project — site punch flow, no leave cap. This is separate from the Department label."
-                            }
-                          >
-                            {isOffice ? "Office" : "Field"}
-                          </Badge>
-                        )}
-                      </div>
+                      <Badge variant="outline">{departmentLabel[emp.department]}</Badge>
                     </TableCell>
                     <TableCell className="text-right">
                       {canManageSalary ? (
