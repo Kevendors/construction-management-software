@@ -6,10 +6,14 @@ import { Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ClientDialog } from "./client-dialog";
 import { deleteClientAction } from "@/app/clients/actions";
+import { useRole } from "@/components/layout/role-provider";
+import { isAdminRole } from "@/lib/auth/permissions";
 import type { Client } from "@/lib/types";
 
 export function ClientDetailActions({ client }: { client: Client }) {
   const router = useRouter();
+  const { role } = useRole();
+  const isAdmin = isAdminRole(role);
   const [editOpen, setEditOpen] = React.useState(false);
   const [deleting, setDeleting] = React.useState(false);
 
@@ -31,9 +35,11 @@ export function ClientDetailActions({ client }: { client: Client }) {
       <Button size="sm" variant="outline" onClick={() => setEditOpen(true)}>
         <Pencil /> Edit
       </Button>
-      <Button size="sm" variant="outline" className="text-destructive" disabled={deleting} onClick={remove}>
-        <Trash2 /> {deleting ? "Deleting…" : "Delete"}
-      </Button>
+      {isAdmin && (
+        <Button size="sm" variant="outline" className="text-destructive" disabled={deleting} onClick={remove}>
+          <Trash2 /> {deleting ? "Deleting…" : "Delete"}
+        </Button>
+      )}
       <ClientDialog open={editOpen} onClose={() => setEditOpen(false)} client={client} />
     </div>
   );

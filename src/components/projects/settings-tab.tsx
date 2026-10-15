@@ -1,18 +1,21 @@
 "use client";
 
 import * as React from "react";
-import { LocateFixed, MapPinned } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { LocateFixed, MapPinned, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input, Label } from "@/components/ui/input";
 import { useGeolocation } from "@/components/attendance/use-geolocation";
 import { useStore } from "@/lib/store/project-store";
+import { deleteProjectAction } from "@/app/projects/delete-actions";
 import type { Project } from "@/lib/types";
 
 const DEFAULT_RADIUS_M = 200;
 
 /** Project settings (super_admin): the attendance geo-fence for the site. */
 export function SettingsTab({ project }: { project: Project }) {
+  const router = useRouter();
   const { setProjectGeofence } = useStore();
   const [lat, setLat] = React.useState(project.geofenceLat?.toString() ?? "");
   const [lng, setLng] = React.useState(project.geofenceLng?.toString() ?? "");
@@ -22,6 +25,25 @@ export function SettingsTab({ project }: { project: Project }) {
   const [saving, setSaving] = React.useState(false);
   const [message, setMessage] = React.useState<{ text: string; isError: boolean } | null>(null);
   const geo = useGeolocation();
+
+  const [confirmCode, setConfirmCode] = React.useState("");
+  const [deleting, setDeleting] = React.useState(false);
+  const [deleteError, setDeleteError] = React.useState<string | null>(null);
+  const canDelete = confirmCode.trim().toUpperCase() === project.code.toUpperCase();
+
+  async function deleteProject() {
+    if (!canDelete) return;
+    setDeleting(true);
+    setDeleteError(null);
+    const res = await deleteProjectAction(project.id);
+    if (res.error) {
+      setDeleting(false);
+      setDeleteError(res.error);
+      return;
+    }
+    router.push("/projects");
+    router.refresh();
+  }
 
   React.useEffect(() => {
     if (geo.status === "success" && geo.position) {
@@ -72,7 +94,8 @@ export function SettingsTab({ project }: { project: Project }) {
   }
 
   return (
-    <Card className="max-w-xl">
+    <div className="max-w-xl space-y-4">
+    <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           <MapPinned className="h-4 w-4" /> Site Geo-fence
@@ -157,5 +180,51 @@ export function SettingsTab({ project }: { project: Project }) {
         </form>
       </CardContent>
     </Card>
+
+    <Card className="border-destructive/40">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base text-destructive">
+          <TriangleAlert className="h-4 w-4" /> Danger Zone
+        </CardTitle>
+        <CardDescription>
+          Permanently delete <strong>{project.code} · {project.name}</strong>. This cannot be undone.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="rounded-md bg-destructive/10 px-3 py-2.5 text-sm text-destructive">
+          <p className="font-medium">This will permanently erase:</p>
+          <ul className="mt-1 list-inside list-disc space-y-0.5">
+            <li>All Tasks</li>
+            <li>All Daily Progress Reports and Site Instructions</li>
+            <li>All uploaded Files and Drawings</li>
+            <li>The BOQ</li>
+            <li>The project&apos;s Team roster</li>
+          </ul>
+          <p className="mt-2">
+            Expenses, invoices, purchase orders, and other financial records linked to this
+            project are <strong>kept</strong> — they&apos;ll just no longer show a project.
+          </p>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="del-confirm">
+            Type <span className="font-mono font-semibold">{project.code}</span> to confirm
+          </Label>
+          <Input
+            id="del-confirm"
+            value={confirmCode}
+            onChange={(e) => setConfirmCode(e.target.value)}
+            placeholder={project.code}
+            autoComplete="off"
+          />
+        </div>
+        {deleteError && <p className="text-sm text-destructive">{deleteError}</p>}
+        <div className="flex justify-end">
+          <Button variant="destructive" disabled={!canDelete || deleting} onClick={deleteProject}>
+            {deleting ? "Deleting…" : "Permanently Delete Project"}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+    </div>
   );
 }

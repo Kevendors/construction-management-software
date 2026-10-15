@@ -1,6 +1,8 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { getAuthContext } from "@/lib/auth/context";
+import { isAdminRole } from "@/lib/auth/permissions";
 
 async function currentOrgId(supabase: Awaited<ReturnType<typeof createClient>>): Promise<string | null> {
   const {
@@ -73,11 +75,12 @@ export async function updateClientAction(id: string, input: ClientInput): Promis
   return { id };
 }
 
+/** Permanently delete a client (its projects/quotations are unlinked, not deleted) — Super Admin only. */
 export async function deleteClientAction(id: string): Promise<ActionResult> {
-  const supabase = await createClient();
-  const orgId = await currentOrgId(supabase);
-  if (!orgId) return { error: "You must be signed in." };
+  const ctx = await getAuthContext();
+  if (!ctx || !isAdminRole(ctx.role)) return { error: "Only a Super Admin can delete a client." };
 
+  const supabase = await createClient();
   const { error } = await supabase.from("clients").delete().eq("id", id);
   if (error) return { error: error.message };
   return { id };
