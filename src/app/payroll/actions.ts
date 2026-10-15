@@ -276,7 +276,10 @@ export async function generateSlipAction(
   if (!emp) return { error: "Employee not found." };
 
   const monthDays = 30;
-  const days = Math.max(0, Math.min(paidDays || monthDays, monthDays));
+  // `paidDays` is a required number, including a legitimate 0 (zero attendance
+  // that month) -- never substitute a default for it here (a `|| monthDays`
+  // would silently turn a real 0 into a full month's pay).
+  const days = Math.max(0, Math.min(paidDays, monthDays));
   const ctc = Number(emp.monthly_ctc) || 0;
   const gross = Math.round((ctc * days) / monthDays);
   // Full salary as basic pay (no HRA or allowances split)

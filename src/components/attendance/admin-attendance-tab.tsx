@@ -391,7 +391,7 @@ export function AdminAttendanceTab({
                             className="text-[10px]"
                             title={member.isOffice ? "No project assigned — office punch flow, office leave/holiday rules" : "Assigned to a project — site punch flow, no leave cap"}
                           >
-                            {member.isOffice ? "Office" : "Site"}
+                            {member.isOffice ? "Office" : "Field"}
                           </Badge>
                         </div>
                       </TableCell>
@@ -575,7 +575,7 @@ export function AdminAttendanceTab({
                               {member.name}
                             </button>
                             <Badge variant="outline" className="text-[10px]">
-                              {member.isOffice ? "Office" : "Site"}
+                              {member.isOffice ? "Office" : "Field"}
                             </Badge>
                           </div>
                         </td>
@@ -685,7 +685,7 @@ export function AdminAttendanceTab({
                   <span className="font-normal text-muted-foreground">{employee.employeeId}</span>
                 )}
                 <Badge variant="outline" className="text-[10px] font-normal">
-                  {employee.isOffice ? "Office" : "Site"}
+                  {employee.isOffice ? "Office" : "Field"}
                 </Badge>
               </CardTitle>
             </CardHeader>

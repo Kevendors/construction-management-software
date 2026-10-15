@@ -96,8 +96,15 @@ export function EmployeesTab({
     setBusyId(empId);
     const emp = employees.find((e) => e.id === empId);
     const stats = emp ? attendanceStatsFor(emp) : null;
-    // Default to effective paid days (taking into account half days from late arrivals) if available and > 0, otherwise standard 30 days
-    const daysToPay = stats && stats.paidDays > 0 ? stats.paidDays : 30;
+    // Whether this employee has an attendance identity at all (a roster entry
+    // in the Attendance board) -- not whether they have records *this month*.
+    const tracked = emp ? isOfficeFor(emp) !== null : false;
+    // Trust the computed attendance days whenever this employee is tracked,
+    // including a genuine 0 (no attendance recorded this month) -- that must
+    // NOT silently become a full paid month. Only default to 30 when there's
+    // no attendance tracking for them at all (e.g. a manually-paid employee
+    // with no login/roster entry), where there's nothing to compute from.
+    const daysToPay = tracked ? stats?.paidDays ?? 0 : 30;
     const res = await generateSlipAction(empId, month, daysToPay);
     setBusyId(null);
     if (!res.error) router.refresh();
@@ -198,7 +205,7 @@ export function EmployeesTab({
                                 : "Assigned to a project — site punch flow, no leave cap. This is separate from the Department label."
                             }
                           >
-                            {isOffice ? "Office" : "Site"}
+                            {isOffice ? "Office" : "Field"}
                           </Badge>
                         )}
                       </div>

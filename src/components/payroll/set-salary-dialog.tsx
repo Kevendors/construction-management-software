@@ -91,7 +91,10 @@ export function SetSalaryDialog({
 
     // If there is an existing draft slip and admin opted to recalculate
     if (existingSlip && existingSlip.status === "draft" && recalcDraft) {
-      await generateSlipAction(employee!.id, month, existingSlip.paidDays || 30);
+      // `?? 30`, not `|| 30`: a slip can legitimately have 0 paid days already
+      // (zero attendance that month) and that must survive a recalc, not get
+      // silently replaced with a full month.
+      await generateSlipAction(employee!.id, month, existingSlip.paidDays ?? 30);
     }
 
     setSaving(false);
