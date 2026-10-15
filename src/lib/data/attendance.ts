@@ -171,10 +171,15 @@ export async function getMyAttendancePage(month?: string): Promise<MyAttendanceD
       .eq("user_id", ctx.userId)
       .eq("date", today)
       .maybeSingle(),
+    // Only a real worked shift ("present") ever needs closing out -- a
+    // declarative Leave/Half-Day/Absent row can carry a check_in_at timestamp
+    // (e.g. midnight-anchored) with no check_out_at and that's correct as-is,
+    // not an open shift waiting to be closed.
     supabase
       .from("employee_attendance")
       .select("*")
       .eq("user_id", ctx.userId)
+      .eq("status", "present")
       .lt("date", today)
       .is("check_out_at", null)
       .order("date", { ascending: false })
