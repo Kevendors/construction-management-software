@@ -57,6 +57,20 @@ export function EmployeesTab({
   const slipFor = (empId: string) => slips.find((s) => s.employeeId === empId && s.month === month) ?? null;
   const monthLabel = new Date(`${month}-01`).toLocaleDateString("en-IN", { month: "long", year: "numeric" });
 
+  // Whether this employee has a project assigned (Site, in the attendance sense) or not (Office) --
+  // independent of the manually-set `department` field (engineering/design/site/accounts/admin),
+  // which is a separate HR label and can legitimately disagree with this (e.g. an "Admin"
+  // department employee who is also assigned to a project is still "Site" here).
+  const isOfficeFor = (emp: Employee): boolean | null => {
+    const m = attendanceBoard?.members.find(
+      (m) =>
+        (emp.profileId && m.userId === emp.profileId) ||
+        m.employeeId.toLowerCase() === emp.id.toLowerCase() ||
+        m.name.toLowerCase() === emp.name.toLowerCase()
+    );
+    return m ? m.isOffice : null;
+  };
+
   // Count GPS verified attendance days and half-day evaluation for this employee in the active month
   const attendanceStatsFor = (emp: Employee) => {
     if (!attendanceBoard?.records?.length) return null;
@@ -68,13 +82,7 @@ export function EmployeesTab({
       return false;
     });
     if (matching.length === 0) return null;
-    const isOffice =
-      attendanceBoard.members.find(
-        (m) =>
-          (emp.profileId && m.userId === emp.profileId) ||
-          m.employeeId.toLowerCase() === emp.id.toLowerCase() ||
-          m.name.toLowerCase() === emp.name.toLowerCase()
-      )?.isOffice ?? false;
+    const isOffice = isOfficeFor(emp) ?? false;
     const ev = evaluateEmployeeMonthAttendance(matching, month, isOffice, attendanceBoard.holidays);
     return {
       rawDays: matching.length,
@@ -149,6 +157,7 @@ export function EmployeesTab({
                 const t = s ? slipTotals(s) : null;
                 const meta = s ? salarySlipStatusMeta[s.status] : null;
                 const stats = attendanceStatsFor(emp);
+                const isOffice = isOfficeFor(emp);
 
                 return (
                   <TableRow key={emp.id}>
@@ -177,7 +186,22 @@ export function EmployeesTab({
                       </div>
                     </TableCell>
                     <TableCell>
-                      <Badge variant="outline">{departmentLabel[emp.department]}</Badge>
+                      <div className="flex items-center gap-1.5">
+                        <Badge variant="outline">{departmentLabel[emp.department]}</Badge>
+                        {isOffice !== null && (
+                          <Badge
+                            variant="outline"
+                            className="text-[10px]"
+                            title={
+                              isOffice
+                                ? "No project assigned — office punch flow, office leave/holiday rules. This is separate from the Department label."
+                                : "Assigned to a project — site punch flow, no leave cap. This is separate from the Department label."
+                            }
+                          >
+                            {isOffice ? "Office" : "Site"}
+                          </Badge>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell className="text-right">
                       {canManageSalary ? (
