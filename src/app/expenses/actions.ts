@@ -55,7 +55,8 @@ export interface LogExpenseInput {
 export async function logExpense(input: LogExpenseInput): Promise<ActionResult> {
   const ctx = await getAuthContext();
   if (!ctx?.orgId) return { error: "You must be signed in." };
-  if (!input.projectId) return { error: "Project is required." };
+  // A blank projectId is a deliberate Office Expense (not tied to any project) --
+  // not a missing field.
   // Non-admins can only log an expense under their own name — the authenticated
   // session, not whatever the (now hidden/disabled for them) Person field sent.
   const byId = isAdminRole(ctx.role) ? input.byId : ctx.userId;
@@ -67,7 +68,7 @@ export async function logExpense(input: LogExpenseInput): Promise<ActionResult> 
     .insert({
       org_id: ctx.orgId,
       title: input.title || null,
-      project_id: input.projectId,
+      project_id: input.projectId || null,
       by_id: byId,
       date: input.date,
       category: input.category,
@@ -131,7 +132,7 @@ export async function updateOwnExpenseAction(
 ): Promise<ActionResult> {
   const ctx = await getAuthContext();
   if (!ctx?.userId) return { error: "You must be signed in." };
-  if (!input.projectId) return { error: "Project is required." };
+  // A blank projectId is a deliberate Office Expense (not tied to any project).
 
   const supabase = await createClient();
   const { data: existing } = await supabase
@@ -151,7 +152,7 @@ export async function updateOwnExpenseAction(
     .from("expenses")
     .update({
       title: input.title || null,
-      project_id: input.projectId,
+      project_id: input.projectId || null,
       by_id: byId,
       date: input.date,
       category: input.category,

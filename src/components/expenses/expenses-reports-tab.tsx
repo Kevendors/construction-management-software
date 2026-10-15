@@ -23,8 +23,8 @@ export function ExpensesReportsTab({ board }: { board: ExpensesBoard }) {
 
   const byProject = totalsBy(expenses, (e) => e.projectId).map((r) => ({
     ...r,
-    label: projectById.get(r.key)?.code ?? "—",
-    name: projectById.get(r.key)?.name ?? "Unassigned",
+    label: r.key ? (projectById.get(r.key)?.code ?? "—") : "Office",
+    name: r.key ? (projectById.get(r.key)?.name ?? "Unassigned") : "Office Expenses",
   }));
   const byPerson = totalsBy(expenses, (e) => e.byId).map((r) => ({
     ...r,

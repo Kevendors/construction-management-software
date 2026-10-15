@@ -65,6 +65,7 @@ function LogExpenseDialog({
   const isAdmin = isAdminRole(role);
   const { projects, users } = board;
   const [title, setTitle] = React.useState("");
+  const [isOffice, setIsOffice] = React.useState(false);
   const [projectId, setProjectId] = React.useState("");
   const [byId, setById] = React.useState("");
   const [cats, setCats] = React.useState<ExpenseCategoryOption[]>(board.categories);
@@ -89,6 +90,7 @@ function LogExpenseDialog({
     if (!open) return;
     if (editing) {
       setTitle(editing.title ?? "");
+      setIsOffice(!editing.projectId);
       setProjectId(editing.projectId);
       setById(editing.byId);
       setCategory(editing.category);
@@ -98,6 +100,7 @@ function LogExpenseDialog({
       setNote(editing.note ?? "");
       clearBill();
     } else {
+      setIsOffice(false);
       setProjectId((v) => v || projects[0]?.id || "");
       // Non-admins can only ever log an expense under their own name --
       // auto-filled from the signed-in session, never a pickable list.
@@ -163,7 +166,7 @@ function LogExpenseDialog({
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!title.trim()) return setError("Expense title is required.");
-    if (!projectId) return setError("Project is required.");
+    if (!isOffice && !projectId) return setError("Project is required.");
     if (!byId) return setError("Employee / person is required.");
     const amt = Number(amount);
     if (!amt) return setError("Amount is required.");
@@ -172,7 +175,7 @@ function LogExpenseDialog({
     setError(null);
     const payload = {
       title: title.trim(),
-      projectId,
+      projectId: isOffice ? "" : projectId,
       byId,
       date,
       category,
@@ -206,14 +209,39 @@ function LogExpenseDialog({
           <Label htmlFor="x-title">Expense Title *</Label>
           <Input id="x-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Cement purchase" autoFocus required />
         </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1.5">
-            <Label htmlFor="x-project">Project *</Label>
-            <Select id="x-project" value={projectId} onChange={(e) => setProjectId(e.target.value)} required>
-              {projects.map((p) => <option key={p.id} value={p.id}>{p.code} · {p.name}</option>)}
-            </Select>
+        <div className="space-y-1.5">
+          <Label>Expense Type</Label>
+          <div className="inline-flex rounded-md border border-input p-0.5 text-sm">
+            <button
+              type="button"
+              onClick={() => setIsOffice(false)}
+              className={`rounded px-3 py-1.5 font-medium transition-colors ${
+                !isOffice ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-secondary"
+              }`}
+            >
+              Project Expense
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsOffice(true)}
+              className={`rounded px-3 py-1.5 font-medium transition-colors ${
+                isOffice ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-secondary"
+              }`}
+            >
+              Office Expense
+            </button>
           </div>
-          <div className="space-y-1.5">
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          {!isOffice && (
+            <div className="space-y-1.5">
+              <Label htmlFor="x-project">Project *</Label>
+              <Select id="x-project" value={projectId} onChange={(e) => setProjectId(e.target.value)} required>
+                {projects.map((p) => <option key={p.id} value={p.id}>{p.code} · {p.name}</option>)}
+              </Select>
+            </div>
+          )}
+          <div className={`space-y-1.5 ${isOffice ? "col-span-2" : ""}`}>
             <Label htmlFor="x-person">Employee / Person *</Label>
             {isAdmin ? (
               <Select id="x-person" value={byId} onChange={(e) => setById(e.target.value)} required>
@@ -377,7 +405,7 @@ export function ExpensesApprovalTab({ board }: { board: ExpensesBoard }) {
   const [personFilter, setPersonFilter] = React.useState("all");
 
   const rows = expenses
-    .filter((e) => projectFilter === "all" || e.projectId === projectFilter)
+    .filter((e) => projectFilter === "all" || (projectFilter === "__office__" ? !e.projectId : e.projectId === projectFilter))
     .filter((e) => personFilter === "all" || e.byId === personFilter)
     .sort((a, b) => +new Date(b.date) - +new Date(a.date));
   const filteredTotal = rows.reduce((s, e) => s + e.amount, 0);
@@ -411,6 +439,7 @@ export function ExpensesApprovalTab({ board }: { board: ExpensesBoard }) {
         <div className="flex flex-wrap items-center gap-2">
           <Select value={projectFilter} onChange={(e) => setProjectFilter(e.target.value)} className="h-8 w-44 text-xs">
             <option value="all">All projects</option>
+            <option value="__office__">Office Expenses</option>
             {projects.map((p) => <option key={p.id} value={p.id}>{p.code} · {p.name}</option>)}
           </Select>
           <Select value={personFilter} onChange={(e) => setPersonFilter(e.target.value)} className="h-8 w-44 text-xs">
@@ -455,7 +484,9 @@ export function ExpensesApprovalTab({ board }: { board: ExpensesBoard }) {
                     <div className="font-medium">{e.title || e.note || "—"}</div>
                     {e.title && e.note && <div className="text-xs text-muted-foreground">{e.note}</div>}
                   </TableCell>
-                  <TableCell className="text-muted-foreground">{project?.code}</TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {project ? project.code : <Badge variant="outline">Office</Badge>}
+                  </TableCell>
                   <TableCell>
                     {by && (
                       <div className="flex items-center gap-2">
