@@ -28,6 +28,7 @@ import {
 import { fileToResizedDataUrl } from "@/lib/image";
 import type { ExpensesBoard, ExpenseCategoryOption } from "@/lib/data/expenses";
 import { useRole } from "@/components/layout/role-provider";
+import { isAdminRole } from "@/lib/auth/permissions";
 import { approvalMeta, categoryLabel } from "@/lib/labels";
 import { formatINR } from "@/lib/utils";
 import type { ApprovalStatus, Expense } from "@/lib/types";
@@ -60,6 +61,8 @@ function LogExpenseDialog({
   editing?: Expense | null;
 }) {
   const router = useRouter();
+  const { role, userId } = useRole();
+  const isAdmin = isAdminRole(role);
   const { projects, users } = board;
   const [title, setTitle] = React.useState("");
   const [projectId, setProjectId] = React.useState("");
@@ -96,11 +99,14 @@ function LogExpenseDialog({
       clearBill();
     } else {
       setProjectId((v) => v || projects[0]?.id || "");
-      setById((v) => v || users[0]?.id || "");
+      // Non-admins can only ever log an expense under their own name --
+      // auto-filled from the signed-in session, never a pickable list.
+      if (isAdmin) setById((v) => v || users[0]?.id || "");
+      else setById(userId ?? "");
     }
     setError(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, editing, projects, users]);
+  }, [open, editing, projects, users, isAdmin, userId]);
 
   async function handleFile(file: File) {
     if (!file.type.startsWith("image/") && file.type !== "application/pdf") {
@@ -209,9 +215,18 @@ function LogExpenseDialog({
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="x-person">Employee / Person *</Label>
-            <Select id="x-person" value={byId} onChange={(e) => setById(e.target.value)} required>
-              {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-            </Select>
+            {isAdmin ? (
+              <Select id="x-person" value={byId} onChange={(e) => setById(e.target.value)} required>
+                {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+              </Select>
+            ) : (
+              <div
+                className="flex h-9 items-center rounded-md border border-input bg-secondary/40 px-3 text-sm text-muted-foreground"
+                title="Always your own account — set from who's signed in, can't be changed here."
+              >
+                {users.find((u) => u.id === byId)?.name ?? "You"}
+              </div>
+            )}
           </div>
         </div>
         <div className="grid grid-cols-3 gap-3">

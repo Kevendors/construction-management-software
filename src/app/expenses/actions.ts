@@ -53,26 +53,29 @@ export interface LogExpenseInput {
 }
 
 export async function logExpense(input: LogExpenseInput): Promise<ActionResult> {
-  const supabase = await createClient();
-  const { orgId, userId } = await currentContext(supabase);
-  if (!orgId) return { error: "You must be signed in." };
+  const ctx = await getAuthContext();
+  if (!ctx?.orgId) return { error: "You must be signed in." };
   if (!input.projectId) return { error: "Project is required." };
-  if (!input.byId) return { error: "Employee / person is required." };
+  // Non-admins can only log an expense under their own name — the authenticated
+  // session, not whatever the (now hidden/disabled for them) Person field sent.
+  const byId = isAdminRole(ctx.role) ? input.byId : ctx.userId;
+  if (!byId) return { error: "Employee / person is required." };
 
+  const supabase = await createClient();
   const { data, error } = await supabase
     .from("expenses")
     .insert({
-      org_id: orgId,
+      org_id: ctx.orgId,
       title: input.title || null,
       project_id: input.projectId,
-      by_id: input.byId,
+      by_id: byId,
       date: input.date,
       category: input.category,
       amount: input.amount,
       payment_mode: input.paymentMode || null,
       status: input.status,
       note: input.note || null,
-      approver_id: input.status === "pending" ? null : userId,
+      approver_id: input.status === "pending" ? null : ctx.userId,
     })
     .select("id")
     .single();
@@ -83,7 +86,7 @@ export async function logExpense(input: LogExpenseInput): Promise<ActionResult> 
   if (input.billDataUrl) {
     const decoded = decodeDataUrl(input.billDataUrl);
     if (decoded) {
-      const path = `${orgId}/${expenseId}.${decoded.ext}`;
+      const path = `${ctx.orgId}/${expenseId}.${decoded.ext}`;
       const admin = createAdminClient();
       const { error: upErr } = await admin.storage
         .from(BILL_BUCKET)
@@ -104,9 +107,9 @@ export async function logExpense(input: LogExpenseInput): Promise<ActionResult> 
   });
 
   await dispatchNotification({
-    orgId,
+    orgId: ctx.orgId,
     roles: ["super_admin", "accountant"],
-    excludeUserId: userId ?? undefined,
+    excludeUserId: ctx.userId,
     kind: "payment",
     title: `New Expense: ${formatINR(input.amount)}`,
     body: `${input.title ? `"${input.title}" · ` : ""}${input.category} (${input.date})`,
@@ -129,7 +132,6 @@ export async function updateOwnExpenseAction(
   const ctx = await getAuthContext();
   if (!ctx?.userId) return { error: "You must be signed in." };
   if (!input.projectId) return { error: "Project is required." };
-  if (!input.byId) return { error: "Employee / person is required." };
 
   const supabase = await createClient();
   const { data: existing } = await supabase
@@ -138,15 +140,19 @@ export async function updateOwnExpenseAction(
     .eq("id", id)
     .maybeSingle();
   if (!existing) return { error: "Expense not found." };
-  const canEdit = (existing.by_id === ctx.userId || isAdminRole(ctx.role)) && existing.status === "pending";
+  const isAdmin = isAdminRole(ctx.role);
+  const canEdit = (existing.by_id === ctx.userId || isAdmin) && existing.status === "pending";
   if (!canEdit) return { error: "You can only edit your own expense while it's still pending." };
+  // Non-admins can't reassign their own expense to someone else — the person
+  // is locked to whoever it already belongs to, regardless of what's submitted.
+  const byId = isAdmin ? input.byId || existing.by_id : existing.by_id;
 
   const { error } = await supabase
     .from("expenses")
     .update({
       title: input.title || null,
       project_id: input.projectId,
-      by_id: input.byId,
+      by_id: byId,
       date: input.date,
       category: input.category,
       amount: input.amount,

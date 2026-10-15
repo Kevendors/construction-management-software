@@ -20,6 +20,8 @@ import {
   listProjectCommentsAction,
   type DprComment,
 } from "@/app/projects/comment-actions";
+import { useRole } from "@/components/layout/role-provider";
+import { isAdminRole } from "@/lib/auth/permissions";
 import type { SiteInstruction } from "@/lib/types";
 
 const MAX_PHOTOS = 8;
@@ -38,9 +40,15 @@ function NewDprDialog({
 }) {
   const { addDpr } = useStore();
   const users = useUsers();
+  const { role, userId } = useRole();
+  const isAdmin = isAdminRole(role);
   const today = new Date().toISOString().slice(0, 10);
   const [date, setDate] = React.useState(today);
-  const [authorId, setAuthorId] = React.useState(users[0]?.id ?? "");
+  const [authorId, setAuthorId] = React.useState(isAdmin ? users[0]?.id ?? "" : userId ?? "");
+
+  React.useEffect(() => {
+    if (open && !isAdmin) setAuthorId(userId ?? "");
+  }, [open, isAdmin, userId]);
   const [weather, setWeather] = React.useState("Clear, 34°C");
   const [workDone, setWorkDone] = React.useState("");
   const [labourCount, setLabourCount] = React.useState("0");
@@ -102,13 +110,22 @@ function NewDprDialog({
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="d-author">Reported by</Label>
-            <Select id="d-author" value={authorId} onChange={(e) => setAuthorId(e.target.value)}>
-              {users.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.name}
-                </option>
-              ))}
-            </Select>
+            {isAdmin ? (
+              <Select id="d-author" value={authorId} onChange={(e) => setAuthorId(e.target.value)}>
+                {users.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.name}
+                  </option>
+                ))}
+              </Select>
+            ) : (
+              <div
+                className="flex h-9 items-center rounded-md border border-input bg-secondary/40 px-3 text-sm text-muted-foreground"
+                title="Always your own account — set from who's signed in, can't be changed here."
+              >
+                {users.find((u) => u.id === authorId)?.name ?? "You"}
+              </div>
+            )}
           </div>
         </div>
 
@@ -205,10 +222,16 @@ function NewInstructionDialog({
 }) {
   const { addInstruction } = useStore();
   const users = useUsers();
+  const { role, userId } = useRole();
+  const isAdmin = isAdminRole(role);
   const today = new Date().toISOString().slice(0, 10);
-  const [byId, setById] = React.useState(users[0]?.id ?? "");
+  const [byId, setById] = React.useState(isAdmin ? users[0]?.id ?? "" : userId ?? "");
   const [priority, setPriority] = React.useState<SiteInstruction["priority"]>("medium");
   const [text, setText] = React.useState("");
+
+  React.useEffect(() => {
+    if (open && !isAdmin) setById(userId ?? "");
+  }, [open, isAdmin, userId]);
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -225,13 +248,22 @@ function NewInstructionDialog({
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
             <Label htmlFor="s-by">Issued by</Label>
-            <Select id="s-by" value={byId} onChange={(e) => setById(e.target.value)}>
-              {users.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.name}
-                </option>
-              ))}
-            </Select>
+            {isAdmin ? (
+              <Select id="s-by" value={byId} onChange={(e) => setById(e.target.value)}>
+                {users.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.name}
+                  </option>
+                ))}
+              </Select>
+            ) : (
+              <div
+                className="flex h-9 items-center rounded-md border border-input bg-secondary/40 px-3 text-sm text-muted-foreground"
+                title="Always your own account — set from who's signed in, can't be changed here."
+              >
+                {users.find((u) => u.id === byId)?.name ?? "You"}
+              </div>
+            )}
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="s-priority">Priority</Label>
