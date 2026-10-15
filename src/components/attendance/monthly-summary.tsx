@@ -17,7 +17,6 @@ export function MonthlySummary({
   const chips = [
     { label: "Full Present", value: String(summary.present), hint: "1.0 day credit", className: "bg-success/15 text-success" },
     { label: "Half Days", value: String(summary.halfDay), hint: "manual only", className: summary.halfDay > 0 ? "bg-amber-500/20 text-amber-700 dark:text-amber-400 font-semibold" : "bg-muted text-muted-foreground" },
-    { label: "Late Arrivals", value: String(summary.lateCount), hint: "after 10:30 AM, no pay impact", className: summary.lateCount > 0 ? "bg-amber-500/20 text-amber-700 dark:text-amber-400 font-semibold" : "bg-muted text-muted-foreground" },
     { label: "Effective Paid", value: `${summary.effectivePaidDays}d`, hint: "salary credit", className: "bg-primary/10 text-primary font-semibold" },
     { label: "Absent", value: String(summary.absent), hint: "unexcused", className: summary.absent > 0 ? "bg-destructive/15 text-destructive" : "bg-muted text-muted-foreground" },
     { label: "Holiday", value: String(summary.holiday), hint: "Sundays", className: "bg-muted text-muted-foreground" },
@@ -25,7 +24,7 @@ export function MonthlySummary({
 
   return (
     <div className="space-y-2.5">
-      <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+      <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
         {chips.map((c) => (
           <div key={c.label} className={`rounded-lg p-2.5 text-center ${c.className}`}>
             <p className="text-lg font-bold tabular-nums">{c.value}</p>
@@ -38,8 +37,8 @@ export function MonthlySummary({
       <div className="flex items-start gap-1.5 rounded-md border border-border/70 bg-muted/30 px-3 py-2 text-[11px] text-muted-foreground">
         <Info className="h-3.5 w-3.5 shrink-0 mt-0.5 text-primary" />
         <div>
-          <span className="font-medium text-foreground">Attendance &amp; Late Policy: </span>
-          Shift runs until <strong>6:00 PM</strong>. Checking in any time up to <strong>10:30 AM</strong> is on time, full day. A later check-in is tagged <strong>Late</strong> for the record, but never automatically reduces pay — only a Super Admin manually marking a day Half-Day/Absent does.
+          <span className="font-medium text-foreground">Attendance Policy: </span>
+          Shift runs until <strong>6:00 PM</strong>. Any real check-in counts as a full paid day, regardless of what time it happened — a Half-Day or Absent only ever comes from a Super Admin marking it by hand.
         </div>
       </div>
     </div>

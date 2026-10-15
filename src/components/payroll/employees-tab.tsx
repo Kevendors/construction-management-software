@@ -57,7 +57,7 @@ export function EmployeesTab({
   const slipFor = (empId: string) => slips.find((s) => s.employeeId === empId && s.month === month) ?? null;
   const monthLabel = new Date(`${month}-01`).toLocaleDateString("en-IN", { month: "long", year: "numeric" });
 
-  // Count GPS verified attendance days and late/half-day evaluation for this employee in the active month
+  // Count GPS verified attendance days and half-day evaluation for this employee in the active month
   const attendanceStatsFor = (emp: Employee) => {
     if (!attendanceBoard?.records?.length) return null;
     const matching = attendanceBoard.records.filter((r) => {
@@ -73,7 +73,6 @@ export function EmployeesTab({
       rawDays: matching.length,
       fullDays: ev.fullDays,
       halfDays: ev.halfDays,
-      lateCount: ev.lateCount,
       paidDays: ev.effectivePaidDays,
     };
   };
@@ -156,7 +155,7 @@ export function EmployeesTab({
                             {stats !== null && (
                               <span
                                 className="inline-flex items-center gap-1 rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-800 dark:text-emerald-400"
-                                title={`${stats.fullDays} full days, ${stats.halfDays} half days, ${stats.lateCount} late arrivals`}
+                                title={`${stats.fullDays} full days, ${stats.halfDays} half days`}
                               >
                                 {stats.paidDays}d paid
                                 {stats.halfDays > 0 && (

@@ -54,11 +54,6 @@ export function CheckInFlow({
   const [selfie, setSelfie] = React.useState("");
   const [errorMsg, setErrorMsg] = React.useState("");
   const [doneAt, setDoneAt] = React.useState("");
-  const [evalInfo, setEvalInfo] = React.useState<{
-    creditType?: "on_time" | "late_grace";
-    lateIndex?: number;
-    lateMessage?: string;
-  } | null>(null);
   const geo = useGeolocation();
   const geoRequest = geo.request;
 
@@ -72,7 +67,6 @@ export function CheckInFlow({
       setSelfie("");
       setErrorMsg("");
       setDoneAt("");
-      setEvalInfo(null);
       if (mode === "out") {
         setProjectId(activeProjectId ?? "");
         setStep("locate");
@@ -113,11 +107,6 @@ export function CheckInFlow({
         setStep("error");
         return;
       }
-      setEvalInfo({
-        creditType: checkInRes.creditType,
-        lateIndex: checkInRes.lateIndex,
-        lateMessage: checkInRes.lateMessage,
-      });
     } else {
       const checkOutRes = await checkOutAction({ lat, lng, accuracy, selfieDataUrl: selfie });
       if (checkOutRes.error) {
@@ -235,27 +224,6 @@ export function CheckInFlow({
             at {formatTime(doneAt)}
           </p>
           {project && <p className="text-xs text-muted-foreground">{project.name}</p>}
-
-          {mode === "in" && evalInfo && (
-            <div className="mt-2 w-full rounded-lg border p-3 text-left text-xs space-y-1">
-              {evalInfo.creditType === "on_time" && (
-                <div className="flex items-center gap-2 font-medium text-success">
-                  <span className="inline-block h-2 w-2 rounded-full bg-success" />
-                  <span>On-time arrival (by 10:30 AM) — Full Day (1.0d) credited</span>
-                </div>
-              )}
-              {evalInfo.creditType === "late_grace" && (
-                <div className="rounded border border-amber-500/30 bg-amber-500/10 p-2.5 text-amber-900 dark:text-amber-300">
-                  <div className="flex items-center gap-1.5 font-semibold">
-                    <span>⚠️ Late Arrival #{evalInfo.lateIndex} This Month</span>
-                  </div>
-                  <p className="mt-1 text-[11px] text-muted-foreground">
-                    Checked in after 10:30 AM — logged for the record. Full Day (1.0d) credited.
-                  </p>
-                </div>
-              )}
-            </div>
-          )}
 
           <Button className="mt-4 h-12 w-full" onClick={onClose}>
             Done

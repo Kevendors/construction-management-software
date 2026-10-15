@@ -91,8 +91,6 @@ export function HistoryList({ records }: { records: EmployeeAttendance[] }) {
                   {ev ? (
                     ev.creditType === "on_time" ? (
                       <Badge variant="success">Present</Badge>
-                    ) : ev.creditType === "late_grace" ? (
-                      <Badge variant="warning">{ev.badgeLabel}</Badge>
                     ) : (
                       <Badge variant="outline">Manual</Badge>
                     )

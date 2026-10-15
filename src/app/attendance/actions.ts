@@ -10,7 +10,6 @@ import {
   formatDuration,
   formatTime,
   haversineMeters,
-  isAfterLateGrace,
   minutesBetween,
   orgToday,
   ORG_UTC_OFFSET,
@@ -26,12 +25,6 @@ const MAX_SELFIE_BYTES = 2 * 1024 * 1024;
 export interface ActionResult {
   id?: string;
   error?: string;
-}
-
-export interface CheckInResult extends ActionResult {
-  lateMessage?: string;
-  creditType?: "on_time" | "late_grace";
-  lateIndex?: number;
 }
 
 export interface CheckInInput {
@@ -132,7 +125,7 @@ async function uploadSelfie(
   return path;
 }
 
-export async function checkInAction(input: CheckInInput): Promise<CheckInResult> {
+export async function checkInAction(input: CheckInInput): Promise<ActionResult> {
   // Mock mode: the UI keeps its own optimistic state (lost on reload — demo only).
   if (!isSupabaseConfigured()) return { id: "mock" };
 
@@ -222,42 +215,12 @@ export async function checkInAction(input: CheckInInput): Promise<CheckInResult>
   await supabase.from("employee_attendance").update({ check_in_selfie_path: selfiePath }).eq("id", row.id);
 
   const nowIso = new Date().toISOString();
-  let lateMsg = "";
-  let creditType: "on_time" | "late_grace" = "on_time";
-  let lateNum = 0;
-  let userNotificationTitle = "Attendance Marked (On Time)";
-  let userNotificationBody = `Checked in on time at ${formatTime(nowIso)} (${(project as { name: string }).name}). Full Day (1.0d) credited.`;
-
-  // Check-in by 10:30 AM is simply on time, no flag. Past 10:30 AM is tagged
-  // "Late" for visibility only — no matter how many times this month, it
-  // never automatically reduces pay.
-  if (isAfterLateGrace(nowIso)) {
-    const curMonth = date.slice(0, 7);
-    const { data: monthRows } = await supabase
-      .from("employee_attendance")
-      .select("check_in_at")
-      .eq("user_id", ctx.userId)
-      .like("date", `${curMonth}%`)
-      .not("check_in_at", "is", null);
-
-    let priorLates = 0;
-    for (const mr of monthRows ?? []) {
-      if (mr.check_in_at && isAfterLateGrace(mr.check_in_at) && mr.check_in_at !== nowIso) {
-        priorLates += 1;
-      }
-    }
-    lateNum = priorLates + 1;
-    creditType = "late_grace";
-    lateMsg = ` [Late #${lateNum} this month]`;
-    userNotificationTitle = `Attendance Marked (Late #${lateNum})`;
-    userNotificationBody = `Checked in at ${formatTime(nowIso)}. Late arrival #${lateNum} this month. Full Day (1.0d) credited.`;
-  }
 
   await logActivity({
     action: "created",
     entityType: "attendance",
     entityId: row.id,
-    summary: `${ctx.name} checked in — ${(project as { name: string }).name}${lateMsg}`,
+    summary: `${ctx.name} checked in — ${(project as { name: string }).name}`,
     meta: { projectId: input.projectId, lat: input.lat, lng: input.lng },
   });
 
@@ -267,8 +230,8 @@ export async function checkInAction(input: CheckInInput): Promise<CheckInResult>
     roles: ["super_admin"],
     excludeUserId: ctx.userId,
     kind: "info",
-    title: `${ctx.name} Checked In${lateMsg ? " (Late)" : ""}`,
-    body: `${ctx.name} checked in at ${(project as { name: string }).name} (${formatTime(nowIso)})${lateMsg}`,
+    title: `${ctx.name} Checked In`,
+    body: `${ctx.name} checked in at ${(project as { name: string }).name} (${formatTime(nowIso)})`,
     href: "/attendance",
   });
 
@@ -277,17 +240,12 @@ export async function checkInAction(input: CheckInInput): Promise<CheckInResult>
     orgId: ctx.orgId,
     userIds: [ctx.userId],
     kind: "info",
-    title: userNotificationTitle,
-    body: userNotificationBody,
+    title: "Attendance Marked",
+    body: `Checked in at ${formatTime(nowIso)} (${(project as { name: string }).name}). Full Day (1.0d) credited.`,
     href: "/attendance",
   });
 
-  return {
-    id: row.id,
-    lateMessage: lateMsg.trim(),
-    creditType,
-    lateIndex: lateNum > 0 ? lateNum : undefined,
-  };
+  return { id: row.id };
 }
 
 export async function checkOutAction(input: CheckOutInput): Promise<ActionResult> {
@@ -498,7 +456,7 @@ export async function deleteHolidayAction(date: string): Promise<ActionResult> {
  * only differences are no project/selfie and the office geofence instead
  * of a project's.
  */
-export async function officeCheckInAction(input: OfficePunchInput): Promise<CheckInResult> {
+export async function officeCheckInAction(input: OfficePunchInput): Promise<ActionResult> {
   if (!isSupabaseConfigured()) return { id: "mock" };
 
   const ctx = await getAuthContext();
@@ -557,41 +515,12 @@ export async function officeCheckInAction(input: OfficePunchInput): Promise<Chec
   }
 
   const nowIso = new Date().toISOString();
-  let lateMsg = "";
-  let creditType: "on_time" | "late_grace" = "on_time";
-  let lateNum = 0;
-  let userNotificationTitle = "Punched In (On Time)";
-  let userNotificationBody = `Punched in on time at ${formatTime(nowIso)}. Full Day (1.0d) credited.`;
-
-  // Office shares the same 10:30 AM cutoff as site. Past it is tagged "Late"
-  // for visibility only — never automatically reduces pay.
-  if (isAfterLateGrace(nowIso)) {
-    const curMonth = date.slice(0, 7);
-    const { data: monthRows } = await supabase
-      .from("employee_attendance")
-      .select("check_in_at")
-      .eq("user_id", ctx.userId)
-      .like("date", `${curMonth}%`)
-      .not("check_in_at", "is", null);
-
-    let priorLates = 0;
-    for (const mr of monthRows ?? []) {
-      if (mr.check_in_at && isAfterLateGrace(mr.check_in_at) && mr.check_in_at !== nowIso) {
-        priorLates += 1;
-      }
-    }
-    lateNum = priorLates + 1;
-    creditType = "late_grace";
-    lateMsg = ` [Late #${lateNum} this month]`;
-    userNotificationTitle = `Punched In (Late #${lateNum})`;
-    userNotificationBody = `Punched in at ${formatTime(nowIso)}. Late arrival #${lateNum} this month. Full Day (1.0d) credited.`;
-  }
 
   await logActivity({
     action: "created",
     entityType: "attendance",
     entityId: row.id,
-    summary: `${ctx.name} punched in (office)${lateMsg}`,
+    summary: `${ctx.name} punched in (office)`,
     meta: { office: true, lat: input.lat, lng: input.lng },
   });
 
@@ -600,8 +529,8 @@ export async function officeCheckInAction(input: OfficePunchInput): Promise<Chec
     roles: ["super_admin"],
     excludeUserId: ctx.userId,
     kind: "info",
-    title: `${ctx.name} Punched In (Office)${lateMsg ? " (Late)" : ""}`,
-    body: `${ctx.name} punched in at the office (${formatTime(nowIso)})${lateMsg}`,
+    title: `${ctx.name} Punched In (Office)`,
+    body: `${ctx.name} punched in at the office (${formatTime(nowIso)})`,
     href: "/attendance",
   });
 
@@ -609,17 +538,12 @@ export async function officeCheckInAction(input: OfficePunchInput): Promise<Chec
     orgId: ctx.orgId,
     userIds: [ctx.userId],
     kind: "info",
-    title: userNotificationTitle,
-    body: userNotificationBody,
+    title: "Punched In",
+    body: `Punched in at ${formatTime(nowIso)}. Full Day (1.0d) credited.`,
     href: "/attendance",
   });
 
-  return {
-    id: row.id,
-    lateMessage: lateMsg.trim(),
-    creditType,
-    lateIndex: lateNum > 0 ? lateNum : undefined,
-  };
+  return { id: row.id };
 }
 
 /** One-tap office punch-out: no selfie — just GPS. Mirrors checkOutAction minus the selfie. */

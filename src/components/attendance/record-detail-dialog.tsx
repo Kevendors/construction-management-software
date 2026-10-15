@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ExternalLink, History, Info } from "lucide-react";
+import { ExternalLink, History } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Dialog } from "@/components/ui/dialog";
 import {
@@ -90,8 +90,6 @@ export function RecordDetailDialog({
             </Badge>
           ) : evaluated?.creditType === "on_time" || !evaluated ? (
             <Badge variant="success">Present (1.0d)</Badge>
-          ) : evaluated.creditType === "late_grace" ? (
-            <Badge variant="warning">{evaluated.badgeLabel} (1.0d)</Badge>
           ) : (
             <Badge variant="outline">Manual</Badge>
           )}
@@ -107,19 +105,6 @@ export function RecordDetailDialog({
             <Badge variant="warning">OT {formatDuration(record.overtimeMinutes)}</Badge>
           )}
         </div>
-
-        {/* Policy evaluation callout */}
-        {evaluated?.creditType === "late_grace" && (
-          <div className="rounded-lg border border-amber-300/80 bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-300 flex items-start gap-2">
-            <Info className="h-4 w-4 shrink-0 text-amber-600 mt-0.5" />
-            <div>
-              <p className="font-semibold">Late Arrival #{evaluated.lateIndex} This Month</p>
-              <p className="mt-0.5 text-amber-800/90 dark:text-amber-300/90">
-                Checked in at {formatTime(record.checkInAt)}, after 10:30 AM — logged for the record. Credited as a full day (1.0), same as always.
-              </p>
-            </div>
-          </div>
-        )}
 
         {record.source === "admin" && (
           <div className="rounded-lg bg-warning/10 p-3 text-sm">

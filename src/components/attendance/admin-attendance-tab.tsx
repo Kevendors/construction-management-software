@@ -344,10 +344,6 @@ export function AdminAttendanceTab({
                     </TableRow>
                   )}
                   {dailyRows.map(({ member, record }) => {
-                    const memberMonthRecords = board.records.filter(
-                      (r) => r.userId === member.userId && r.date.startsWith(date.slice(0, 7))
-                    );
-                    const evalRecord = evaluateEmployeeMonthAttendance(memberMonthRecords, date.slice(0, 7)).recordMap.get(date);
                     const isDeclarative = Boolean(record && record.status !== "present");
                     const isOpenShift = Boolean(record && record.status === "present" && !record.checkOutAt);
 
@@ -401,10 +397,6 @@ export function AdminAttendanceTab({
                               </Badge>
                             ) : isOpenShift ? (
                               <Badge variant="warning">Open Shift</Badge>
-                            ) : evalRecord?.creditType === "late_grace" ? (
-                              <Badge variant="warning" title={evalRecord.reason}>
-                                {evalRecord.badgeLabel}
-                              </Badge>
                             ) : (
                               <Badge variant="success">Present</Badge>
                             )}
@@ -483,8 +475,7 @@ export function AdminAttendanceTab({
           </CardHeader>
           <CardContent className="pt-0">
             <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 rounded-md border border-border bg-secondary/30 px-3 py-2 text-[11px] text-muted-foreground">
-              <LegendDot className="bg-success" label="Present (by 10:30 AM)" />
-              <LegendDot className="bg-amber-500" label="Late (after 10:30 AM, no pay impact)" />
+              <LegendDot className="bg-success" label="Present" />
               <LegendDot className="bg-orange-500" label="Half day (manual only)" />
               <LegendDot className="bg-blue-500" label="Leave (paid)" />
               <LegendDot className="bg-destructive" label="Absent" />
@@ -553,7 +544,6 @@ export function AdminAttendanceTab({
                               : status === "present"
                               ? ev?.glyph || (record?.source === "admin" ? "P*" : "P")
                               : status === "absent" ? "A" : status === "holiday" ? "" : "";
-                          const isGrace = ev?.creditType === "late_grace";
                           const isHalf = ev?.creditType === "explicit_half_day";
                           const holidayLabel = board.holidays.find((h) => h.date === d)?.label;
                           const tooltip =
@@ -578,8 +568,6 @@ export function AdminAttendanceTab({
                                     ? "bg-blue-500/20 text-blue-700 dark:text-blue-300"
                                     : status === "present" && isHalf
                                     ? "bg-orange-500/20 text-orange-700 dark:text-orange-300"
-                                    : status === "present" && isGrace
-                                    ? "bg-amber-500/20 text-amber-700 dark:text-amber-400"
                                     : status === "present"
                                     ? "bg-success/15 text-success"
                                     : status === "absent"
@@ -600,7 +588,6 @@ export function AdminAttendanceTab({
                             <span className="text-success">{summary.present}P</span>
                             {summary.leave > 0 && <span className="text-blue-600 dark:text-blue-400">{summary.leave}LV</span>}
                             {summary.halfDay > 0 && <span className="text-orange-600 dark:text-orange-400">{summary.halfDay}HD</span>}
-                            {summary.lateCount > 0 && <span className="text-amber-600 dark:text-amber-400">{summary.lateCount}L</span>}
                             <span className="text-destructive">{summary.absent}A</span>
                           </div>
                         </td>
