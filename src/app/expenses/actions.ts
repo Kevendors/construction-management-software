@@ -47,7 +47,6 @@ export interface LogExpenseInput {
   category: string;
   amount: number;
   paymentMode: string;
-  status: ApprovalStatus;
   note: string;
   billDataUrl?: string; // optional uploaded bill (data URL)
 }
@@ -74,9 +73,11 @@ export async function logExpense(input: LogExpenseInput): Promise<ActionResult> 
       category: input.category,
       amount: input.amount,
       payment_mode: input.paymentMode || null,
-      status: input.status,
+      // Every expense starts Pending -- Approve/Reject is a separate,
+      // Super-Admin-only action (setExpenseStatus), never chosen at creation.
+      status: "pending",
       note: input.note || null,
-      approver_id: input.status === "pending" ? null : ctx.userId,
+      approver_id: null,
     })
     .select("id")
     .single();

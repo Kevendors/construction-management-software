@@ -31,11 +31,10 @@ import { useRole } from "@/components/layout/role-provider";
 import { isAdminRole } from "@/lib/auth/permissions";
 import { approvalMeta, categoryLabel } from "@/lib/labels";
 import { formatINR } from "@/lib/utils";
-import type { ApprovalStatus, Expense } from "@/lib/types";
+import type { Expense } from "@/lib/types";
 
 const ADD_NEW = "__add_new__";
 const PAYMENT_MODES = ["Cash", "UPI", "Bank Transfer", "Card", "Cheque"];
-const STATUSES: ApprovalStatus[] = ["pending", "approved", "rejected"];
 const today = () => new Date().toISOString().slice(0, 10);
 
 async function fileToDataUrl(file: File): Promise<string> {
@@ -76,7 +75,6 @@ function LogExpenseDialog({
   const [amount, setAmount] = React.useState("");
   const [paymentMode, setPaymentMode] = React.useState("Cash");
   const [date, setDate] = React.useState(today());
-  const [status, setStatus] = React.useState<ApprovalStatus>("pending");
   const [note, setNote] = React.useState("");
   const [billName, setBillName] = React.useState("");
   const [billSize, setBillSize] = React.useState(0);
@@ -184,7 +182,9 @@ function LogExpenseDialog({
       note: note.trim(),
       billDataUrl: billDataUrl || undefined,
     };
-    const res = editing ? await updateOwnExpenseAction(editing.id, payload) : await logExpense({ ...payload, status });
+    // Every new expense starts Pending -- Approve/Reject is a separate,
+    // Super-Admin-only step, never chosen at creation time.
+    const res = editing ? await updateOwnExpenseAction(editing.id, payload) : await logExpense(payload);
     setSaving(false);
     if (res.error) return setError(res.error);
     onClose();
@@ -192,7 +192,6 @@ function LogExpenseDialog({
     setAmount("");
     setNote("");
     clearBill();
-    setStatus("pending");
     router.refresh();
   }
 
@@ -296,19 +295,9 @@ function LogExpenseDialog({
             </Select>
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1.5">
-            <Label htmlFor="x-date">Date</Label>
-            <Input id="x-date" type="date" value={date} max={today()} onChange={(e) => setDate(e.target.value)} />
-          </div>
-          {!editing && (
-            <div className="space-y-1.5">
-              <Label htmlFor="x-status">Status</Label>
-              <Select id="x-status" value={status} onChange={(e) => setStatus(e.target.value as ApprovalStatus)}>
-                {STATUSES.map((s) => <option key={s} value={s}>{approvalMeta[s].label}</option>)}
-              </Select>
-            </div>
-          )}
+        <div className="space-y-1.5">
+          <Label htmlFor="x-date">Date</Label>
+          <Input id="x-date" type="date" value={date} max={today()} onChange={(e) => setDate(e.target.value)} />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="x-note">Notes</Label>
