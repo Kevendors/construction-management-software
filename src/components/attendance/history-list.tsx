@@ -91,7 +91,11 @@ export function HistoryList({
                     month: "short",
                   })}
                 </TableCell>
-                <TableCell className="tabular-nums">{formatTime(r.checkInAt)}</TableCell>
+                <TableCell className="tabular-nums">
+                  {ev && ev.creditType !== "on_time" && ev.creditType !== "manual_present"
+                    ? "—"
+                    : formatTime(r.checkInAt)}
+                </TableCell>
                 <TableCell className="tabular-nums">{formatTime(r.checkOutAt)}</TableCell>
                 <TableCell className="text-right tabular-nums">
                   {r.totalMinutes > 0 ? formatDuration(r.totalMinutes) : "—"}
