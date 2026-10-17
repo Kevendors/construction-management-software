@@ -108,6 +108,26 @@ async function myEmployeeId(
   return (data?.employee_id as string | null | undefined) ?? "";
 }
 
+/**
+ * The caller's own explicit Office/Site setting (Team page), independent of
+ * project assignment. Returns null if the column doesn't exist yet
+ * (migration 0039 unapplied) so the caller can fall back to the old
+ * project-assignment inference.
+ */
+async function myIsOffice(
+  supabase: Awaited<ReturnType<typeof createSupabase>>,
+  userId: string
+): Promise<boolean | null> {
+  const { data, error } = await supabase
+    .from("memberships")
+    .select("is_office")
+    .eq("user_id", userId)
+    .limit(1)
+    .maybeSingle();
+  if (error) return null;
+  return (data?.is_office as boolean | null | undefined) ?? null;
+}
+
 export async function getMyAttendancePage(month?: string): Promise<MyAttendanceData> {
   const activeMonth = /^\d{4}-\d{2}$/.test(month ?? "") ? (month as string) : orgThisMonth();
   const today = orgToday();
@@ -129,6 +149,7 @@ export async function getMyAttendancePage(month?: string): Promise<MyAttendanceD
         .sort((a, b) => b.date.localeCompare(a.date)),
       assignedProjects: mockAssigned,
       hasExplicitProjectAssignment: mockAssigned.length > 0,
+      isOffice: assignedIds.size === 0,
       officeGeofence: { lat: null, lng: null, radiusM: null },
       holidays: [],
       employeeId: "KV001",
@@ -145,6 +166,7 @@ export async function getMyAttendancePage(month?: string): Promise<MyAttendanceD
       records: [],
       assignedProjects: [],
       hasExplicitProjectAssignment: false,
+      isOffice: false,
       officeGeofence: { lat: null, lng: null, radiusM: null },
       holidays: [],
       employeeId: "",
@@ -157,7 +179,7 @@ export async function getMyAttendancePage(month?: string): Promise<MyAttendanceD
   const { from, to } = monthRange(activeMonth);
   // Explicit user_id filter: super_admin's RLS read is org-wide, but this
   // page is always "my own attendance".
-  const [monthRes, todayRes, unclosedRes, pmRes, projRes, employeeId, orgRes, holidaysRes] = await Promise.all([
+  const [monthRes, todayRes, unclosedRes, pmRes, projRes, employeeId, isOfficeRaw, orgRes, holidaysRes] = await Promise.all([
     supabase
       .from("employee_attendance")
       .select("*")
@@ -188,6 +210,7 @@ export async function getMyAttendancePage(month?: string): Promise<MyAttendanceD
     supabase.from("project_members").select("project_id").eq("user_id", ctx.userId),
     supabase.rpc("list_org_projects"),
     myEmployeeId(supabase, ctx.userId),
+    myIsOffice(supabase, ctx.userId),
     supabase.from("orgs").select("office_lat, office_lng, office_radius_m").eq("id", ctx.orgId).maybeSingle(),
     supabase.from("org_holidays").select("date, label, applies_to").eq("org_id", ctx.orgId),
   ]);
@@ -242,6 +265,9 @@ export async function getMyAttendancePage(month?: string): Promise<MyAttendanceD
     records: monthRows.map((r) => mapEmployeeAttendance(r, identityFor(r))),
     assignedProjects,
     hasExplicitProjectAssignment: assignedIds.size > 0,
+    // Explicit per-member setting (Team page); falls back to the old
+    // project-assignment inference only pre-migration (0039 not yet applied).
+    isOffice: isOfficeRaw ?? assignedIds.size === 0,
     officeGeofence: {
       lat: officeRow?.office_lat ?? null,
       lng: officeRow?.office_lng ?? null,
@@ -281,21 +307,33 @@ export async function getAttendanceAdminBoard(): Promise<AttendanceAdminBoard> {
   }
 
   const admin = createAdminClient();
-  type MemRow = { user_id: string; role: Role; is_active?: boolean; employee_id?: string | null };
+  type MemRow = { user_id: string; role: Role; is_active?: boolean; employee_id?: string | null; is_office?: boolean | null };
   let memRows: MemRow[] = [];
+  let hasIsOfficeColumn = true;
   const withEmployeeId = await admin
     .from("memberships")
-    .select("user_id, role, is_active, employee_id")
+    .select("user_id, role, is_active, employee_id, is_office")
     .eq("org_id", ctx.orgId);
   if (!withEmployeeId.error) {
     memRows = (withEmployeeId.data ?? []) as MemRow[];
   } else {
-    // employee_id column missing (0015 not applied)
-    const basic = await admin
+    // is_office column missing (0039 not applied) -- retry without it, and
+    // fall back to the old project-assignment inference for isOffice below.
+    hasIsOfficeColumn = false;
+    const noOffice = await admin
       .from("memberships")
-      .select("user_id, role, is_active")
+      .select("user_id, role, is_active, employee_id")
       .eq("org_id", ctx.orgId);
-    memRows = (basic.data ?? []) as MemRow[];
+    if (!noOffice.error) {
+      memRows = (noOffice.data ?? []) as MemRow[];
+    } else {
+      // employee_id column missing too (0015 not applied)
+      const basic = await admin
+        .from("memberships")
+        .select("user_id, role, is_active")
+        .eq("org_id", ctx.orgId);
+      memRows = (basic.data ?? []) as MemRow[];
+    }
   }
   memRows = memRows.filter((m) => m.is_active ?? true);
 
@@ -323,7 +361,9 @@ export async function getAttendanceAdminBoard(): Promise<AttendanceAdminBoard> {
       name: nameById.get(m.user_id) ?? "User",
       employeeId: m.employee_id ?? "",
       role: m.role,
-      isOffice: !rosterUserIds.has(m.user_id),
+      // Explicit per-member setting (Team page), independent of project
+      // assignment. Falls back to the old auto-inference only pre-migration.
+      isOffice: hasIsOfficeColumn ? m.is_office ?? true : !rosterUserIds.has(m.user_id),
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
   const memberById = new Map(members.map((m) => [m.userId, m]));

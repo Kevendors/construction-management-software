@@ -19,6 +19,13 @@ export interface MyAttendanceData {
    * not role.
    */
   hasExplicitProjectAssignment: boolean;
+  /**
+   * Whether the caller counts as Office (vs Site) for policy purposes --
+   * the 1-paid-leave-per-month rule, office-only-holiday exclusion, and the
+   * Office/Site badge. Explicitly set per member on the Team page, NOT
+   * derived from hasExplicitProjectAssignment.
+   */
+  isOffice: boolean;
   /** Org's shared office location for the office punch flow (all null = fence disabled). */
   officeGeofence: { lat: number | null; lng: number | null; radiusM: number | null };
   /** Declared company holidays — excluded from the office 1-paid-Leave-per-month count. */

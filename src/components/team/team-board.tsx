@@ -23,6 +23,7 @@ import {
   renameMemberAction,
   resetMemberPasswordAction,
   setMemberActiveAction,
+  setMemberOfficeAction,
   setMemberPoAccessAction,
   setMemberRoleAction,
   updateMemberPhoneAction,
@@ -40,6 +41,8 @@ export interface TeamMember {
   role: Role;
   isActive: boolean;
   canViewPurchaseOrders: boolean;
+  /** Explicit Office/Site setting (attendance leave/holiday policy + badge) — independent of project assignment. */
+  isOffice: boolean;
 }
 
 /** Roles an admin can assign (in menu order) — the full catalog. */
@@ -341,6 +344,14 @@ export function TeamBoard({
     else router.refresh();
   }
 
+  async function toggleOffice(userId: string, next: boolean) {
+    setBusy(userId);
+    const res = await setMemberOfficeAction(userId, next);
+    setBusy(null);
+    if (res.error) window.alert(res.error);
+    else router.refresh();
+  }
+
   return (
     <>
       <PageHeader
@@ -370,6 +381,7 @@ export function TeamBoard({
                 <TableHead>Employee ID</TableHead>
                 <TableHead>Login</TableHead>
                 <TableHead>Role</TableHead>
+                <TableHead>Office / Site</TableHead>
                 <TableHead>Purchase Orders</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Action</TableHead>
@@ -428,6 +440,18 @@ export function TeamBoard({
                       </Select>
                     </TableCell>
                     <TableCell>
+                      <Select
+                        value={m.isOffice ? "office" : "site"}
+                        disabled={busy === m.userId}
+                        onChange={(e) => toggleOffice(m.userId, e.target.value === "office")}
+                        className="h-8 w-28 text-xs"
+                        title="Which attendance leave/holiday policy applies — independent of project assignment"
+                      >
+                        <option value="office">Office</option>
+                        <option value="site">Site</option>
+                      </Select>
+                    </TableCell>
+                    <TableCell>
                       {m.role === "super_admin" ? (
                         <Badge variant="success">Always</Badge>
                       ) : (
@@ -472,7 +496,7 @@ export function TeamBoard({
               })}
               {members.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={7} className="py-10 text-center text-sm text-muted-foreground">
+                  <TableCell colSpan={8} className="py-10 text-center text-sm text-muted-foreground">
                     No members yet — add one with “New Member”.
                   </TableCell>
                 </TableRow>

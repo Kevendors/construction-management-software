@@ -132,7 +132,7 @@ export function MyAttendance({ data }: { data: MyAttendanceData }) {
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            <MonthlySummary records={records} month={data.month} isOffice={!data.hasExplicitProjectAssignment} holidays={data.holidays} />
+            <MonthlySummary records={records} month={data.month} isOffice={data.isOffice} holidays={data.holidays} />
             <div className="grid grid-cols-2 gap-2">
               <Button
                 variant={view === "calendar" ? "secondary" : "ghost"}
@@ -150,9 +150,9 @@ export function MyAttendance({ data }: { data: MyAttendanceData }) {
               </Button>
             </div>
             {view === "calendar" ? (
-              <HistoryCalendar records={records} month={data.month} isOffice={!data.hasExplicitProjectAssignment} holidays={data.holidays} />
+              <HistoryCalendar records={records} month={data.month} isOffice={data.isOffice} holidays={data.holidays} />
             ) : (
-              <HistoryList records={records} isOffice={!data.hasExplicitProjectAssignment} holidays={data.holidays} />
+              <HistoryList records={records} isOffice={data.isOffice} holidays={data.holidays} />
             )}
           </CardContent>
         </Card>

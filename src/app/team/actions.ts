@@ -263,6 +263,32 @@ export async function setMemberPoAccessAction(userId: string, canView: boolean):
 }
 
 /**
+ * Admin-only: explicitly set whether a member counts as Office or Site.
+ * Independent of project assignment -- this only drives the 1-paid-leave-
+ * per-month rule, the office-only-holiday exclusion, and the Office/Site
+ * badge; it does not change which check-in flow they see.
+ */
+export async function setMemberOfficeAction(userId: string, isOffice: boolean): Promise<ActionResult> {
+  const ctx = await getAuthContext();
+  if (!ctx || !isAdminRole(ctx.role)) return { error: "Not authorized." };
+  if (!ctx.orgId) return { error: "No organization found." };
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("memberships")
+    .update({ is_office: isOffice })
+    .eq("org_id", ctx.orgId)
+    .eq("user_id", userId);
+  if (error) return { error: error.message };
+  await logActivity({
+    action: "updated",
+    entityType: "member",
+    entityId: userId,
+    summary: `Set attendance category to ${isOffice ? "Office" : "Site"}`,
+  });
+  return { id: userId };
+}
+
+/**
  * Admin-only: set a member's password directly. Phone logins use a
  * `<digits>@sitehub.phone` alias that can't receive mail, so the email recovery
  * flow can't reach them — an admin hands over the new password out of band.

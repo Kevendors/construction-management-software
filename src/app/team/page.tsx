@@ -39,11 +39,12 @@ export default async function TeamPage() {
     is_active?: boolean;
     can_view_purchase_orders?: boolean;
     employee_id?: string | null;
+    is_office?: boolean;
   };
   let memberships: MemRow[] = [];
   const withEmployeeId = await admin
     .from("memberships")
-    .select("user_id, role, is_active, can_view_purchase_orders, employee_id")
+    .select("user_id, role, is_active, can_view_purchase_orders, employee_id, is_office")
     .eq("org_id", ctx.orgId);
   if (!withEmployeeId.error) {
     memberships = (withEmployeeId.data ?? []) as MemRow[];
@@ -88,6 +89,7 @@ export default async function TeamPage() {
       isActive: m.is_active ?? true,
       canViewPurchaseOrders: m.can_view_purchase_orders ?? false,
       employeeId: m.employee_id ?? "",
+      isOffice: m.is_office ?? true,
     };
   });
 
