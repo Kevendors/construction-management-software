@@ -305,7 +305,7 @@ function EditPhoneDialog({ member, onClose }: { member: TeamMember | null; onClo
 }
 
 export function TeamBoard({
-  members,
+  members: initialMembers,
   currentUserId,
   migrationPending,
 }: {
@@ -314,6 +314,8 @@ export function TeamBoard({
   migrationPending?: boolean;
 }) {
   const router = useRouter();
+  const [members, setMembers] = React.useState(initialMembers);
+  React.useEffect(() => setMembers(initialMembers), [initialMembers]);
   const [open, setOpen] = React.useState(false);
   const [busy, setBusy] = React.useState<string | null>(null);
   const [resetting, setResetting] = React.useState<TeamMember | null>(null);
@@ -345,11 +347,17 @@ export function TeamBoard({
   }
 
   async function toggleOffice(userId: string, next: boolean) {
+    // Optimistic: flip it instantly instead of waiting on a full page
+    // refresh (which also re-lists every auth user and felt slow for a
+    // same-row dropdown change). Revert only if the save actually fails.
+    setMembers((prev) => prev.map((m) => (m.userId === userId ? { ...m, isOffice: next } : m)));
     setBusy(userId);
     const res = await setMemberOfficeAction(userId, next);
     setBusy(null);
-    if (res.error) window.alert(res.error);
-    else router.refresh();
+    if (res.error) {
+      window.alert(res.error);
+      setMembers((prev) => prev.map((m) => (m.userId === userId ? { ...m, isOffice: !next } : m)));
+    }
   }
 
   return (
