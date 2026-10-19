@@ -41,12 +41,23 @@ export async function signUpAction(
     .maybeSingle();
 
   if (org?.id) {
-    await admin
+    // Only the very first user in a brand-new org may self-promote to
+    // super_admin (initial bootstrap). Anyone signing up after that needs
+    // an existing super_admin to add them via the Team page with the
+    // correct role — never auto-grant super_admin to later signups.
+    const { count } = await admin
       .from("memberships")
-      .upsert(
-        { org_id: org.id, user_id: userId, role: "super_admin" },
-        { onConflict: "org_id,user_id" }
-      );
+      .select("user_id", { count: "exact", head: true })
+      .eq("org_id", org.id);
+
+    if (!count) {
+      await admin
+        .from("memberships")
+        .upsert(
+          { org_id: org.id, user_id: userId, role: "super_admin" },
+          { onConflict: "org_id,user_id" }
+        );
+    }
   }
 
   return {};

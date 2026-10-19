@@ -73,12 +73,18 @@ export async function deletePushSubscriptionAction(
     return { success: true };
   }
 
+  const ctx = await getAuthContext();
+  if (!ctx?.userId) {
+    return { success: false, error: "Not signed in" };
+  }
+
   try {
     const admin = createAdminClient();
     const { error } = await admin
       .from("push_subscriptions")
       .delete()
-      .eq("endpoint", endpoint);
+      .eq("endpoint", endpoint)
+      .eq("user_id", ctx.userId);
 
     if (error) {
       return { success: false, error: error.message };

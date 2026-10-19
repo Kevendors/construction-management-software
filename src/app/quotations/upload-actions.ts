@@ -93,6 +93,13 @@ export async function uploadQuotationFileAction(
 
 /** Fresh signed URL for an already-uploaded quotation source file. */
 export async function getQuotationFileUrlAction(path: string): Promise<{ url?: string; error?: string }> {
+  const supabase = await createClient();
+  const orgId = await currentOrgId(supabase);
+  if (!orgId) return { error: "You must be signed in." };
+  // Storage paths are always `${orgId}/...` (see uploadQuotationFileAction) —
+  // refuse to sign a URL for a path outside the caller's own org.
+  if (!path.startsWith(`${orgId}/`)) return { error: "Not found." };
+
   const admin = createAdminClient();
   const { data, error } = await admin.storage.from(BUCKET).createSignedUrl(path, SIGNED_TTL);
   if (error) return { error: error.message };
