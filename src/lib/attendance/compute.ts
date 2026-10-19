@@ -60,6 +60,21 @@ export const SHIFT_START_TIME = "09:30";
 export const SHIFT_END_TIME = "18:00";
 export const STANDARD_WORKDAY_MINUTES = 8 * 60 + 30; // 510 minutes (9:30 to 18:00)
 
+/**
+ * Late-arrival policy (applies to every employee, Office and Site alike):
+ * checking in after this time counts as a "late arrival". The first
+ * LATE_ARRIVALS_ALLOWED_PER_MONTH in a calendar month are free passes (still
+ * Present, Full Day); the next one onward auto-converts that day to Half-Day.
+ */
+export const LATE_ARRIVAL_CUTOFF_TIME = "10:30";
+export const LATE_ARRIVALS_ALLOWED_PER_MONTH = 3;
+
+/** True when a check-in ISO timestamp falls after LATE_ARRIVAL_CUTOFF_TIME, org-local. */
+export function isLateCheckIn(checkInAtIso: string): boolean {
+  if (!checkInAtIso) return false;
+  return timeInOrgTimezone(checkInAtIso) > LATE_ARRIVAL_CUTOFF_TIME;
+}
+
 /** "HH:mm" in ORG_TIMEZONE (24-hour clock, zero-padded). */
 export function timeInOrgTimezone(iso: string): string {
   if (!iso) return "";

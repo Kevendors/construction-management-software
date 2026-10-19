@@ -10,7 +10,11 @@ import {
   formatDuration,
   formatTime,
   haversineMeters,
+  isLateCheckIn,
+  LATE_ARRIVAL_CUTOFF_TIME,
+  LATE_ARRIVALS_ALLOWED_PER_MONTH,
   minutesBetween,
+  orgThisMonth,
   orgToday,
   ORG_UTC_OFFSET,
   overtimeOf,
@@ -125,6 +129,53 @@ async function uploadSelfie(
   return path;
 }
 
+interface LateArrivalEvaluation {
+  status: "present" | "half_day";
+  note: string | null;
+  isLate: boolean;
+  /** Prior late check-ins this calendar month, not counting today. */
+  lateArrivalsUsedThisMonth: number;
+}
+
+/**
+ * Late-arrival policy, applies to every employee (Office and Site alike):
+ * the first LATE_ARRIVALS_ALLOWED_PER_MONTH check-ins after 10:30 AM
+ * org-local in a calendar month are free passes (still Present, Full Day);
+ * the next one onward auto-converts that day to Half-Day.
+ */
+async function evaluateLateArrival(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  date: string,
+  nowIso: string
+): Promise<LateArrivalEvaluation> {
+  if (!isLateCheckIn(nowIso)) {
+    return { status: "present", note: null, isLate: false, lateArrivalsUsedThisMonth: 0 };
+  }
+
+  const month = orgThisMonth();
+  const { data: monthRecords } = await supabase
+    .from("employee_attendance")
+    .select("check_in_at")
+    .eq("user_id", userId)
+    .gte("date", `${month}-01`)
+    .lt("date", date);
+
+  const lateArrivalsUsedThisMonth = (monthRecords ?? []).filter(
+    (r) => r.check_in_at && isLateCheckIn(r.check_in_at as string)
+  ).length;
+
+  if (lateArrivalsUsedThisMonth >= LATE_ARRIVALS_ALLOWED_PER_MONTH) {
+    return {
+      status: "half_day",
+      note: `Half-Day: checked in at ${formatTime(nowIso)}, after the ${LATE_ARRIVAL_CUTOFF_TIME} AM cutoff — all ${LATE_ARRIVALS_ALLOWED_PER_MONTH} allowed late arrivals this month are already used.`,
+      isLate: true,
+      lateArrivalsUsedThisMonth,
+    };
+  }
+  return { status: "present", note: null, isLate: true, lateArrivalsUsedThisMonth };
+}
+
 export async function checkInAction(input: CheckInInput): Promise<ActionResult> {
   // Mock mode: the UI keeps its own optimistic state (lost on reload — demo only).
   if (!isSupabaseConfigured()) return { id: "mock" };
@@ -185,6 +236,9 @@ export async function checkInAction(input: CheckInInput): Promise<ActionResult> 
     .maybeSingle();
   if (existing) return { error: "Already checked in today." };
 
+  const nowIso = new Date().toISOString();
+  const lateEval = await evaluateLateArrival(supabase, ctx.userId, date, nowIso);
+
   const { data: row, error } = await supabase
     .from("employee_attendance")
     .insert({
@@ -192,11 +246,12 @@ export async function checkInAction(input: CheckInInput): Promise<ActionResult> 
       user_id: ctx.userId,
       project_id: input.projectId,
       date,
-      check_in_at: new Date().toISOString(),
+      check_in_at: nowIso,
       check_in_lat: input.lat,
       check_in_lng: input.lng,
       check_in_accuracy: input.accuracy,
-      status: "present",
+      status: lateEval.status,
+      note: lateEval.note,
     })
     .select("id")
     .single();
@@ -214,13 +269,14 @@ export async function checkInAction(input: CheckInInput): Promise<ActionResult> 
   }
   await supabase.from("employee_attendance").update({ check_in_selfie_path: selfiePath }).eq("id", row.id);
 
-  const nowIso = new Date().toISOString();
-
   await logActivity({
     action: "created",
     entityType: "attendance",
     entityId: row.id,
-    summary: `${ctx.name} checked in — ${(project as { name: string }).name}`,
+    summary:
+      lateEval.status === "half_day"
+        ? `${ctx.name} checked in late — ${(project as { name: string }).name} — auto-marked Half-Day (late-arrival limit used)`
+        : `${ctx.name} checked in — ${(project as { name: string }).name}`,
     meta: { projectId: input.projectId, lat: input.lat, lng: input.lng },
   });
 
@@ -230,8 +286,11 @@ export async function checkInAction(input: CheckInInput): Promise<ActionResult> 
     roles: ["super_admin"],
     excludeUserId: ctx.userId,
     kind: "info",
-    title: `${ctx.name} Checked In`,
-    body: `${ctx.name} checked in at ${(project as { name: string }).name} (${formatTime(nowIso)})`,
+    title: lateEval.status === "half_day" ? `${ctx.name} Checked In Late — Half-Day` : `${ctx.name} Checked In`,
+    body:
+      lateEval.status === "half_day"
+        ? `${ctx.name} checked in at ${(project as { name: string }).name} (${formatTime(nowIso)}) — auto-marked Half-Day, all 3 allowed late arrivals this month are used.`
+        : `${ctx.name} checked in at ${(project as { name: string }).name} (${formatTime(nowIso)})`,
     href: "/attendance",
   });
 
@@ -239,9 +298,14 @@ export async function checkInAction(input: CheckInInput): Promise<ActionResult> 
   await dispatchNotification({
     orgId: ctx.orgId,
     userIds: [ctx.userId],
-    kind: "info",
+    kind: lateEval.status === "half_day" ? "delay" : "info",
     title: "Attendance Marked",
-    body: `Checked in at ${formatTime(nowIso)} (${(project as { name: string }).name}). Full Day (1.0d) credited.`,
+    body:
+      lateEval.status === "half_day"
+        ? `Checked in at ${formatTime(nowIso)} (${(project as { name: string }).name}). Marked Half-Day (0.5d) — you've used all ${LATE_ARRIVALS_ALLOWED_PER_MONTH} allowed late arrivals this month.`
+        : lateEval.isLate
+          ? `Checked in at ${formatTime(nowIso)} (${(project as { name: string }).name}). Full Day (1.0d) credited — this was late arrival ${lateEval.lateArrivalsUsedThisMonth + 1} of ${LATE_ARRIVALS_ALLOWED_PER_MONTH} allowed this month.`
+          : `Checked in at ${formatTime(nowIso)} (${(project as { name: string }).name}). Full Day (1.0d) credited.`,
     href: "/attendance",
   });
 
@@ -494,6 +558,9 @@ export async function officeCheckInAction(input: OfficePunchInput): Promise<Acti
     .maybeSingle();
   if (existing) return { error: "Already checked in today." };
 
+  const nowIso = new Date().toISOString();
+  const lateEval = await evaluateLateArrival(supabase, ctx.userId, date, nowIso);
+
   const { data: row, error } = await supabase
     .from("employee_attendance")
     .insert({
@@ -501,11 +568,12 @@ export async function officeCheckInAction(input: OfficePunchInput): Promise<Acti
       user_id: ctx.userId,
       project_id: null,
       date,
-      check_in_at: new Date().toISOString(),
+      check_in_at: nowIso,
       check_in_lat: input.lat,
       check_in_lng: input.lng,
       check_in_accuracy: input.accuracy,
-      status: "present",
+      status: lateEval.status,
+      note: lateEval.note,
     })
     .select("id")
     .single();
@@ -514,13 +582,14 @@ export async function officeCheckInAction(input: OfficePunchInput): Promise<Acti
     return { error: error.message };
   }
 
-  const nowIso = new Date().toISOString();
-
   await logActivity({
     action: "created",
     entityType: "attendance",
     entityId: row.id,
-    summary: `${ctx.name} punched in (office)`,
+    summary:
+      lateEval.status === "half_day"
+        ? `${ctx.name} punched in late (office) — auto-marked Half-Day (late-arrival limit used)`
+        : `${ctx.name} punched in (office)`,
     meta: { office: true, lat: input.lat, lng: input.lng },
   });
 
@@ -529,17 +598,25 @@ export async function officeCheckInAction(input: OfficePunchInput): Promise<Acti
     roles: ["super_admin"],
     excludeUserId: ctx.userId,
     kind: "info",
-    title: `${ctx.name} Punched In (Office)`,
-    body: `${ctx.name} punched in at the office (${formatTime(nowIso)})`,
+    title: lateEval.status === "half_day" ? `${ctx.name} Punched In Late — Half-Day` : `${ctx.name} Punched In (Office)`,
+    body:
+      lateEval.status === "half_day"
+        ? `${ctx.name} punched in at the office (${formatTime(nowIso)}) — auto-marked Half-Day, all 3 allowed late arrivals this month are used.`
+        : `${ctx.name} punched in at the office (${formatTime(nowIso)})`,
     href: "/attendance",
   });
 
   await dispatchNotification({
     orgId: ctx.orgId,
     userIds: [ctx.userId],
-    kind: "info",
+    kind: lateEval.status === "half_day" ? "delay" : "info",
     title: "Punched In",
-    body: `Punched in at ${formatTime(nowIso)}. Full Day (1.0d) credited.`,
+    body:
+      lateEval.status === "half_day"
+        ? `Punched in at ${formatTime(nowIso)}. Marked Half-Day (0.5d) — you've used all ${LATE_ARRIVALS_ALLOWED_PER_MONTH} allowed late arrivals this month.`
+        : lateEval.isLate
+          ? `Punched in at ${formatTime(nowIso)}. Full Day (1.0d) credited — this was late arrival ${lateEval.lateArrivalsUsedThisMonth + 1} of ${LATE_ARRIVALS_ALLOWED_PER_MONTH} allowed this month.`
+          : `Punched in at ${formatTime(nowIso)}. Full Day (1.0d) credited.`,
     href: "/attendance",
   });
 
