@@ -2,7 +2,9 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { getAuthContext } from "@/lib/auth/context";
 
+const DPR_WRITE_ROLES = ["super_admin", "pm", "supervisor"];
 const BUCKET = "dpr-photos";
 const SIGNED_TTL = 60 * 60 * 24 * 7; // 1 week
 
@@ -43,6 +45,12 @@ export async function uploadDprPhotos(
   const supabase = await createClient();
   const orgId = await currentOrgId(supabase);
   if (!orgId) return [];
+
+  // DPR read access (staff/engineer/architect) is broader than DPR write
+  // access — only roles that can actually create/edit a DPR may overwrite
+  // its photos.
+  const ctx = await getAuthContext();
+  if (!ctx?.role || !DPR_WRITE_ROLES.includes(ctx.role)) return [];
 
   // Confirm the DPR belongs to the caller's org (RLS-scoped read).
   const { data: dpr } = await supabase.from("dprs").select("id").eq("id", dprId).maybeSingle();

@@ -70,6 +70,10 @@ function ProjectDetailInner({ projectId }: { projectId: string }) {
   const canSeeValue = role === "super_admin";
   // No role at all = mock/demo mode, where the current user is a super_admin.
   const canSetStatus = role === null || CAN_SET_STATUS.includes(role);
+  // Client/Subcontractor/Viewer are intentionally not covered by RLS for
+  // tasks/dprs/site_instructions/project_files — these tabs would render
+  // permanently empty for them, so hide rather than show a dead end.
+  const canSeeSiteTabs = role === null || !["client", "subcontractor", "viewer"].includes(role);
 
   if (loading && !project) {
     return (
@@ -166,8 +170,8 @@ function ProjectDetailInner({ projectId }: { projectId: string }) {
       <Tabs defaultValue="overview">
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="tasks">Tasks</TabsTrigger>
-          <TabsTrigger value="updates">Updates</TabsTrigger>
+          {canSeeSiteTabs && <TabsTrigger value="tasks">Tasks</TabsTrigger>}
+          {canSeeSiteTabs && <TabsTrigger value="updates">Updates</TabsTrigger>}
           <TabsTrigger value="comments">Comments</TabsTrigger>
           <TabsTrigger value="alerts">
             Alerts
@@ -188,7 +192,7 @@ function ProjectDetailInner({ projectId }: { projectId: string }) {
           <TabsTrigger value="commercial" disabled className="opacity-40 cursor-not-allowed" title="Coming soon">
             Commercial
           </TabsTrigger>
-          <TabsTrigger value="files">Files</TabsTrigger>
+          {canSeeSiteTabs && <TabsTrigger value="files">Files</TabsTrigger>}
           <TabsTrigger value="team">Team</TabsTrigger>
           {role === "super_admin" && <TabsTrigger value="settings">Settings</TabsTrigger>}
         </TabsList>
