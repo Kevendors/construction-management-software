@@ -216,8 +216,10 @@ function badgeLabelFor(status: string): string {
 
 /**
  * Evaluates an employee's attendance records for a month in chronological order.
- * Any real check-in is simply Present (Full Day) regardless of what time it
- * happened — there is no late-arrival tracking or flagging at all. Only an
+ * A real check-in is Present (Full Day) unless it was the 4th+ late arrival
+ * that month (see evaluateLateArrival in attendance/actions.ts), in which case
+ * it was already stored as status "half_day" at check-in time and is handled
+ * by the half_day branch below like any other Half-Day. Beyond that, only an
  * explicit admin-declared Leave/Half-Day/Absent changes the day's credit.
  *
  * Office staff get 1 paid Leave per month — `isOffice` only matters for this.

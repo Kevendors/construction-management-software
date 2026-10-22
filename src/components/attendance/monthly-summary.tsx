@@ -20,7 +20,7 @@ export function MonthlySummary({
 
   const chips = [
     { label: "Full Present", value: String(summary.present), hint: "1.0 day credit", className: "bg-success/15 text-success" },
-    { label: "Half Days", value: String(summary.halfDay), hint: "manual only", className: summary.halfDay > 0 ? "bg-amber-500/20 text-amber-700 dark:text-amber-400 font-semibold" : "bg-muted text-muted-foreground" },
+    { label: "Half Days", value: String(summary.halfDay), hint: "0.5 day credit", className: summary.halfDay > 0 ? "bg-amber-500/20 text-amber-700 dark:text-amber-400 font-semibold" : "bg-muted text-muted-foreground" },
     ...(isOffice
       ? [{ label: "Leave (Unpaid)", value: String(summary.unpaidLeave), hint: "2nd+ this month", className: summary.unpaidLeave > 0 ? "bg-slate-500/20 text-slate-700 dark:text-slate-300 font-semibold" : "bg-muted text-muted-foreground" }]
       : []),
@@ -45,7 +45,7 @@ export function MonthlySummary({
         <Info className="h-3.5 w-3.5 shrink-0 mt-0.5 text-primary" />
         <div>
           <span className="font-medium text-foreground">Attendance Policy: </span>
-          Shift runs until <strong>6:00 PM</strong>. Any real check-in counts as a full paid day, regardless of what time it happened — a Half-Day or Absent only ever comes from a Super Admin marking it by hand.
+          Shift runs until <strong>6:00 PM</strong>. Checking in after <strong>10:30 AM</strong> counts as a late arrival — the first 3 in a calendar month still credit a full paid day; the 4th and later auto-marks that day Half-Day. A Super Admin can also mark a day Half-Day/Absent by hand for any other reason.
           {isOffice && (
             <>
               {" "}Office staff get <strong>1 paid Leave per month</strong> — taking a 2nd makes both unpaid.
