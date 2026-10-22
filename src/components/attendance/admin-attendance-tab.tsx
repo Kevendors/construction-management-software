@@ -33,6 +33,7 @@ import { RecordDetailDialog } from "./record-detail-dialog";
 import { AdminMarkAttendanceDialog } from "./admin-mark-attendance-dialog";
 import { OfficeLocationCard } from "./office-location-card";
 import { HolidaysCard } from "./holidays-card";
+import { LiveLocationsMap } from "./live-locations-map";
 
 const STATUS_LABEL: Record<string, string> = {
   half_day: "Half Day",
@@ -69,7 +70,7 @@ export function AdminAttendanceTab({
   projects: Project[];
 }) {
   const router = useRouter();
-  const [view, setView] = React.useState<"daily" | "monthly" | "employee">("daily");
+  const [view, setView] = React.useState<"daily" | "monthly" | "employee" | "live">("daily");
   // Employee view: one person across a range, rather than one day or one month.
   const [employeeId, setEmployeeId] = React.useState("");
   const [fromDate, setFromDate] = React.useState(`${orgThisMonth()}-01`);
@@ -239,6 +240,13 @@ export function AdminAttendanceTab({
           >
             Employee
           </Button>
+          <Button
+            size="sm"
+            variant={view === "live" ? "secondary" : "ghost"}
+            onClick={() => setView("live")}
+          >
+            Live Map
+          </Button>
         </div>
         {view === "daily" && (
           <Input
@@ -294,7 +302,7 @@ export function AdminAttendanceTab({
             />
           </>
         )}
-        {view !== "employee" && (
+        {view !== "employee" && view !== "live" && (
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -305,30 +313,36 @@ export function AdminAttendanceTab({
           />
         </div>
         )}
-        <Select
-          value={projectId}
-          onChange={(e) => setProjectId(e.target.value)}
-          className="w-auto min-w-40"
-        >
-          <option value="">All projects</option>
-          {projects.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.code} · {p.name}
-            </option>
-          ))}
-        </Select>
-        <Button
-          size="sm"
-          variant="outline"
-          className="ml-auto"
-          onClick={() => setMarkContext({ date, existing: null })}
-        >
-          <Plus /> Manual Entry
-        </Button>
-        <Button size="sm" variant="outline" onClick={exportCsv}>
-          <Download /> Export CSV
-        </Button>
+        {view !== "live" && (
+          <>
+            <Select
+              value={projectId}
+              onChange={(e) => setProjectId(e.target.value)}
+              className="w-auto min-w-40"
+            >
+              <option value="">All projects</option>
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.code} · {p.name}
+                </option>
+              ))}
+            </Select>
+            <Button
+              size="sm"
+              variant="outline"
+              className="ml-auto"
+              onClick={() => setMarkContext({ date, existing: null })}
+            >
+              <Plus /> Manual Entry
+            </Button>
+            <Button size="sm" variant="outline" onClick={exportCsv}>
+              <Download /> Export CSV
+            </Button>
+          </>
+        )}
       </div>
+
+      {view === "live" && <LiveLocationsMap />}
 
       {view === "daily" && (
         <Card>

@@ -995,3 +995,146 @@ export async function closePreviousShiftAction(
 
   return { id: record.id };
 }
+
+// ----------------------------------------------------------------------------
+// Live location tracking (0042) — foreground-only: a website cannot track
+// location once the phone is locked or backgrounded (OS-level restriction on
+// every browser, not something this app can work around). This is a periodic
+// ping while the employee's My Attendance page stays open during an active
+// (self-checked-in, not yet checked out) shift — see use-live-tracking.ts for
+// the client side. A ping is refused for anyone without a real, open,
+// self-verified check-in today (declarative/admin-marked days never have
+// real GPS and must never show on the live map).
+// ----------------------------------------------------------------------------
+
+export interface RecordLocationPingInput {
+  lat: number;
+  lng: number;
+  accuracy: number;
+}
+
+export async function recordLocationPingAction(
+  input: RecordLocationPingInput
+): Promise<{ ok: boolean; error?: string }> {
+  if (!isSupabaseConfigured()) return { ok: true };
+  const ctx = await getAuthContext();
+  if (!ctx?.orgId || !ctx?.userId) return { ok: false, error: "Not signed in." };
+  if (!validCoords(input.lat, input.lng, input.accuracy)) {
+    return { ok: false, error: "Could not read a valid location." };
+  }
+
+  const supabase = await createClient();
+  const today = orgToday();
+  const { data: openRow } = await supabase
+    .from("employee_attendance")
+    .select("id, check_out_at, source")
+    .eq("user_id", ctx.userId)
+    .eq("date", today)
+    .maybeSingle();
+  if (!openRow || openRow.check_out_at || openRow.source !== "self") {
+    return { ok: false, error: "No active check-in to track." };
+  }
+
+  const { error } = await supabase.from("attendance_location_pings").insert({
+    org_id: ctx.orgId,
+    attendance_id: openRow.id,
+    user_id: ctx.userId,
+    lat: input.lat,
+    lng: input.lng,
+    accuracy: input.accuracy,
+  });
+  if (error) {
+    if (error.code === "PGRST205" || error.message.includes("attendance_location_pings")) {
+      return { ok: false, error: "Live tracking table pending: Run 0042_attendance_location_pings.sql in Supabase SQL Editor." };
+    }
+    return { ok: false, error: error.message };
+  }
+  return { ok: true };
+}
+
+export interface LiveLocation {
+  attendanceId: string;
+  userId: string;
+  userName: string;
+  employeeId: string;
+  projectId: string | null;
+  projectName: string | null;
+  checkInAt: string;
+  lastPing: { lat: number; lng: number; accuracy: number | null; recordedAt: string } | null;
+  /** Straight-line distance from the assigned project's geofence center, if one is configured. */
+  distanceFromSiteM: number | null;
+}
+
+/** Super_admin/hr only: every staff member currently checked in (self, real GPS, not yet out) today, with their last known ping. */
+export async function getLiveLocationsAction(): Promise<LiveLocation[]> {
+  if (!isSupabaseConfigured()) return [];
+  const ctx = await getAuthContext();
+  if (!ctx?.orgId || !(ctx.role === "super_admin" || ctx.role === "hr")) return [];
+
+  const admin = createAdminClient();
+  const today = orgToday();
+
+  const { data: openData, error: openErr } = await admin
+    .from("employee_attendance")
+    .select("id, user_id, project_id, check_in_at")
+    .eq("org_id", ctx.orgId)
+    .eq("date", today)
+    .is("check_out_at", null)
+    .eq("source", "self");
+  if (openErr) return [];
+  const rows = (openData ?? []) as { id: string; user_id: string; project_id: string | null; check_in_at: string }[];
+  if (!rows.length) return [];
+
+  const attendanceIds = rows.map((r) => r.id);
+  const userIds = Array.from(new Set(rows.map((r) => r.user_id)));
+  const projectIds = Array.from(new Set(rows.map((r) => r.project_id).filter((p): p is string => Boolean(p))));
+
+  const [pingsRes, profilesRes, memRes, projRes] = await Promise.all([
+    admin
+      .from("attendance_location_pings")
+      .select("attendance_id, lat, lng, accuracy, recorded_at")
+      .in("attendance_id", attendanceIds)
+      .order("recorded_at", { ascending: false }),
+    admin.from("profiles").select("id, name").in("id", userIds),
+    admin.from("memberships").select("user_id, employee_id").eq("org_id", ctx.orgId).in("user_id", userIds),
+    projectIds.length
+      ? admin.from("projects").select("id, name, geofence_lat, geofence_lng, geofence_radius_m").in("id", projectIds)
+      : Promise.resolve({ data: [] as Record<string, unknown>[] }),
+  ]);
+
+  type PingRow = { attendance_id: string; lat: number; lng: number; accuracy: number | null; recorded_at: string };
+  const latestPingByAttendance = new Map<string, LiveLocation["lastPing"]>();
+  for (const p of (pingsRes.data ?? []) as PingRow[]) {
+    if (!latestPingByAttendance.has(p.attendance_id)) {
+      latestPingByAttendance.set(p.attendance_id, { lat: p.lat, lng: p.lng, accuracy: p.accuracy, recordedAt: p.recorded_at });
+    }
+  }
+  const nameById = new Map(
+    ((profilesRes.data ?? []) as { id: string; name: string }[]).map((p) => [p.id, p.name])
+  );
+  const empIdByUser = new Map(
+    ((memRes.data ?? []) as { user_id: string; employee_id: string | null }[]).map((m) => [m.user_id, m.employee_id ?? ""])
+  );
+  type ProjRow = { id: string; name: string; geofence_lat: number | null; geofence_lng: number | null; geofence_radius_m: number | null };
+  const projectById = new Map(((projRes.data ?? []) as ProjRow[]).map((p) => [p.id, p]));
+
+  return rows.map((r) => {
+    const project = r.project_id ? projectById.get(r.project_id) : undefined;
+    const lastPing = latestPingByAttendance.get(r.id) ?? null;
+    let distanceFromSiteM: number | null = null;
+    if (lastPing && project?.geofence_lat != null && project?.geofence_lng != null) {
+      distanceFromSiteM = Math.round(haversineMeters(lastPing.lat, lastPing.lng, project.geofence_lat, project.geofence_lng));
+    }
+    return {
+      attendanceId: r.id,
+      userId: r.user_id,
+      userName: nameById.get(r.user_id) ?? "Unknown",
+      employeeId: empIdByUser.get(r.user_id) ?? "",
+      projectId: r.project_id,
+      projectName: project?.name ?? null,
+      checkInAt: r.check_in_at,
+      lastPing,
+      distanceFromSiteM,
+    };
+  });
+}

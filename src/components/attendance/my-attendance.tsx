@@ -21,6 +21,8 @@ import { HistoryCalendar } from "./history-calendar";
 import { HistoryList } from "./history-list";
 import { MonthlySummary } from "./monthly-summary";
 import { UnclosedShiftAlert } from "./unclosed-shift-alert";
+import { useLiveTracking } from "./use-live-tracking";
+import { LiveTrackingStatus } from "./live-tracking-status";
 
 function shiftMonth(month: string, delta: number): string {
   const [y, m] = month.split("-").map(Number);
@@ -37,6 +39,8 @@ export function MyAttendance({ data }: { data: MyAttendanceData }) {
   const [localToday, setLocalToday] = React.useState<EmployeeAttendance | null>(null);
 
   const today = localToday ?? data.today;
+  const isTracking = Boolean(today && today.source === "self" && !today.checkOutAt);
+  const tracking = useLiveTracking(isTracking);
   const isCurrentMonth = data.month === orgThisMonth();
   const records = React.useMemo(() => {
     if (!localToday || !isCurrentMonth) return data.records;
@@ -106,6 +110,8 @@ export function MyAttendance({ data }: { data: MyAttendanceData }) {
           hasExplicitProjectAssignment={data.hasExplicitProjectAssignment}
           onStart={setFlowMode}
         />
+
+        <LiveTrackingStatus status={tracking.status} lastError={tracking.lastError} />
 
         <Card>
           <CardHeader className="flex-row items-center justify-between space-y-0">
