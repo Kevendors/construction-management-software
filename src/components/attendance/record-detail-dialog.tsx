@@ -14,6 +14,7 @@ import {
   getAttendanceSelfieUrls,
   type AttendanceEditHistoryEntry,
 } from "@/app/attendance/actions";
+import { SpotChecksSection } from "./spot-checks-section";
 import type { EmployeeAttendance } from "@/lib/types";
 
 function mapsLink(lat: number | null, lng: number | null): string | null {
@@ -30,11 +31,13 @@ export function RecordDetailDialog({
   evaluated,
   onClose,
   showName = false,
+  canExcuse = false,
 }: {
   record: EmployeeAttendance | null;
   evaluated?: EvaluatedAttendanceRecord | null;
   onClose: () => void;
   showName?: boolean;
+  canExcuse?: boolean;
 }) {
   const [selfies, setSelfies] = React.useState<{ in?: string; out?: string }>({});
   const [history, setHistory] = React.useState<AttendanceEditHistoryEntry[]>([]);
@@ -168,6 +171,7 @@ export function RecordDetailDialog({
           </div>
         )}
 
+        {!isOffice && !isDeclarative && <SpotChecksSection key={record.id} attendanceId={record.id} canExcuse={canExcuse} />}
         {history.length > 0 && (
           <div className="space-y-2">
             <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">

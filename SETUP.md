@@ -210,3 +210,15 @@ fields. These rows are tagged `source = 'admin'` and always render with a
 in the daily table, the monthly grid (`P*` instead of `P`), and the detail
 dialog. Until 0017 is applied, the Mark/Edit actions will error (the columns
 don't exist yet) — everything else in the Attendance feature is unaffected.
+
+## Location spot-checks (migration 0045)
+
+Random "confirm your location" checks for **site** staff (one per ~2-hour block, 15 min to answer; a miss alerts Super Admin/HR).
+
+1. **Pick a secret**: any long random string of **letters and digits only** (no quotes or symbols — a quote would break the SQL). This is `CRON_SECRET`.
+2. **Vercel** → Project → Settings → Environment Variables → add `CRON_SECRET` = that string (Production) → Save → Deployments → ⋯ on the latest → **Redeploy**.
+3. **Supabase** → SQL Editor → paste `supabase/migrations/0045_attendance_spot_checks.sql` → replace `REPLACE_ME_DOMAIN` with the live domain (no `https://`, no trailing `/`) and `REPLACE_ME_SECRET` with the same secret → **Run**.
+4. Verify: SQL Editor → `select * from cron.job;` shows `sitehub-spot-checks`; after 5 min, `select status_code, content from net._http_response order by created desc limit 3;` shows `200` responses. (A `401` means the secret differs between Vercel and the SQL, or Vercel was not redeployed.)
+5. Staff: Android — allow notifications when SiteHub asks. iPhone (iOS 16.4 or newer) — Safari → Share → **Add to Home Screen**, open SiteHub from that icon, allow notifications.
+
+Rollback: `select cron.unschedule('sitehub-spot-checks'); drop table public.attendance_spot_checks;`

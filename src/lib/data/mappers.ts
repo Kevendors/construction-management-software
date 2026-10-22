@@ -25,6 +25,8 @@ import type {
   Quotation,
   RaBill,
   SalesInvoice,
+  SpotCheck,
+  SpotCheckStatus,
   Subcontractor,
   SubconProgress,
   SubconWorkOrder,
@@ -738,4 +740,38 @@ export const mapExpense = (r: ExpenseRow): Expense => ({
   status: r.status,
   byId: r.by_id ?? "",
   billPath: r.bill_path ?? "",
+});
+
+export interface SpotCheckRow {
+  id: string;
+  attendance_id: string;
+  user_id: string;
+  project_id: string | null;
+  scheduled_at: string;
+  notified_at: string | null;
+  was_notified: boolean | null;
+  responded_at: string | null;
+  lat: number | null;
+  lng: number | null;
+  accuracy: number | null;
+  distance_m: number | null;
+  status: string;
+  excuse_note: string | null;
+}
+
+export const mapSpotCheck = (r: SpotCheckRow): SpotCheck => ({
+  id: r.id,
+  attendanceId: r.attendance_id,
+  userId: r.user_id,
+  projectId: r.project_id ?? null,
+  scheduledAt: r.scheduled_at,
+  notifiedAt: r.notified_at ?? "",
+  wasNotified: r.was_notified ?? null,
+  respondedAt: r.responded_at ?? "",
+  lat: r.lat ?? null,
+  lng: r.lng ?? null,
+  accuracy: r.accuracy ?? null,
+  distanceM: r.distance_m ?? null,
+  status: r.status as SpotCheckStatus,
+  excuseNote: r.excuse_note ?? "",
 });

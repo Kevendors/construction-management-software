@@ -6,6 +6,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { logActivity } from "@/lib/activity/log";
 import { dispatchNotification } from "@/lib/notifications/dispatch";
+import { cancelSpotChecks, scheduleSpotChecks } from "@/lib/attendance/spot-check-store";
 import {
   formatDuration,
   formatTime,
@@ -269,6 +270,15 @@ export async function checkInAction(input: CheckInInput): Promise<ActionResult> 
   }
   await supabase.from("employee_attendance").update({ check_in_selfie_path: selfiePath }).eq("id", row.id);
 
+  // Site shift → random location spot-checks (0045). Office punch-in never gets these.
+  await scheduleSpotChecks({
+    orgId: ctx.orgId,
+    userId: ctx.userId,
+    attendanceId: row.id,
+    projectId: input.projectId,
+    checkInAt: nowIso,
+  });
+
   await logActivity({
     action: "created",
     entityType: "attendance",
@@ -361,6 +371,7 @@ export async function checkOutAction(input: CheckOutInput): Promise<ActionResult
     })
     .eq("id", row.id);
   if (error) return { error: error.message };
+  await cancelSpotChecks(row.id as string);
 
   const h = Math.floor(totalMinutes / 60);
   const m = totalMinutes % 60;
@@ -1027,13 +1038,15 @@ export async function recordLocationPingAction(
   const today = orgToday();
   const { data: openRow } = await supabase
     .from("employee_attendance")
-    .select("id, check_out_at, source")
+    .select("id, check_out_at, source, project_id")
     .eq("user_id", ctx.userId)
     .eq("date", today)
     .maybeSingle();
   if (!openRow || openRow.check_out_at || openRow.source !== "self") {
     return { ok: false, error: "No active check-in to track." };
   }
+  // Office check-ins (no project) are never tracked — site staff only.
+  if (!openRow.project_id) return { ok: false, error: "Office check-ins aren't tracked." };
 
   const { error } = await supabase.from("attendance_location_pings").insert({
     org_id: ctx.orgId,

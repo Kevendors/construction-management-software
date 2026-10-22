@@ -19,7 +19,7 @@ export interface GeolocationState {
 
 const GEO_TIMEOUT_MS = 15000;
 
-function geoErrorMessage(err: GeolocationPositionError): string {
+export function geoErrorMessage(err: GeolocationPositionError): string {
   switch (err.code) {
     case err.PERMISSION_DENIED:
       return "Location access is blocked. Allow location for this site in your browser settings and retry.";

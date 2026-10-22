@@ -29,6 +29,8 @@ import {
   type AttendanceAdminBoard,
 } from "@/lib/attendance/compute";
 import type { EmployeeAttendance, Project } from "@/lib/types";
+import { getSpotCheckSummaryAction } from "@/app/attendance/spot-check-actions";
+import { useRole } from "@/components/layout/role-provider";
 import { RecordDetailDialog } from "./record-detail-dialog";
 import { AdminMarkAttendanceDialog } from "./admin-mark-attendance-dialog";
 import { OfficeLocationCard } from "./office-location-card";
@@ -69,6 +71,7 @@ export function AdminAttendanceTab({
   board: AttendanceAdminBoard;
   projects: Project[];
 }) {
+  const { role } = useRole();
   const router = useRouter();
   const [view, setView] = React.useState<"daily" | "monthly" | "employee" | "live">("daily");
   // Employee view: one person across a range, rather than one day or one month.
@@ -135,6 +138,24 @@ export function AdminAttendanceTab({
         (!projectId || r.projectId === projectId)
     )
     .sort((a, b) => b.date.localeCompare(a.date));
+  const [checkSummary, setCheckSummary] = React.useState<
+    Record<string, { total: number; ok: number; missed: number }>
+  >({});
+  const siteRecordIds = React.useMemo(
+    () => employeeRecords.filter((r) => r.status === "present" && r.projectId).map((r) => r.id),
+    [employeeRecords]
+  );
+  const siteRecordKey = siteRecordIds.join(",");
+  React.useEffect(() => {
+    if (!siteRecordKey) return;
+    let ignore = false;
+    getSpotCheckSummaryAction(siteRecordKey.split(",")).then((s) => {
+      if (!ignore) setCheckSummary(s);
+    });
+    return () => {
+      ignore = true;
+    };
+  }, [siteRecordKey]);
   const employeeTotals = employeeRecords.reduce(
     (acc, r) => ({
       days: acc.days + 1,
@@ -734,13 +755,14 @@ export function AdminAttendanceTab({
                       <TableHead className="text-right">Hours</TableHead>
                       <TableHead className="text-right">OT</TableHead>
                       <TableHead>Source</TableHead>
+                      <TableHead>Checks</TableHead>
                       <TableHead />
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {employeeRecords.length === 0 && (
                       <TableRow>
-                        <TableCell colSpan={8} className="py-8 text-center text-sm text-muted-foreground">
+                        <TableCell colSpan={9} className="py-8 text-center text-sm text-muted-foreground">
                           No attendance recorded in this range.
                         </TableCell>
                       </TableRow>
@@ -794,6 +816,20 @@ export function AdminAttendanceTab({
                           ) : (
                             <Badge variant="success">Self</Badge>
                           )}
+                        </TableCell>
+                        <TableCell>
+                          {(() => {
+                            const s = checkSummary[record.id];
+                            if (!s || s.total === 0) return <span className="text-muted-foreground">—</span>;
+                            return (
+                              <Badge
+                                variant={s.missed > 0 ? "destructive" : s.ok === s.total ? "success" : "warning"}
+                                title={`${s.ok} confirmed/on site, ${s.total - s.ok - s.missed} off site, ${s.missed} missed`}
+                              >
+                                {s.ok}/{s.total}
+                              </Badge>
+                            );
+                          })()}
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-1">
@@ -854,6 +890,7 @@ export function AdminAttendanceTab({
             ).recordMap.get(selected.date)
           }
           onClose={() => setSelected(null)}
+          canExcuse={role === "super_admin" || role === "hr"}
           showName
         />
       )}

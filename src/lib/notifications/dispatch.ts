@@ -84,7 +84,7 @@ export async function dispatchNotification(
           .in("user_id", recipientList);
 
         if (subs && subs.length > 0) {
-          sendWebPushBatch(subs, {
+          await sendWebPushBatch(subs, {
             title: input.title,
             body: input.body,
             href: input.href,
@@ -126,7 +126,7 @@ export async function dispatchNotification(
             : subs;
 
           if (targets.length > 0) {
-            sendWebPushBatch(targets, {
+            await sendWebPushBatch(targets, {
               title: input.title,
               body: input.body,
               href: input.href,

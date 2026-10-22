@@ -76,6 +76,7 @@ export async function sendWebPushBatch(
         {
           urgency: "high",
           TTL: 60 * 60 * 24, // 24 hours
+          timeout: 5000,
         }
       );
     } catch (err: unknown) {

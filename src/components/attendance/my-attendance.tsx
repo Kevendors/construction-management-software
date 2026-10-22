@@ -20,6 +20,7 @@ import { OfficeCheckInFlow } from "./office-check-in-flow";
 import { HistoryCalendar } from "./history-calendar";
 import { HistoryList } from "./history-list";
 import { MonthlySummary } from "./monthly-summary";
+import { SpotCheckCard } from "./spot-check-card";
 import { UnclosedShiftAlert } from "./unclosed-shift-alert";
 import { useLiveTracking } from "./use-live-tracking";
 import { LiveTrackingStatus } from "./live-tracking-status";
@@ -39,7 +40,10 @@ export function MyAttendance({ data }: { data: MyAttendanceData }) {
   const [localToday, setLocalToday] = React.useState<EmployeeAttendance | null>(null);
 
   const today = localToday ?? data.today;
-  const isTracking = Boolean(today && today.source === "self" && !today.checkOutAt);
+  // Site staff only — an office check-in has no project, so nothing to track.
+  const isTracking = Boolean(
+    today && today.source === "self" && !today.checkOutAt && today.projectId && !data.isOffice
+  );
   const tracking = useLiveTracking(isTracking);
   const isCurrentMonth = data.month === orgThisMonth();
   const records = React.useMemo(() => {
@@ -104,6 +108,8 @@ export function MyAttendance({ data }: { data: MyAttendanceData }) {
         {data.unclosedPreviousShift && (
           <UnclosedShiftAlert shift={data.unclosedPreviousShift} />
         )}
+
+        {data.pendingSpotCheck && <SpotCheckCard key={data.pendingSpotCheck.id} check={data.pendingSpotCheck} />}
 
         <CheckInCard
           today={today}

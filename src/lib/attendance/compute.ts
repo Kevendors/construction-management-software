@@ -1,13 +1,15 @@
 // Client-safe pure helpers + board types for employee attendance (no mock
 // imports, no server-only code) — same role as src/lib/payroll/compute.ts.
 
-import type { EmployeeAttendance, Project, Role } from "@/lib/types";
+import type { EmployeeAttendance, Project, Role, SpotCheck } from "@/lib/types";
 
 export interface MyAttendanceData {
   /** Today's record (checked in, maybe not yet out) — null if none. */
   today: EmployeeAttendance | null;
   /** Unclosed shift from a previous date that was never checked out — null if none. */
   unclosedPreviousShift?: EmployeeAttendance | null;
+  /** A fired, still-open random location check (0045) — null if none. */
+  pendingSpotCheck: SpotCheck | null;
   /** All of the caller's records in `month`. */
   records: EmployeeAttendance[];
   /** Projects the caller is actually rostered to (via project_members). */

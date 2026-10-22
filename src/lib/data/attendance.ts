@@ -13,7 +13,7 @@ import {
   type MyAttendanceData,
   type OrgHoliday,
 } from "@/lib/attendance/compute";
-import { mapProject, type ProjectRow } from "./mappers";
+import { mapProject, mapSpotCheck, type ProjectRow, type SpotCheckRow } from "./mappers";
 
 // Re-export the client-safe board types for existing import sites.
 export type { AttendanceAdminBoard, AttendanceMember, MyAttendanceData, OrgHoliday };
@@ -144,6 +144,7 @@ export async function getMyAttendancePage(month?: string): Promise<MyAttendanceD
     return {
       today: mine.find((r) => r.date === today) ?? null,
       unclosedPreviousShift: null,
+      pendingSpotCheck: null,
       records: mine
         .filter((r) => r.date.startsWith(activeMonth))
         .sort((a, b) => b.date.localeCompare(a.date)),
@@ -163,6 +164,7 @@ export async function getMyAttendancePage(month?: string): Promise<MyAttendanceD
     return {
       today: null,
       unclosedPreviousShift: null,
+      pendingSpotCheck: null,
       records: [],
       assignedProjects: [],
       hasExplicitProjectAssignment: false,
@@ -179,7 +181,7 @@ export async function getMyAttendancePage(month?: string): Promise<MyAttendanceD
   const { from, to } = monthRange(activeMonth);
   // Explicit user_id filter: super_admin's RLS read is org-wide, but this
   // page is always "my own attendance".
-  const [monthRes, todayRes, unclosedRes, pmRes, projRes, employeeId, isOfficeRaw, orgRes, holidaysRes] = await Promise.all([
+  const [monthRes, todayRes, unclosedRes, pmRes, projRes, employeeId, isOfficeRaw, orgRes, holidaysRes, pendingSpotRes] = await Promise.all([
     supabase
       .from("employee_attendance")
       .select("*")
@@ -213,6 +215,14 @@ export async function getMyAttendancePage(month?: string): Promise<MyAttendanceD
     myIsOffice(supabase, ctx.userId),
     supabase.from("orgs").select("office_lat, office_lng, office_radius_m").eq("id", ctx.orgId).maybeSingle(),
     supabase.from("org_holidays").select("date, label, applies_to").eq("org_id", ctx.orgId),
+    supabase
+      .from("attendance_spot_checks")
+      .select("*")
+      .eq("user_id", ctx.userId)
+      .eq("status", "pending")
+      .order("notified_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ]);
   if (monthRes.error) throw monthRes.error;
 
@@ -262,6 +272,8 @@ export async function getMyAttendancePage(month?: string): Promise<MyAttendanceD
   return {
     today: todayRow ? mapEmployeeAttendance(todayRow, identityFor(todayRow)) : null,
     unclosedPreviousShift: unclosedRow ? mapEmployeeAttendance(unclosedRow, identityFor(unclosedRow)) : null,
+    // Errors (incl. 0045 not applied yet) just mean "no pending check".
+    pendingSpotCheck: pendingSpotRes?.data ? mapSpotCheck(pendingSpotRes.data as SpotCheckRow) : null,
     records: monthRows.map((r) => mapEmployeeAttendance(r, identityFor(r))),
     assignedProjects,
     hasExplicitProjectAssignment: assignedIds.size > 0,

@@ -40,7 +40,9 @@ export async function middleware(request: NextRequest) {
   const path = request.nextUrl.pathname;
   // Public auth routes — never gated (reset-password is reached without a
   // full session, via the email recovery link).
-  const isPublic = path === "/login" || path === "/reset-password";
+  // /api/cron/* is called by Supabase pg_cron with no session — those
+  // routes authenticate themselves with CRON_SECRET.
+  const isPublic = path === "/login" || path === "/reset-password" || path.startsWith("/api/cron/");
 
   if (!user && !isPublic) {
     const redirect = request.nextUrl.clone();

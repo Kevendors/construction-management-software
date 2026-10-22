@@ -578,6 +578,36 @@ export interface EmployeeAttendance {
   status: "present" | "half_day" | "leave" | "absent";
 }
 
+/** Random location spot-check during a site shift (migration 0045). */
+export type SpotCheckStatus =
+  | "scheduled"
+  | "pending"
+  | "on_site"
+  | "off_site"
+  | "confirmed"
+  | "missed"
+  | "excused"
+  | "cancelled";
+
+export interface SpotCheck {
+  id: string;
+  attendanceId: string;
+  userId: string;
+  projectId: string | null;
+  scheduledAt: string;
+  /** When the push actually went out ("" until fired). The 15-min window starts here. */
+  notifiedAt: string;
+  /** false = the user had no push subscription when it fired; null = not fired yet. */
+  wasNotified: boolean | null;
+  respondedAt: string;
+  lat: number | null;
+  lng: number | null;
+  accuracy: number | null;
+  distanceM: number | null;
+  status: SpotCheckStatus;
+  excuseNote: string;
+}
+
 export interface Advance {
   id: string;
   partyType: AdvanceParty;
