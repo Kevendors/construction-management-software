@@ -18,6 +18,8 @@ import { getQuotationSourceAction } from "../upload-actions";
 import { listOrgItemMasterAction, syncCustomItemsToMasterAction } from "@/app/item-master/actions";
 import { UnitSelect } from "@/components/shared/unit-select";
 import { ItemMasterPicker } from "@/components/shared/item-master-picker";
+import { SimilarItemSuggestion } from "@/components/shared/similar-item-suggestion";
+import { findSimilarMasterItem, type SimilarMasterMatch } from "@/lib/quotation/item-similarity";
 import { fileToResizedDataUrl } from "@/lib/image";
 import { formatINR, todayISO } from "@/lib/utils";
 import { toggleBoldInTextarea } from "@/lib/quotation/rich-text";
@@ -178,6 +180,49 @@ export default function NewQuotationPage() {
   }
   function removeLine(id: string) {
     setS((prev) => ({ ...prev, lines: prev.lines.filter((l) => l.id !== id) }));
+  }
+
+  // Suggest reusing an existing Master List item when a custom line's text
+  // looks similar, rather than silently saving another near-duplicate — see
+  // item-similarity.ts. Keyed by line id; never auto-applied.
+  const [suggestions, setSuggestions] = React.useState<Record<string, SimilarMasterMatch>>({});
+  const dismissedText = React.useRef<Record<string, string>>({});
+  function checkSimilar(line: QuoteLine) {
+    if (line.itemId) return; // already linked to a master item, nothing to suggest
+    const text = line.description.trim();
+    if (dismissedText.current[line.id] === text) return;
+    const match = findSimilarMasterItem(text, allMaster);
+    setSuggestions((prev) => {
+      if (!match) {
+        if (!(line.id in prev)) return prev;
+        const next = { ...prev };
+        delete next[line.id];
+        return next;
+      }
+      return { ...prev, [line.id]: match };
+    });
+  }
+  function useSuggestedItem(line: QuoteLine, match: SimilarMasterMatch) {
+    updateLine(line.id, {
+      itemId: match.item.id,
+      description: match.item.name,
+      unit: match.item.unit,
+      usesSqft: match.item.usesSqft,
+      masterCategory: match.item.category,
+    });
+    setSuggestions((prev) => {
+      const next = { ...prev };
+      delete next[line.id];
+      return next;
+    });
+  }
+  function dismissSuggestion(line: QuoteLine) {
+    dismissedText.current[line.id] = line.description.trim();
+    setSuggestions((prev) => {
+      const next = { ...prev };
+      delete next[line.id];
+      return next;
+    });
   }
   function addFromMaster(itemId: string) {
     const m = allMaster.find((i) => i.id === itemId);
@@ -485,6 +530,7 @@ export default function NewQuotationPage() {
                     <Textarea
                       value={l.description}
                       onChange={(e) => updateLine(l.id, { description: e.target.value })}
+                      onBlur={() => checkSimilar(l)}
                       onKeyDown={(e) => {
                         // Ctrl/Cmd+B wraps the selection in ** **, the same
                         // markup the document renders bold.
@@ -502,6 +548,15 @@ export default function NewQuotationPage() {
                     <Button size="icon" variant="ghost" className="h-7 w-7 text-muted-foreground hover:text-foreground" title="Insert item below" onClick={() => insertLineAfter(l.id)}><Plus className="h-3.5 w-3.5" /></Button>
                     <Button size="icon" variant="ghost" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => removeLine(l.id)}><Trash2 className="h-3.5 w-3.5" /></Button>
                   </div>
+                  {suggestions[l.id] && (
+                    <div className="mb-2">
+                      <SimilarItemSuggestion
+                        match={suggestions[l.id]}
+                        onUseExisting={() => useSuggestedItem(l, suggestions[l.id])}
+                        onDismiss={() => dismissSuggestion(l)}
+                      />
+                    </div>
+                  )}
                   <div className="grid grid-cols-5 gap-2">
                     <Field label="Unit" small>
                       <UnitSelect
