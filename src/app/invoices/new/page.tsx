@@ -17,6 +17,7 @@ import { linkQuotationToInvoiceAction } from "@/app/quotations/actions";
 import { saveInvoiceAction, getInvoicePayloadAction } from "../actions";
 import { listOrgItemMasterAction, syncCustomItemsToMasterAction } from "@/app/item-master/actions";
 import { UnitSelect } from "@/components/shared/unit-select";
+import { ItemMasterPicker } from "@/components/shared/item-master-picker";
 import { formatINR, todayISO } from "@/lib/utils";
 import { toggleBoldInTextarea } from "@/lib/quotation/rich-text";
 
@@ -60,17 +61,9 @@ export default function NewInvoicePage() {
   const sourceQuotationId = React.useRef<string | null>(null);
   const [saving, setSaving] = React.useState(false);
   const [savedMsg, setSavedMsg] = React.useState<string | null>(null);
-  const [pick, setPick] = React.useState("");
 
   const [customMaster, setCustomMaster] = React.useState<MasterItem[]>([]);
   const allMaster = React.useMemo(() => [...ITEM_MASTER, ...customMaster], [customMaster]);
-  const allCategories = React.useMemo(() => {
-    const set = new Set(ITEM_CATEGORIES);
-    for (const item of customMaster) {
-      if (item.category) set.add(item.category);
-    }
-    return Array.from(set);
-  }, [customMaster]);
   React.useEffect(() => {
     listOrgItemMasterAction().then(setCustomMaster);
   }, []);
@@ -179,7 +172,6 @@ export default function NewInvoicePage() {
         },
       ],
     }));
-    setPick("");
   }
 
   const sigRef = React.useRef<HTMLInputElement>(null);
@@ -301,22 +293,7 @@ export default function NewInvoicePage() {
             <CardHeader className="flex-row items-center justify-between">
               <CardTitle className="text-base">Line Items</CardTitle>
               <div className="flex gap-2">
-                <Select value={pick} onChange={(e) => addFromMaster(e.target.value)} className="h-8 w-48 text-xs">
-                  <option value="">+ Add from item master…</option>
-                  {allCategories.map((cat) => {
-                    const items = allMaster.filter((i) => i.category === cat);
-                    if (!items.length) return null;
-                    return (
-                      <optgroup key={cat} label={cat}>
-                        {items.map((i) => (
-                          <option key={i.id} value={i.id}>
-                            {i.name}
-                          </option>
-                        ))}
-                      </optgroup>
-                    );
-                  })}
-                </Select>
+                <ItemMasterPicker items={allMaster} onPick={addFromMaster} className="w-56" />
                 <Button size="sm" variant="outline" onClick={addLine}><Plus /> Custom</Button>
               </div>
             </CardHeader>

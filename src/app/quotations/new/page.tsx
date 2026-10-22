@@ -17,6 +17,7 @@ import { saveQuotationAction, getQuotationPayloadAction, findClientIdByNameActio
 import { getQuotationSourceAction } from "../upload-actions";
 import { listOrgItemMasterAction, syncCustomItemsToMasterAction } from "@/app/item-master/actions";
 import { UnitSelect } from "@/components/shared/unit-select";
+import { ItemMasterPicker } from "@/components/shared/item-master-picker";
 import { fileToResizedDataUrl } from "@/lib/image";
 import { formatINR, todayISO } from "@/lib/utils";
 import { toggleBoldInTextarea } from "@/lib/quotation/rich-text";
@@ -53,7 +54,6 @@ const emptyState = (): QuoteState => ({
 export default function NewQuotationPage() {
   const router = useRouter();
   const [s, setS] = React.useState<QuoteState>(emptyState);
-  const [pick, setPick] = React.useState("");
 
   // Line ids ticked for a bulk lumpsum change. Held by id, not index, so
   // adding or removing a line can't shift the selection onto the wrong row.
@@ -102,13 +102,6 @@ export default function NewQuotationPage() {
   // ITEM_MASTER list below so they show up in the same dropdown.
   const [customMaster, setCustomMaster] = React.useState<MasterItem[]>([]);
   const allMaster = React.useMemo(() => [...ITEM_MASTER, ...customMaster], [customMaster]);
-  const allCategories = React.useMemo(() => {
-    const set = new Set(ITEM_CATEGORIES);
-    for (const item of customMaster) {
-      if (item.category) set.add(item.category);
-    }
-    return Array.from(set);
-  }, [customMaster]);
   React.useEffect(() => {
     listOrgItemMasterAction().then(setCustomMaster);
   }, []);
@@ -208,7 +201,6 @@ export default function NewQuotationPage() {
         },
       ],
     }));
-    setPick("");
   }
   function addCustom() {
     setS((prev) => ({
@@ -436,22 +428,7 @@ export default function NewQuotationPage() {
             <CardHeader className="flex-row items-center justify-between">
               <CardTitle className="text-base">Items</CardTitle>
               <div className="flex gap-2">
-                <Select value={pick} onChange={(e) => addFromMaster(e.target.value)} className="h-8 w-48 text-xs">
-                  <option value="">+ Add from item master…</option>
-                  {allCategories.map((cat) => {
-                    const items = allMaster.filter((i) => i.category === cat);
-                    if (!items.length) return null;
-                    return (
-                      <optgroup key={cat} label={cat}>
-                        {items.map((i) => (
-                          <option key={i.id} value={i.id}>
-                            {i.name}
-                          </option>
-                        ))}
-                      </optgroup>
-                    );
-                  })}
-                </Select>
+                <ItemMasterPicker items={allMaster} onPick={addFromMaster} className="w-56" />
                 <Button size="sm" variant="outline" onClick={addCustom}><Plus /> Custom</Button>
                 <Button size="sm" variant="outline" onClick={() => setPasteOpen(true)}><ClipboardPaste /> Paste from Excel</Button>
               </div>
