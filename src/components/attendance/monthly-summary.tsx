@@ -26,7 +26,7 @@ export function MonthlySummary({
       : []),
     { label: "Effective Paid", value: `${summary.effectivePaidDays}d`, hint: "salary credit", className: "bg-primary/10 text-primary font-semibold" },
     { label: "Absent", value: String(summary.absent), hint: "unexcused", className: summary.absent > 0 ? "bg-destructive/15 text-destructive" : "bg-muted text-muted-foreground" },
-    { label: "Holiday", value: String(summary.holiday), hint: "Sundays", className: "bg-muted text-muted-foreground" },
+    { label: "Holiday", value: String(summary.holiday), hint: "declared ones paid", className: "bg-muted text-muted-foreground" },
   ];
 
   return (

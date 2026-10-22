@@ -187,7 +187,7 @@ export type ShiftCreditType =
   | "leave_unpaid"      // Office staff only: 2nd+ Leave this month -> 0 day credit, and retroactively so does the 1st
   | "explicit_half_day" // Admin explicitly marked Half-Day -> 0.5 day credit
   | "explicit_absent"   // Admin explicitly marked Absent -> 0 day credit
-  | "declared_holiday"; // Any non-present status landing on a declared company holiday -> shown as Holiday, not Leave/Half-Day/Absent; 0 day credit (same as an ordinary unrecorded holiday)
+  | "declared_holiday"; // Any non-present status landing on a declared company holiday -> shown as Holiday, not Leave/Half-Day/Absent; 1.0 day credit (paid), same as a day actually worked
 
 export interface EvaluatedAttendanceRecord {
   record: EmployeeAttendance;
@@ -231,6 +231,11 @@ function badgeLabelFor(status: string): string {
  * holiday is shown and counted as a Holiday instead — not as Leave (paid or
  * unpaid), Half-Day or Absent, and never counts toward the paid-Leave
  * allowance either. A real check-in on a holiday is unaffected either way.
+ *
+ * Declared company holidays are paid (1.0 day credit) whether or not the
+ * employee actually checked in that day — same whether there's a row for
+ * that date or not, up through today (a holiday later this month isn't
+ * credited before it happens).
  */
 export function evaluateEmployeeMonthAttendance(
   records: EmployeeAttendance[],
@@ -266,10 +271,11 @@ export function evaluateEmployeeMonthAttendance(
     // unrecorded one. Checked first, before the status-specific branches.
     if (isDeclaredHolidayRecord(r)) {
       creditType = "declared_holiday";
-      dayCredit = 0;
+      dayCredit = 1.0;
+      fullDays += 1;
       badgeLabel = "Holiday";
       glyph = "";
-      reason = `Falls on a declared company holiday${r.note ? ` — ${r.note}` : ""} — recorded as Holiday, not ${badgeLabelFor(r.status)}.`;
+      reason = `Falls on a declared company holiday${r.note ? ` — ${r.note}` : ""} — recorded as Holiday (paid), not ${badgeLabelFor(r.status)}.`;
     } else if (r.status === "leave") {
       if (leavesAreUnpaid) {
         creditType = "leave_unpaid";
@@ -325,6 +331,20 @@ export function evaluateEmployeeMonthAttendance(
 
     evaluatedRecords.push(evaluated);
     recordMap.set(r.date, evaluated);
+  }
+
+  // Declared holidays are paid whether or not the employee actually checked
+  // in. The branch above already credits one that happens to have a row
+  // (e.g. an admin-declared Leave/Absent landing on it); this covers the far
+  // more common case of no row at all — nobody works a holiday, so nothing
+  // in `monthRecords` represents that day. Only counts up to today, so a
+  // holiday later this month isn't paid before it's even happened.
+  const today = orgToday();
+  const recordedDates = new Set(monthRecords.map((r) => r.date));
+  for (const date of daysOfMonth(month)) {
+    if (date > today) break;
+    if (recordedDates.has(date)) continue;
+    if (isHolidayFor(date, holidays, isOffice)) fullDays += 1;
   }
 
   const effectivePaidDays = fullDays + halfDays * 0.5;
