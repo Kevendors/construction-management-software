@@ -1093,7 +1093,10 @@ export async function getLiveLocationsAction(): Promise<LiveLocation[]> {
     .eq("org_id", ctx.orgId)
     .eq("date", today)
     .is("check_out_at", null)
-    .eq("source", "self");
+    .eq("source", "self")
+    // Site shifts only — office check-ins are never tracked, so they'd only
+    // ever show "No ping yet" here.
+    .not("project_id", "is", null);
   if (openErr) return [];
   const rows = (openData ?? []) as { id: string; user_id: string; project_id: string | null; check_in_at: string }[];
   if (!rows.length) return [];
