@@ -66,7 +66,7 @@ export function SpotChecksSection({ attendanceId, canExcuse }: { attendanceId: s
               <span className="ml-auto flex items-center gap-2">
                 {c.lat != null && c.lng != null && (
                   <a
-                    href={`https://maps.google.com/?q=${c.lat},${c.lng}`}
+                    href={`https://www.google.com/maps/search/?api=1&query=${c.lat},${c.lng}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-1 text-xs text-primary hover:underline"

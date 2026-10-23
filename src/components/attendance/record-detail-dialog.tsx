@@ -14,13 +14,17 @@ import {
   getAttendanceSelfieUrls,
   type AttendanceEditHistoryEntry,
 } from "@/app/attendance/actions";
+import { reverseGeocodeAction } from "@/app/attendance/geocode-actions";
 import { SpotChecksSection } from "./spot-checks-section";
+import { LocationMiniMap } from "./location-mini-map";
 import type { EmployeeAttendance } from "@/lib/types";
 
 function mapsLink(lat: number | null, lng: number | null): string | null {
   if (lat == null || lng == null) return null;
-  return `https://maps.google.com/?q=${lat},${lng}`;
+  return `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
 }
+
+const PIN_COLOR = { in: "#16a34a", out: "#dc2626" } as const;
 
 /**
  * In/out details for one attendance day, incl. selfies (signed URLs fetched
@@ -41,6 +45,12 @@ export function RecordDetailDialog({
 }) {
   const [selfies, setSelfies] = React.useState<{ in?: string; out?: string }>({});
   const [history, setHistory] = React.useState<AttendanceEditHistoryEntry[]>([]);
+  // Keyed by record so a late response for a previous record is never shown.
+  const [addresses, setAddresses] = React.useState<{
+    forId: string;
+    in: string | null;
+    out: string | null;
+  } | null>(null);
 
   React.useEffect(() => {
     if (!record) return;
@@ -48,6 +58,21 @@ export function RecordDetailDialog({
     setHistory([]);
     getAttendanceSelfieUrls([record.id]).then((urls) => setSelfies(urls[record.id] ?? {}));
     getAttendanceEditHistoryAction(record.id).then(setHistory);
+    if (record.status === "present") {
+      const inPt = record.checkInLat != null && record.checkInLng != null ? { lat: record.checkInLat, lng: record.checkInLng } : null;
+      const outPt = record.checkOutLat != null && record.checkOutLng != null ? { lat: record.checkOutLat, lng: record.checkOutLng } : null;
+      const points = [inPt, outPt].filter((p): p is { lat: number; lng: number } => p !== null);
+      if (points.length) {
+        reverseGeocodeAction(points).then((list) => {
+          let i = 0;
+          setAddresses({
+            forId: record.id,
+            in: inPt ? list[i++] ?? null : null,
+            out: outPt ? list[i++] ?? null : null,
+          });
+        });
+      }
+    }
   }, [record]);
 
   if (!record) return null;
@@ -156,19 +181,44 @@ export function RecordDetailDialog({
                     )
                   )}
                   {link && (
-                    <a
-                      href={link}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                    >
-                      <ExternalLink className="h-3 w-3" /> View on map
-                    </a>
+                    <div className="space-y-1">
+                      <p className="flex items-start gap-1 text-xs leading-snug text-foreground">
+                        <span
+                          className="mt-1 h-2 w-2 shrink-0 rounded-full"
+                          style={{ background: PIN_COLOR[s.key] }}
+                        />
+                        {addresses?.forId === record.id
+                          ? addresses[s.key] ?? "Address not found"
+                          : "Finding address…"}
+                      </p>
+                      <a
+                        href={link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                      >
+                        <ExternalLink className="h-3 w-3" /> Open in Google Maps
+                      </a>
+                    </div>
                   )}
                 </div>
               );
             })}
           </div>
+        )}
+
+        {!isDeclarative && (
+          <LocationMiniMap
+            key={record.id}
+            pins={sides
+              .filter((s) => s.lat != null && s.lng != null)
+              .map((s) => ({
+                lat: s.lat as number,
+                lng: s.lng as number,
+                label: s.key === "in" ? "IN" : "OUT",
+                color: PIN_COLOR[s.key],
+              }))}
+          />
         )}
 
         {!isOffice && !isDeclarative && <SpotChecksSection key={record.id} attendanceId={record.id} canExcuse={canExcuse} />}
