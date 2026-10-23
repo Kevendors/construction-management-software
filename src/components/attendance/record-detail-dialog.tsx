@@ -209,7 +209,7 @@ export function RecordDetailDialog({
 
         {!isDeclarative && (
           <LocationMiniMap
-            key={record.id}
+            key={`map-${record.id}`}
             pins={sides
               .filter((s) => s.lat != null && s.lng != null)
               .map((s) => ({
