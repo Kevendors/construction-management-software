@@ -45,6 +45,13 @@ export function MyAttendance({ data }: { data: MyAttendanceData }) {
     today && today.source === "self" && !today.checkOutAt && today.projectId && !data.isOffice
   );
   const tracking = useLiveTracking(isTracking);
+  // An open self-punched shift closes with the flow it was opened in (so a
+  // Team-page Office/Site change mid-shift can't strand it); otherwise the
+  // Team-page setting decides.
+  const usesSiteFlow =
+    today && today.source === "self" && today.checkInAt && !today.checkOutAt
+      ? Boolean(today.projectId)
+      : data.usesSiteFlow;
   const isCurrentMonth = data.month === orgThisMonth();
   const records = React.useMemo(() => {
     if (!localToday || !isCurrentMonth) return data.records;
@@ -113,7 +120,7 @@ export function MyAttendance({ data }: { data: MyAttendanceData }) {
 
         <CheckInCard
           today={today}
-          hasExplicitProjectAssignment={data.hasExplicitProjectAssignment}
+          usesSiteFlow={usesSiteFlow}
           onStart={setFlowMode}
         />
 
@@ -170,7 +177,7 @@ export function MyAttendance({ data }: { data: MyAttendanceData }) {
         </Card>
       </div>
 
-      {data.hasExplicitProjectAssignment ? (
+      {usesSiteFlow ? (
         <CheckInFlow
           open={flowMode !== null}
           mode={flowMode ?? "in"}

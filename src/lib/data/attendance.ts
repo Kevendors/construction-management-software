@@ -149,7 +149,7 @@ export async function getMyAttendancePage(month?: string): Promise<MyAttendanceD
         .filter((r) => r.date.startsWith(activeMonth))
         .sort((a, b) => b.date.localeCompare(a.date)),
       assignedProjects: mockAssigned,
-      hasExplicitProjectAssignment: mockAssigned.length > 0,
+      usesSiteFlow: assignedIds.size > 0,
       isOffice: assignedIds.size === 0,
       officeGeofence: { lat: null, lng: null, radiusM: null },
       holidays: [],
@@ -167,7 +167,7 @@ export async function getMyAttendancePage(month?: string): Promise<MyAttendanceD
       pendingSpotCheck: null,
       records: [],
       assignedProjects: [],
-      hasExplicitProjectAssignment: false,
+      usesSiteFlow: false,
       isOffice: false,
       officeGeofence: { lat: null, lng: null, radiusM: null },
       holidays: [],
@@ -255,13 +255,18 @@ export async function getMyAttendancePage(month?: string): Promise<MyAttendanceD
   );
   const projects = ((projRes.data ?? []) as ProjectRow[]).map(mapProject);
 
-  // Show only the user's real roster. Someone with zero project_members rows
-  // (regardless of role, including super_admin/pm) gets the office punch
-  // flow instead of a project list — see hasExplicitProjectAssignment below.
-  // (Previously this fell back to "every org project" for anyone unassigned;
-  // the office flow now covers that case properly instead of handing them a
-  // site-check-in project picker that was never a real fit for them.)
-  const assignedProjects = projects.filter((p) => assignedIds.has(p.id));
+  // Office vs Site is the explicit per-member setting on the Team page;
+  // falls back to the old project-assignment inference only pre-migration
+  // (0039 not yet applied). Site staff get the project check-in flow — from
+  // their roster, or from every open project if they aren't rostered yet
+  // (unassigned is not the same as office).
+  const isOffice = isOfficeRaw ?? assignedIds.size === 0;
+  const rostered = projects.filter((p) => assignedIds.has(p.id));
+  const assignedProjects = isOffice
+    ? []
+    : rostered.length
+    ? rostered
+    : projects.filter((p) => p.status !== "completed");
   const officeRow = orgRes?.data as { office_lat: number | null; office_lng: number | null; office_radius_m: number | null } | null;
   const holidays = (holidaysRes?.data ?? []).map((h) => ({
     date: (h as { date: string }).date,
@@ -276,10 +281,8 @@ export async function getMyAttendancePage(month?: string): Promise<MyAttendanceD
     pendingSpotCheck: pendingSpotRes?.data ? mapSpotCheck(pendingSpotRes.data as SpotCheckRow) : null,
     records: monthRows.map((r) => mapEmployeeAttendance(r, identityFor(r))),
     assignedProjects,
-    hasExplicitProjectAssignment: assignedIds.size > 0,
-    // Explicit per-member setting (Team page); falls back to the old
-    // project-assignment inference only pre-migration (0039 not yet applied).
-    isOffice: isOfficeRaw ?? assignedIds.size === 0,
+    usesSiteFlow: !isOffice,
+    isOffice,
     officeGeofence: {
       lat: officeRow?.office_lat ?? null,
       lng: officeRow?.office_lng ?? null,

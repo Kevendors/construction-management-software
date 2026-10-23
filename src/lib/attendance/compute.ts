@@ -12,20 +12,22 @@ export interface MyAttendanceData {
   pendingSpotCheck: SpotCheck | null;
   /** All of the caller's records in `month`. */
   records: EmployeeAttendance[];
-  /** Projects the caller is actually rostered to (via project_members). */
+  /**
+   * Projects offered in the site check-in picker: the caller's roster
+   * (project_members), or every open org project for Site staff who aren't
+   * rostered anywhere yet.
+   */
   assignedProjects: Project[];
   /**
-   * True when the caller has a real project_members roster entry — the
-   * site (project-based, selfie) flow. False means the office (one-tap,
-   * no project) flow applies instead. Determined purely from assignment,
-   * not role.
+   * True for Site staff — the project-based, selfie check-in flow. False
+   * means the office (one-tap, no project) flow. Follows the Office/Site
+   * setting on the Team page (`isOffice`), not project assignment.
    */
-  hasExplicitProjectAssignment: boolean;
+  usesSiteFlow: boolean;
   /**
    * Whether the caller counts as Office (vs Site) for policy purposes --
    * the 1-paid-leave-per-month rule, office-only-holiday exclusion, and the
-   * Office/Site badge. Explicitly set per member on the Team page, NOT
-   * derived from hasExplicitProjectAssignment.
+   * Office/Site badge. Explicitly set per member on the Team page.
    */
   isOffice: boolean;
   /** Org's shared office location for the office punch flow (all null = fence disabled). */

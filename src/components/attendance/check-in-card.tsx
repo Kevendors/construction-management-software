@@ -11,12 +11,12 @@ import type { EmployeeAttendance } from "@/lib/types";
 /** Big mobile-first status card: punch in → live session → day done. */
 export function CheckInCard({
   today,
-  hasExplicitProjectAssignment,
+  usesSiteFlow,
   onStart,
 }: {
   today: EmployeeAttendance | null;
   /** True = site flow (project + GPS + selfie). False = office flow (one-tap GPS only). */
-  hasExplicitProjectAssignment: boolean;
+  usesSiteFlow: boolean;
   onStart: (mode: "in" | "out") => void;
 }) {
   const isOpen = Boolean(today && !today.checkOutAt);
@@ -36,12 +36,12 @@ export function CheckInCard({
             <div>
               <p className="text-sm font-medium">Today&apos;s Attendance</p>
               <p className="text-xs text-muted-foreground">
-                {hasExplicitProjectAssignment
+                {usesSiteFlow
                   ? "Not marked yet — check in with a live selfie and GPS."
                   : "Not marked yet — punch in with your live location."}
               </p>
             </div>
-            {hasExplicitProjectAssignment ? (
+            {usesSiteFlow ? (
               <Button className="h-14 w-full text-base" onClick={() => onStart("in")}>
                 <Fingerprint className="!size-5" /> Mark Attendance
               </Button>
@@ -67,7 +67,7 @@ export function CheckInCard({
               <Badge variant="success">Present</Badge>
             </div>
             <Button variant="accent" className="h-14 w-full text-base" onClick={() => onStart("out")}>
-              <LogOut className="!size-5" /> {hasExplicitProjectAssignment ? "Check Out" : "Punch Out"}
+              <LogOut className="!size-5" /> {usesSiteFlow ? "Check Out" : "Punch Out"}
             </Button>
           </>
         )}
