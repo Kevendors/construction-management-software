@@ -91,7 +91,7 @@ export function TransactionsLedgerView({ data }: { data: TransactionsLedger }) {
                     </TableCell>
                     <TableCell>
                       {project ? (
-                        <Link href={`/projects/${project.id}`} className="hover:underline">{project.code}</Link>
+                        <Link href={`/projects/${project.id}`} className="hover:underline" prefetch={false}>{project.code}</Link>
                       ) : "—"}
                     </TableCell>
                     <TableCell>

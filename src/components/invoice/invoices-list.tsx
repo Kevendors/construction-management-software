@@ -321,13 +321,13 @@ export function InvoicesList({
                   <p className="mt-0.5 text-sm text-muted-foreground">
                     {project && (
                       <>
-                        <Link href={`/projects/${project.id}`} className="hover:underline">
+                        <Link href={`/projects/${project.id}`} className="hover:underline" prefetch={false}>
                           {project.code}
                         </Link>{" "}
                         ·{" "}
                       </>
                     )}
-                    <Link href={`/clients/${inv.clientId}`} className="hover:underline">
+                    <Link href={`/clients/${inv.clientId}`} className="hover:underline" prefetch={false}>
                       {client?.company || client?.name || "—"}
                     </Link>{" "}
                     · {fmtDate(inv.date)}
@@ -335,7 +335,7 @@ export function InvoicesList({
                   </p>
                 </div>
                 <div className="flex gap-2">
-                  <Link href={`/invoices/new?id=${inv.id}`}>
+                  <Link href={`/invoices/new?id=${inv.id}`} prefetch={false}>
                     <Button size="sm" variant="outline">
                       <FileText /> Open / PDF
                     </Button>

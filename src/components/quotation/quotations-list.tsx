@@ -346,14 +346,14 @@ export function QuotationsList({
                   </div>
                   <p className="mt-0.5 text-sm text-muted-foreground">
                     {q.projectName} ·{" "}
-                    <Link href={`/clients/${q.clientId}`} className="hover:underline">
+                    <Link href={`/clients/${q.clientId}`} className="hover:underline" prefetch={false}>
                       {client?.company}
                     </Link>{" "}
                     · valid till {fmtDate(q.validUntil)}
                   </p>
                 </div>
                 <div className="flex gap-2">
-                  <Link href={`/quotations/new?id=${q.id}`}>
+                  <Link href={`/quotations/new?id=${q.id}`} prefetch={false}>
                     <Button size="sm" variant="outline">
                       <Download /> Open / PDF
                     </Button>
@@ -362,7 +362,7 @@ export function QuotationsList({
                     (q.convertedProjectId ? (
                       // Already converted — link to it instead of offering to
                       // convert again, which would create a duplicate project.
-                      <Link href={`/projects/${q.convertedProjectId}`}>
+                      <Link href={`/projects/${q.convertedProjectId}`} prefetch={false}>
                         <Button size="sm" variant="secondary">
                           <ExternalLink /> View Project
                         </Button>
@@ -377,7 +377,7 @@ export function QuotationsList({
                       // One quote becomes at most one invoice document (PI or
                       // Tax Invoice) — opening it shows which, and a PI can be
                       // turned into a Tax Invoice from the Invoices list.
-                      <Link href={`/invoices/new?id=${q.convertedInvoiceId}`}>
+                      <Link href={`/invoices/new?id=${q.convertedInvoiceId}`} prefetch={false}>
                         <Button size="sm" variant="secondary">
                           <ExternalLink /> View Invoice
                         </Button>

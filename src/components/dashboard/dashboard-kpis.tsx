@@ -114,7 +114,7 @@ function MetricDialog({
             {rows.map((r) => (
               <TableRow key={r.project.id}>
                 <TableCell>
-                  <Link href={`/projects/${r.project.id}`} className="font-medium hover:underline" onClick={onClose}>
+                  <Link href={`/projects/${r.project.id}`} className="font-medium hover:underline" onClick={onClose} prefetch={false}>
                     {r.project.name}
                   </Link>
                   <div className="text-xs text-muted-foreground">{r.project.code}{r.client?.company ? ` · ${r.client.company}` : ""}</div>

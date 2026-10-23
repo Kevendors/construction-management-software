@@ -31,7 +31,7 @@ function ProjectCard({ item }: { item: OverviewItem }) {
   const { role } = useRole();
   const canSeeValue = role === "super_admin";
   return (
-    <Link href={`/projects/${p.id}`} className="group">
+    <Link href={`/projects/${p.id}`} className="group" prefetch={false}>
       <Card className="h-full transition-shadow hover:shadow-md">
         <CardContent className="p-5">
           <div className="flex items-start justify-between gap-2">

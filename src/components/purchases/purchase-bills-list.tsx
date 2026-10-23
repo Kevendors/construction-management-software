@@ -288,7 +288,7 @@ export function PurchaseBillsList({
                   </p>
                 </div>
                 <div className="flex gap-2">
-                  <Link href={`/purchases/bill/new?id=${bill.id}`}>
+                  <Link href={`/purchases/bill/new?id=${bill.id}`} prefetch={false}>
                     <Button size="sm" variant="outline">
                       <FileText /> Open / PDF
                     </Button>

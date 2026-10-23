@@ -123,7 +123,7 @@ export function ChallansList({
                 </p>
               </div>
               <div className="flex gap-2">
-                <Link href={`/challans/new?id=${c.id}`}>
+                <Link href={`/challans/new?id=${c.id}`} prefetch={false}>
                   <Button size="sm" variant="outline">
                     <Download /> Open / PDF
                   </Button>

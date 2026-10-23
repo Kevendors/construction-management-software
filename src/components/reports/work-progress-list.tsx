@@ -120,7 +120,7 @@ export function WorkProgressReportsList({
                 </p>
               </div>
               <div className="flex gap-2">
-                <Link href={`/reports/work-progress/new?id=${r.id}`}>
+                <Link href={`/reports/work-progress/new?id=${r.id}`} prefetch={false}>
                   <Button size="sm" variant="outline">
                     <Download /> Open / PDF
                   </Button>

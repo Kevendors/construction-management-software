@@ -298,6 +298,7 @@ export function WorkOrdersTab({ board }: { board: SubconBoard }) {
                     <Link
                       href={`/subcon/wo/${wo.id}/print`}
                       className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
+                      prefetch={false}
                     >
                       <FileText className="h-4 w-4" /> PDF
                     </Link>

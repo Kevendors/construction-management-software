@@ -252,6 +252,7 @@ export function EmployeesTab({
                             <Link
                               href={`/payroll/slip/${s.id}/print`}
                               className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+                              prefetch={false}
                             >
                               <FileText className="h-3.5 w-3.5" /> View
                             </Link>

@@ -82,6 +82,7 @@ export function Sidebar({
                     <li key={item.href}>
                       <Link
                         href={soon ? "#" : item.href}
+                        prefetch={false}
                         onClick={(e) => {
                           if (soon) e.preventDefault();
                           else onClose();
