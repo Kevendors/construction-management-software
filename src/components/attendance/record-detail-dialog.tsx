@@ -1,12 +1,13 @@
 "use client";
 
 import * as React from "react";
-import { ExternalLink, History } from "lucide-react";
+import { AlertTriangle, ExternalLink, History, MapPin } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Dialog } from "@/components/ui/dialog";
 import {
   formatDuration,
   formatTime,
+  haversineMeters,
   type EvaluatedAttendanceRecord,
 } from "@/lib/attendance/compute";
 import {
@@ -14,7 +15,7 @@ import {
   getAttendanceSelfieUrls,
   type AttendanceEditHistoryEntry,
 } from "@/app/attendance/actions";
-import { reverseGeocodeAction } from "@/app/attendance/geocode-actions";
+import { getPunchFenceAction, reverseGeocodeAction, type PunchFence } from "@/app/attendance/geocode-actions";
 import { SpotChecksSection } from "./spot-checks-section";
 import { LocationMiniMap } from "./location-mini-map";
 import type { EmployeeAttendance } from "@/lib/types";
@@ -25,6 +26,14 @@ function mapsLink(lat: number | null, lng: number | null): string | null {
 }
 
 const PIN_COLOR = { in: "#16a34a", out: "#dc2626" } as const;
+
+function formatDistance(m: number): string {
+  return m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${m} m`;
+}
+
+function hasFence(f: PunchFence): f is PunchFence & { lat: number; lng: number; radiusM: number } {
+  return f.lat != null && f.lng != null && f.radiusM != null && f.radiusM > 0;
+}
 
 /**
  * In/out details for one attendance day, incl. selfies (signed URLs fetched
@@ -51,6 +60,7 @@ export function RecordDetailDialog({
     in: string | null;
     out: string | null;
   } | null>(null);
+  const [fence, setFence] = React.useState<{ forId: string; fence: PunchFence | null } | null>(null);
 
   React.useEffect(() => {
     if (!record) return;
@@ -59,6 +69,7 @@ export function RecordDetailDialog({
     getAttendanceSelfieUrls([record.id]).then((urls) => setSelfies(urls[record.id] ?? {}));
     getAttendanceEditHistoryAction(record.id).then(setHistory);
     if (record.status === "present") {
+      getPunchFenceAction(record.projectId || null).then((f) => setFence({ forId: record.id, fence: f }));
       const inPt = record.checkInLat != null && record.checkInLng != null ? { lat: record.checkInLat, lng: record.checkInLng } : null;
       const outPt = record.checkOutLat != null && record.checkOutLng != null ? { lat: record.checkOutLat, lng: record.checkOutLng } : null;
       const points = [inPt, outPt].filter((p): p is { lat: number; lng: number } => p !== null);
@@ -86,6 +97,9 @@ export function RecordDetailDialog({
     month: "short",
     year: "numeric",
   });
+
+  const punchFence = fence?.forId === record.id ? fence.fence : null;
+  const fenceWord = punchFence?.kind === "office" ? "office" : "site";
 
   const sides: {
     key: "in" | "out";
@@ -147,6 +161,26 @@ export function RecordDetailDialog({
           </div>
         )}
 
+        {!isDeclarative && punchFence && (
+          hasFence(punchFence) ? (
+            <p className="flex items-center gap-1.5 text-sm">
+              <MapPin className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <span className="font-medium">{punchFence.kind === "site" ? punchFence.name : "Office"}</span>
+              <span className="text-muted-foreground">· allowed within {formatDistance(punchFence.radiusM)}</span>
+            </p>
+          ) : (
+            <div className="flex items-start gap-2 rounded-lg bg-warning/10 p-3 text-sm">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+              <p>
+                <span className="font-medium">{punchFence.kind === "site" ? punchFence.name : "Office"}</span>
+                {punchFence.kind === "site"
+                  ? " has no geofence set, so check-ins here aren't location-checked. Set it in the project's Settings tab."
+                  : " — no office location is set, so punch-ins aren't location-checked."}
+              </p>
+            </div>
+          )
+        )}
+
         {isDeclarative ? (
           <div className="rounded-lg border border-border bg-secondary/40 p-3 text-sm text-muted-foreground">
             {evaluated?.creditType === "declared_holiday"
@@ -191,6 +225,19 @@ export function RecordDetailDialog({
                           ? addresses[s.key] ?? "Address not found"
                           : "Finding address…"}
                       </p>
+                      {punchFence && hasFence(punchFence) && s.lat != null && s.lng != null && (() => {
+                        const d = haversineMeters(s.lat, s.lng, punchFence.lat, punchFence.lng);
+                        return d <= punchFence.radiusM ? (
+                          <p className="text-xs font-medium text-success">
+                            Within {fenceWord} · {formatDistance(d)} from centre
+                          </p>
+                        ) : (
+                          <p className="flex items-center gap-1 text-xs font-medium text-destructive">
+                            <AlertTriangle className="h-3 w-3 shrink-0" />
+                            {formatDistance(d)} from {fenceWord} (allowed {formatDistance(punchFence.radiusM)})
+                          </p>
+                        );
+                      })()}
                       <a
                         href={link}
                         target="_blank"

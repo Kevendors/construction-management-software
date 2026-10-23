@@ -35,6 +35,7 @@ import { RecordDetailDialog } from "./record-detail-dialog";
 import { AdminMarkAttendanceDialog } from "./admin-mark-attendance-dialog";
 import { OfficeLocationCard } from "./office-location-card";
 import { HolidaysCard } from "./holidays-card";
+import { UnfencedSitesCard } from "./unfenced-sites-card";
 import { LiveLocationsMap } from "./live-locations-map";
 
 const STATUS_LABEL: Record<string, string> = {
@@ -235,6 +236,7 @@ export function AdminAttendanceTab({
 
   return (
     <div className="space-y-4">
+      <UnfencedSitesCard projects={projects} />
       <OfficeLocationCard />
       <HolidaysCard />
 

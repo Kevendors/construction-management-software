@@ -36,15 +36,15 @@ const PROJECT_STATUSES: ProjectStatus[] = ["planning", "ongoing", "on_hold", "co
 /** Roles the 0002 'site' write policy lets update a project row. */
 const CAN_SET_STATUS = ["super_admin", "pm", "supervisor"];
 
-export function ProjectDetail({ projectId }: { projectId: string }) {
+export function ProjectDetail({ projectId, initialTab }: { projectId: string; initialTab?: string }) {
   return (
     <ProjectStoreProvider>
-      <ProjectDetailInner projectId={projectId} />
+      <ProjectDetailInner projectId={projectId} initialTab={initialTab} />
     </ProjectStoreProvider>
   );
 }
 
-function ProjectDetailInner({ projectId }: { projectId: string }) {
+function ProjectDetailInner({ projectId, initialTab }: { projectId: string; initialTab?: string }) {
   // Projects are loaded from Supabase into the store on mount (RLS-scoped to
   // the org); resolve this one by id once the load settles.
   const { loading, setProjectStatus } = useStore();
@@ -167,7 +167,13 @@ function ProjectDetailInner({ projectId }: { projectId: string }) {
         </div>
       </div>
 
-      <Tabs defaultValue="overview">
+      {/* ?tab=settings deep-links to Settings (super_admin only; it's the
+          only tab with no trigger for other roles). Keyed on role so the
+          default re-resolves once the role loads. */}
+      <Tabs
+        key={role ?? "pending"}
+        defaultValue={initialTab === "settings" && (role === "super_admin" || !role) ? "settings" : "overview"}
+      >
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
           {canSeeSiteTabs && <TabsTrigger value="tasks">Tasks</TabsTrigger>}

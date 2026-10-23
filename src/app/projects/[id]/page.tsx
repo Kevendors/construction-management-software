@@ -11,9 +11,12 @@ export const dynamicParams = true;
 
 export default async function ProjectPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ tab?: string }>;
 }) {
   const { id } = await params;
-  return <ProjectDetail projectId={id} />;
+  const { tab } = await searchParams;
+  return <ProjectDetail projectId={id} initialTab={tab} />;
 }

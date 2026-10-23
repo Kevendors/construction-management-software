@@ -1,7 +1,64 @@
 "use server";
 
 import { getAuthContext } from "@/lib/auth/context";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
+import { projects as mockProjects } from "@/lib/mock/data";
+
+export interface PunchFence {
+  /** "site" = a project's geofence; "office" = the org's shared office location. */
+  kind: "site" | "office";
+  /** Project name for a site punch; "Office" otherwise. */
+  name: string;
+  lat: number | null;
+  lng: number | null;
+  radiusM: number | null;
+}
+
+/**
+ * The geofence a punch was judged against: the record's project, or the
+ * office location when there is no project. Used to show "X m from site".
+ */
+export async function getPunchFenceAction(projectId: string | null): Promise<PunchFence | null> {
+  if (!isSupabaseConfigured()) {
+    const p = projectId ? mockProjects.find((m) => m.id === projectId) : null;
+    if (projectId && !p) return null;
+    return p
+      ? { kind: "site", name: p.name, lat: p.geofenceLat, lng: p.geofenceLng, radiusM: p.geofenceRadiusM }
+      : { kind: "office", name: "Office", lat: null, lng: null, radiusM: null };
+  }
+  const ctx = await getAuthContext();
+  if (!ctx?.orgId) return null;
+  const admin = createAdminClient();
+  if (projectId) {
+    const { data } = await admin
+      .from("projects")
+      .select("name, geofence_lat, geofence_lng, geofence_radius_m")
+      .eq("id", projectId)
+      .eq("org_id", ctx.orgId)
+      .maybeSingle();
+    if (!data) return null;
+    return {
+      kind: "site",
+      name: data.name as string,
+      lat: (data.geofence_lat as number | null) ?? null,
+      lng: (data.geofence_lng as number | null) ?? null,
+      radiusM: (data.geofence_radius_m as number | null) ?? null,
+    };
+  }
+  const { data } = await admin
+    .from("orgs")
+    .select("office_lat, office_lng, office_radius_m")
+    .eq("id", ctx.orgId)
+    .maybeSingle();
+  return {
+    kind: "office",
+    name: "Office",
+    lat: (data?.office_lat as number | null | undefined) ?? null,
+    lng: (data?.office_lng as number | null | undefined) ?? null,
+    radiusM: (data?.office_radius_m as number | null | undefined) ?? null,
+  };
+}
 
 // Reverse geocoding (GPS → street address) via OpenStreetMap Nominatim.
 // Free, no key — but its usage policy allows ~1 request/second with an
