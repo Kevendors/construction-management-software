@@ -30,6 +30,12 @@ const MAX_SELFIE_BYTES = 2 * 1024 * 1024;
 export interface ActionResult {
   id?: string;
   error?: string;
+  /**
+   * Site check-in/out only: set (with `error`) when the GPS is outside the
+   * project geofence and no reason was given — the client asks for one and
+   * resubmits. Value = distance from the site centre in meters.
+   */
+  outsideDistanceM?: number;
 }
 
 export interface CheckInInput {
@@ -38,6 +44,8 @@ export interface CheckInInput {
   lng: number;
   accuracy: number;
   selfieDataUrl: string;
+  /** Required when checking in outside the project geofence (e.g. "Collecting material"). */
+  outsideReason?: string;
 }
 
 export interface CheckOutInput {
@@ -45,6 +53,8 @@ export interface CheckOutInput {
   lng: number;
   accuracy: number;
   selfieDataUrl: string;
+  /** Required when checking out outside the project geofence. */
+  outsideReason?: string;
 }
 
 export interface OfficePunchInput {
@@ -91,6 +101,30 @@ function fenceError(
   if (distance - accuracy <= fence.geofence_radius_m) return null;
   return `You are ~${distance}m from the site (allowed ${fence.geofence_radius_m}m). Move inside the project area and try again.`;
 }
+
+/**
+ * Site staff aren't blocked by the project fence (they may be off collecting
+ * material, at a supplier…). Returns the distance from the site centre when
+ * the punch is outside it (same slack rule as fenceError), else null.
+ */
+function outsideSiteDistance(
+  fence: GeofenceRow | null,
+  lat: number,
+  lng: number,
+  accuracy: number
+): number | null {
+  if (!fence || fence.geofence_lat == null || fence.geofence_lng == null || !fence.geofence_radius_m) {
+    return null;
+  }
+  const distance = haversineMeters(lat, lng, fence.geofence_lat, fence.geofence_lng);
+  return distance - accuracy <= fence.geofence_radius_m ? null : distance;
+}
+
+function formatMeters(m: number): string {
+  return m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${m} m`;
+}
+
+const MAX_OUTSIDE_REASON = 200;
 
 /** Upload a selfie to the private bucket; returns the storage path or null. */
 async function uploadSelfie(
@@ -225,8 +259,16 @@ export async function checkInAction(input: CheckInInput): Promise<ActionResult> 
     }
   }
 
-  const fenceMsg = fenceError(project as GeofenceRow, input.lat, input.lng, input.accuracy);
-  if (fenceMsg) return { error: fenceMsg };
+  const outsideM = outsideSiteDistance(project as GeofenceRow, input.lat, input.lng, input.accuracy);
+  const outsideReason = (input.outsideReason ?? "").trim().slice(0, MAX_OUTSIDE_REASON);
+  if (outsideM != null && !outsideReason) {
+    return {
+      error: `You are ~${formatMeters(outsideM)} from the site. Choose a reason to check in from here.`,
+      outsideDistanceM: outsideM,
+    };
+  }
+  const outsideNote =
+    outsideM != null ? `Checked in outside site (${formatMeters(outsideM)} away): ${outsideReason}` : null;
 
   const date = orgToday();
   const { data: existing } = await supabase
@@ -252,7 +294,7 @@ export async function checkInAction(input: CheckInInput): Promise<ActionResult> 
       check_in_lng: input.lng,
       check_in_accuracy: input.accuracy,
       status: lateEval.status,
-      note: lateEval.note,
+      note: [lateEval.note, outsideNote].filter(Boolean).join(" · ") || null,
     })
     .select("id")
     .single();
@@ -287,8 +329,20 @@ export async function checkInAction(input: CheckInInput): Promise<ActionResult> 
       lateEval.status === "half_day"
         ? `${ctx.name} checked in late — ${(project as { name: string }).name} — auto-marked Half-Day (late-arrival limit used)`
         : `${ctx.name} checked in — ${(project as { name: string }).name}`,
-    meta: { projectId: input.projectId, lat: input.lat, lng: input.lng },
+    meta: { projectId: input.projectId, lat: input.lat, lng: input.lng, outsideM, outsideReason: outsideReason || null },
   });
+
+  if (outsideM != null) {
+    await dispatchNotification({
+      orgId: ctx.orgId,
+      roles: ["super_admin", "hr"],
+      excludeUserId: ctx.userId,
+      kind: "delay",
+      title: `${ctx.name} checked in outside site`,
+      body: `${formatMeters(outsideM)} from ${(project as { name: string }).name} — ${outsideReason}`,
+      href: "/payroll",
+    });
+  }
 
   // Admin notification (In-app + Web Push)
   await dispatchNotification({
@@ -335,22 +389,33 @@ export async function checkOutAction(input: CheckOutInput): Promise<ActionResult
   const date = orgToday();
   const { data: row } = await supabase
     .from("employee_attendance")
-    .select("id, project_id, check_in_at, check_out_at")
+    .select("id, project_id, check_in_at, check_out_at, note")
     .eq("user_id", ctx.userId)
     .eq("date", date)
     .maybeSingle();
   if (!row) return { error: "Check in first." };
   if (row.check_out_at) return { error: "Already checked out today." };
 
+  let outsideM: number | null = null;
+  let projectName = "";
+  const outsideReason = (input.outsideReason ?? "").trim().slice(0, MAX_OUTSIDE_REASON);
   if (row.project_id) {
     const { data: project } = await supabase
       .from("projects")
-      .select("geofence_lat, geofence_lng, geofence_radius_m")
+      .select("name, geofence_lat, geofence_lng, geofence_radius_m")
       .eq("id", row.project_id)
       .maybeSingle();
-    const fenceMsg = fenceError(project as GeofenceRow | null, input.lat, input.lng, input.accuracy);
-    if (fenceMsg) return { error: fenceMsg };
+    projectName = (project?.name as string | undefined) ?? "";
+    outsideM = outsideSiteDistance(project as GeofenceRow | null, input.lat, input.lng, input.accuracy);
+    if (outsideM != null && !outsideReason) {
+      return {
+        error: `You are ~${formatMeters(outsideM)} from the site. Choose a reason to check out from here.`,
+        outsideDistanceM: outsideM,
+      };
+    }
   }
+  const outsideNote =
+    outsideM != null ? `Checked out outside site (${formatMeters(outsideM)} away): ${outsideReason}` : null;
 
   // Deterministic path → upload first; the row is untouched on failure.
   const selfiePath = await uploadSelfie(ctx.orgId, ctx.userId, date, "out", input.selfieDataUrl);
@@ -368,6 +433,7 @@ export async function checkOutAction(input: CheckOutInput): Promise<ActionResult
       check_out_selfie_path: selfiePath,
       total_minutes: totalMinutes,
       overtime_minutes: overtimeOf(totalMinutes),
+      ...(outsideNote ? { note: [row.note as string | null, outsideNote].filter(Boolean).join(" · ") } : {}),
     })
     .eq("id", row.id);
   if (error) return { error: error.message };
@@ -380,8 +446,20 @@ export async function checkOutAction(input: CheckOutInput): Promise<ActionResult
     entityType: "attendance",
     entityId: row.id as string,
     summary: `${ctx.name} checked out — ${h}h ${m}m worked`,
-    meta: { lat: input.lat, lng: input.lng, totalMinutes },
+    meta: { lat: input.lat, lng: input.lng, totalMinutes, outsideM, outsideReason: outsideReason || null },
   });
+
+  if (outsideM != null) {
+    await dispatchNotification({
+      orgId: ctx.orgId,
+      roles: ["super_admin", "hr"],
+      excludeUserId: ctx.userId,
+      kind: "delay",
+      title: `${ctx.name} checked out outside site`,
+      body: `${formatMeters(outsideM)} from ${projectName || "the site"} — ${outsideReason}`,
+      href: "/payroll",
+    });
+  }
 
   await dispatchNotification({
     orgId: ctx.orgId,

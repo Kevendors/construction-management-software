@@ -161,6 +161,16 @@ export function RecordDetailDialog({
           </div>
         )}
 
+        {/* Self punches carry system notes: late-arrival Half-Day and
+            "Checked in/out outside site (X away): reason". */}
+        {record.source === "self" && record.note && (
+          <div className="space-y-1 rounded-lg bg-warning/10 p-3 text-sm">
+            {record.note.split(" · ").map((line) => (
+              <p key={line}>{line}</p>
+            ))}
+          </div>
+        )}
+
         {!isDeclarative && punchFence && (
           hasFence(punchFence) ? (
             <p className="flex items-center gap-1.5 text-sm">

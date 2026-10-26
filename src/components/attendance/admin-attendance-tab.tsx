@@ -818,6 +818,11 @@ export function AdminAttendanceTab({
                           ) : (
                             <Badge variant="success">Self</Badge>
                           )}
+                          {record.note.includes("outside site") && (
+                            <Badge variant="warning" className="ml-1" title={record.note}>
+                              Outside site
+                            </Badge>
+                          )}
                         </TableCell>
                         <TableCell>
                           {(() => {

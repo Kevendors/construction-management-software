@@ -20,6 +20,7 @@ export interface FlowSuccess {
 type Step =
   | "project"
   | "locate"
+  | "reason"
   | "camera"
   | "preview"
   | "submitting"
@@ -27,10 +28,11 @@ type Step =
   | "error";
 
 /**
- * Guided check-in / check-out: pick project → GPS fix (+ client geo-fence
- * pre-check) → live selfie → confirm → submit. Check-out skips the project
- * step (it closes the shift already open under `activeProjectId`). The
- * server re-validates assignment and the fence; this flow just fails fast.
+ * Guided check-in / check-out: pick project → GPS fix → (outside the site
+ * fence: pick a reason) → live selfie → confirm → submit. Check-out skips the
+ * project step (it closes the shift already open under `activeProjectId`).
+ * Site staff are never blocked by the fence — an outside punch just needs a
+ * reason, which the server re-checks and flags for Admin/HR.
  */
 export function CheckInFlow({
   open,
@@ -54,6 +56,9 @@ export function CheckInFlow({
   const [selfie, setSelfie] = React.useState("");
   const [errorMsg, setErrorMsg] = React.useState("");
   const [doneAt, setDoneAt] = React.useState("");
+  const [outsideM, setOutsideM] = React.useState<number | null>(null);
+  const [reasonChoice, setReasonChoice] = React.useState("");
+  const [reasonOther, setReasonOther] = React.useState("");
   const geo = useGeolocation();
   const geoRequest = geo.request;
 
@@ -67,6 +72,9 @@ export function CheckInFlow({
       setSelfie("");
       setErrorMsg("");
       setDoneAt("");
+      setOutsideM(null);
+      setReasonChoice("");
+      setReasonOther("");
       if (mode === "out") {
         setProjectId(activeProjectId ?? "");
         setStep("locate");
@@ -83,37 +91,37 @@ export function CheckInFlow({
     if (open && step === "locate") geoRequest();
   }, [open, step, geoRequest]);
 
-  // Advance (or fail fast on the fence) once we have a position.
+  // Advance once we have a position — via the reason step when outside the site.
   React.useEffect(() => {
     if (!open || step !== "locate" || geo.status !== "success" || !geo.position) return;
     const project = projects.find((p) => p.id === projectId);
-    const fence = clientFenceError(project, geo.position);
-    if (fence) {
-      setErrorMsg(fence);
-      setStep("error");
-    } else {
-      setStep("camera");
-    }
+    const distance = outsideSiteDistance(project, geo.position);
+    setOutsideM(distance);
+    setStep(distance != null ? "reason" : "camera");
   }, [open, step, geo.status, geo.position, projects, projectId]);
+
+  const outsideReason = reasonChoice === OTHER_REASON ? reasonOther.trim() : reasonChoice;
 
   async function submit() {
     if (!geo.position) return;
     setStep("submitting");
     const { lat, lng, accuracy } = geo.position;
-    if (mode === "in") {
-      const checkInRes = await checkInAction({ projectId, lat, lng, accuracy, selfieDataUrl: selfie });
-      if (checkInRes.error) {
-        setErrorMsg(checkInRes.error);
-        setStep("error");
+    const reason = outsideM != null ? outsideReason : undefined;
+    const res =
+      mode === "in"
+        ? await checkInAction({ projectId, lat, lng, accuracy, selfieDataUrl: selfie, outsideReason: reason })
+        : await checkOutAction({ lat, lng, accuracy, selfieDataUrl: selfie, outsideReason: reason });
+    if (res.error) {
+      // The server found us outside the fence (e.g. a project the picker
+      // didn't have fence data for) — ask for a reason, keep the selfie.
+      if (res.outsideDistanceM != null && !reason) {
+        setOutsideM(res.outsideDistanceM);
+        setStep("reason");
         return;
       }
-    } else {
-      const checkOutRes = await checkOutAction({ lat, lng, accuracy, selfieDataUrl: selfie });
-      if (checkOutRes.error) {
-        setErrorMsg(checkOutRes.error);
-        setStep("error");
-        return;
-      }
+      setErrorMsg(res.error);
+      setStep("error");
+      return;
     }
     const at = new Date().toISOString();
     setDoneAt(at);
@@ -157,9 +165,7 @@ export function CheckInFlow({
           <LocateFixed className="h-9 w-9 animate-pulse text-primary" />
           <p className="text-sm font-medium">Getting your location…</p>
           <p className="text-xs text-muted-foreground">
-            {project?.geofenceRadiusM
-              ? `Checking you are within ${project.geofenceRadiusM}m of ${project.name}.`
-              : "Your GPS position is recorded with your attendance."}
+            Your GPS position is recorded with your attendance.
           </p>
           {geo.status === "error" && (
             <>
@@ -169,6 +175,55 @@ export function CheckInFlow({
               </Button>
             </>
           )}
+        </div>
+      )}
+
+      {step === "reason" && (
+        <div className="space-y-3">
+          <div className="flex items-start gap-2 rounded-lg bg-warning/10 p-3 text-sm">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+            <p>
+              You are about <span className="font-semibold">{formatMeters(outsideM ?? 0)}</span> from{" "}
+              {project?.name ?? "the site"}. You can still {mode === "in" ? "check in" : "check out"}{" "}— tell us why
+              you&apos;re away from site. Admin/HR will see this with your location.
+            </p>
+          </div>
+          <div className="grid gap-2">
+            {[...OUTSIDE_REASONS, OTHER_REASON].map((r) => (
+              <button
+                key={r}
+                type="button"
+                onClick={() => setReasonChoice(r)}
+                className={`rounded-lg border px-4 py-3 text-left text-sm transition-colors ${
+                  reasonChoice === r ? "border-primary bg-primary/5 font-medium" : "border-border hover:bg-secondary"
+                }`}
+              >
+                {r}
+              </button>
+            ))}
+          </div>
+          {reasonChoice === OTHER_REASON && (
+            <textarea
+              value={reasonOther}
+              onChange={(e) => setReasonOther(e.target.value)}
+              maxLength={200}
+              rows={2}
+              placeholder="Type the reason"
+              className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm"
+            />
+          )}
+          <div className="grid grid-cols-2 gap-2">
+            <Button variant="outline" className="h-12" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button
+              className="h-12"
+              disabled={!outsideReason}
+              onClick={() => setStep(selfie ? "preview" : "camera")}
+            >
+              Continue
+            </Button>
+          </div>
         </div>
       )}
 
@@ -249,11 +304,23 @@ export function CheckInFlow({
   );
 }
 
-function clientFenceError(project: Project | undefined, pos: GeoResult): string | null {
+const OUTSIDE_REASONS = [
+  "Collecting material",
+  "Supplier / vendor visit",
+  "Client or office meeting",
+  "On the way to site",
+];
+const OTHER_REASON = "Other";
+
+function formatMeters(m: number): string {
+  return m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${m} m`;
+}
+
+/** Distance from the site centre when outside its fence (server uses the same rule), else null. */
+function outsideSiteDistance(project: Project | undefined, pos: GeoResult): number | null {
   if (!project || project.geofenceLat == null || project.geofenceLng == null || !project.geofenceRadiusM) {
     return null;
   }
   const distance = haversineMeters(pos.lat, pos.lng, project.geofenceLat, project.geofenceLng);
-  if (distance - pos.accuracy <= project.geofenceRadiusM) return null;
-  return `You are ~${distance}m from the ${project.name} site (allowed ${project.geofenceRadiusM}m). Move inside the project area and try again.`;
+  return distance - pos.accuracy <= project.geofenceRadiusM ? null : distance;
 }
