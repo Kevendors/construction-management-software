@@ -234,10 +234,10 @@ export function toWeekOffHistory(rows: { dow: number; effective_from: string }[]
 
 /**
  * Who sees the weekly-off UI (Team select, swap dialog). Data and
- * calculations already apply to everyone — add "office" here to extend the
- * UI to office staff.
+ * calculations apply to everyone; remove an entry here to hide the UI for
+ * that group.
  */
-export const WEEK_OFF_UI_FOR: ("site" | "office")[] = ["site"];
+export const WEEK_OFF_UI_FOR: ("site" | "office")[] = ["site", "office"];
 
 export function weekOffUiEnabled(isOffice: boolean): boolean {
   return WEEK_OFF_UI_FOR.includes(isOffice ? "office" : "site");
