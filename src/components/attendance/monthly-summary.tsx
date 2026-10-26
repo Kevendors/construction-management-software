@@ -1,22 +1,24 @@
 "use client";
 
 import { Info } from "lucide-react";
-import { monthlySummary, type OrgHoliday } from "@/lib/attendance/compute";
+import { monthlySummary, SUNDAY_OFF, type OrgHoliday, type WeekOffRule } from "@/lib/attendance/compute";
 import type { EmployeeAttendance } from "@/lib/types";
 
-/** Present / Half Day / Leave / Absent / Holiday counts for the viewed month. */
+/** Present / Half Day / Leave / Absent / Holiday / Week Off counts for the viewed month. */
 export function MonthlySummary({
   records,
   month,
   isOffice = false,
   holidays = [],
+  weekOff = SUNDAY_OFF,
 }: {
   records: EmployeeAttendance[];
   month: string;
   isOffice?: boolean;
   holidays?: OrgHoliday[];
+  weekOff?: WeekOffRule;
 }) {
-  const summary = monthlySummary(records, month, undefined, holidays, isOffice);
+  const summary = monthlySummary(records, month, undefined, holidays, isOffice, weekOff);
 
   const chips = [
     { label: "Full Present", value: String(summary.present), hint: "1.0 day credit", className: "bg-success/15 text-success" },
@@ -26,12 +28,13 @@ export function MonthlySummary({
       : []),
     { label: "Effective Paid", value: `${summary.effectivePaidDays}d`, hint: "salary credit", className: "bg-primary/10 text-primary font-semibold" },
     { label: "Absent", value: String(summary.absent), hint: "unexcused", className: summary.absent > 0 ? "bg-destructive/15 text-destructive" : "bg-muted text-muted-foreground" },
-    { label: "Holiday", value: String(summary.holiday), hint: "declared ones paid", className: "bg-muted text-muted-foreground" },
+    { label: "Holiday", value: String(summary.holiday), hint: "declared, paid", className: "bg-muted text-muted-foreground" },
+    { label: "Week Off", value: String(summary.weekOff), hint: "weekly off", className: "bg-muted text-muted-foreground" },
   ];
 
   return (
     <div className="space-y-2.5">
-      <div className={`grid grid-cols-3 gap-2 ${isOffice ? "sm:grid-cols-6" : "sm:grid-cols-5"}`}>
+      <div className={`grid grid-cols-3 gap-2 ${isOffice ? "sm:grid-cols-7" : "sm:grid-cols-6"}`}>
         {chips.map((c) => (
           <div key={c.label} className={`rounded-lg p-2.5 text-center ${c.className}`}>
             <p className="text-lg font-bold tabular-nums">{c.value}</p>

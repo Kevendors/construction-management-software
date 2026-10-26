@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Building2, Download, Eye, Pencil, Plus, Search, UserPlus } from "lucide-react";
+import { ArrowLeftRight, Building2, Download, Eye, Pencil, Plus, Search, Trash2, UserPlus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -23,13 +23,17 @@ import {
   formatDuration,
   formatTime,
   isHolidayFor,
+  isWeeklyOff,
   monthlySummary,
   orgThisMonth,
   orgToday,
+  weekOffUiEnabled,
   type AttendanceAdminBoard,
+  type AttendanceMember,
 } from "@/lib/attendance/compute";
 import type { EmployeeAttendance, Project } from "@/lib/types";
 import { getSpotCheckSummaryAction } from "@/app/attendance/spot-check-actions";
+import { deleteWeekOffSwapAction } from "@/app/attendance/week-off-actions";
 import { useRole } from "@/components/layout/role-provider";
 import { RecordDetailDialog } from "./record-detail-dialog";
 import { AdminMarkAttendanceDialog } from "./admin-mark-attendance-dialog";
@@ -37,6 +41,7 @@ import { OfficeLocationCard } from "./office-location-card";
 import { HolidaysCard } from "./holidays-card";
 import { UnfencedSitesCard } from "./unfenced-sites-card";
 import { LiveLocationsMap } from "./live-locations-map";
+import { WeekOffSwapDialog } from "./week-off-swap-dialog";
 
 const STATUS_LABEL: Record<string, string> = {
   half_day: "Half Day",
@@ -85,6 +90,8 @@ export function AdminAttendanceTab({
   const [projectId, setProjectId] = React.useState("");
   const [selected, setSelected] = React.useState<EmployeeAttendance | null>(null);
   const [markContext, setMarkContext] = React.useState<MarkContext | null>(null);
+  const [swapOpen, setSwapOpen] = React.useState(false);
+  const [deletingSwap, setDeletingSwap] = React.useState<string | null>(null);
 
   const projectById = new Map(projects.map((p) => [p.id, p]));
   const q = search.trim().toLowerCase();
@@ -94,6 +101,10 @@ export function AdminAttendanceTab({
 
   const recordFor = (userId: string, d: string) =>
     board.records.find((r) => r.userId === userId && r.date === d);
+
+  /** A no-record day that's this member's weekly off (not a declared holiday, which reads as Holiday). */
+  const isWeekOffFor = (m: AttendanceMember, d: string) =>
+    !isHolidayFor(d, board.holidays, m.isOffice) && isWeeklyOff(d, m.weekOff);
 
   /**
    * A record's `status` column alone can't tell paid Leave from unpaid, or
@@ -124,7 +135,7 @@ export function AdminAttendanceTab({
       const recs = board.records.filter(
         (r) => r.userId === m.userId && r.date.startsWith(month) && (!projectId || r.projectId === projectId)
       );
-      return { member: m, records: recs, summary: monthlySummary(recs, month, orgToday(), board.holidays, m.isOffice) };
+      return { member: m, records: recs, summary: monthlySummary(recs, month, orgToday(), board.holidays, m.isOffice, m.weekOff) };
     })
     .filter((r) => !projectId || r.records.length > 0);
 
@@ -157,6 +168,29 @@ export function AdminAttendanceTab({
       ignore = true;
     };
   }, [siteRecordKey]);
+  // Swaps touching the selected range, plus any upcoming ones (the range
+  // stops at today, so a just-recorded future swap would otherwise vanish).
+  const today = orgToday();
+  const employeeSwaps = board.weekOffSwaps
+    .filter(
+      (s) =>
+        s.userId === employeeId &&
+        ((s.workedDate >= fromDate && s.workedDate <= toDate) ||
+          (s.offDate >= fromDate && s.offDate <= toDate) ||
+          s.workedDate >= today ||
+          s.offDate >= today)
+    )
+    .sort((a, b) => b.workedDate.localeCompare(a.workedDate));
+
+  async function deleteSwap(id: string) {
+    if (!window.confirm("Remove this weekly-off swap? The default weekly off applies again.")) return;
+    setDeletingSwap(id);
+    const res = await deleteWeekOffSwapAction(id);
+    setDeletingSwap(null);
+    if (res.error) window.alert(res.error);
+    else router.refresh();
+  }
+
   const employeeTotals = employeeRecords.reduce(
     (acc, r) => ({
       days: acc.days + 1,
@@ -218,7 +252,7 @@ export function AdminAttendanceTab({
     } else {
       downloadCsv(
         `attendance-${month}.csv`,
-        ["Employee", "Employee ID", "Present", "Leave", "Leave (Unpaid)", "Half-Day", "Absent", "Holiday", "Overtime"],
+        ["Employee", "Employee ID", "Present", "Leave", "Leave (Unpaid)", "Half-Day", "Absent", "Holiday", "Week Off", "Overtime"],
         monthlyRows.map(({ member, records, summary }) => [
           member.name,
           member.employeeId || "—",
@@ -228,6 +262,7 @@ export function AdminAttendanceTab({
           summary.halfDay,
           summary.absent,
           summary.holiday,
+          summary.weekOff,
           formatDuration(records.reduce((s, r) => s + r.overtimeMinutes, 0)),
         ])
       );
@@ -482,8 +517,8 @@ export function AdminAttendanceTab({
                             )}
                             {record.source === "admin" && <Badge variant="outline">Manual</Badge>}
                           </div>
-                        ) : dayStatus(date, false, orgToday(), isHolidayFor(date, board.holidays, member.isOffice)) === "holiday" ? (
-                          <Badge variant="muted">Holiday</Badge>
+                        ) : dayStatus(date, false, orgToday(), isHolidayFor(date, board.holidays, member.isOffice), member.weekOff) === "holiday" ? (
+                          <Badge variant="muted">{isWeekOffFor(member, date) ? "Week Off" : "Holiday"}</Badge>
                         ) : (
                           <Badge variant="destructive">Missed</Badge>
                         )}
@@ -520,7 +555,7 @@ export function AdminAttendanceTab({
                               <Pencil />
                             </Button>
                           ) : (
-                            dayStatus(date, false, orgToday(), isHolidayFor(date, board.holidays, member.isOffice)) !== "holiday" && (
+                            dayStatus(date, false, orgToday(), isHolidayFor(date, board.holidays, member.isOffice), member.weekOff) !== "holiday" && (
                               <Button
                                 size="sm"
                                 variant="ghost"
@@ -561,7 +596,7 @@ export function AdminAttendanceTab({
               <LegendDot className="bg-slate-500" label="Leave (unpaid, office 2nd+/mo)" />
               <LegendDot className="bg-destructive" label="Absent" />
               <LegendDot className="bg-indigo-500" label="Company Holiday" />
-              <LegendDot className="bg-muted-foreground/40" label="Sunday" />
+              <LegendDot className="bg-muted-foreground/40" label="Week Off" />
               <span className="ml-auto text-muted-foreground/70">Click any day to mark or correct it</span>
             </div>
             <div className="overflow-x-auto rounded-md border border-border">
@@ -572,11 +607,14 @@ export function AdminAttendanceTab({
                       Employee
                     </th>
                     {monthDays.map((d) => {
-                      const isSunday = new Date(`${d}T00:00:00`).getDay() === 0;
+                      // Shared header: shade a day only when it's a weekly off for every
+                      // listed member (plain Sundays while everyone is on the default).
+                      const isAllWeekOff =
+                        monthlyRows.length > 0 && monthlyRows.every(({ member }) => isWeeklyOff(d, member.weekOff));
                       return (
                         <th
                           key={d}
-                          className={`w-8 px-0.5 py-2 text-center font-normal tabular-nums ${isSunday ? "bg-muted-foreground/5" : ""}`}
+                          className={`w-8 px-0.5 py-2 text-center font-normal tabular-nums ${isAllWeekOff ? "bg-muted-foreground/5" : ""}`}
                         >
                           {Number(d.slice(-2))}
                         </th>
@@ -620,7 +658,7 @@ export function AdminAttendanceTab({
                           const ev = evaluation.recordMap.get(d);
                           const record = ev?.record;
                           const isDeclaredHoliday = isHolidayFor(d, board.holidays, member.isOffice);
-                          const rawStatus = dayStatus(d, Boolean(record), orgToday(), isDeclaredHoliday);
+                          const rawStatus = dayStatus(d, Boolean(record), orgToday(), isDeclaredHoliday, member.weekOff);
                           // explicit_absent/declared_holiday have a real row, so dayStatus()
                           // (which only knows "does a row exist") would otherwise call them present.
                           const status =
@@ -650,7 +688,7 @@ export function AdminAttendanceTab({
                             (status === "holiday"
                               ? isDeclaredHoliday && holidayLabel
                                 ? `${holidayLabel} — click to record if worked`
-                                : "Sunday — click to record if worked"
+                                : "Week Off — click to record if worked"
                               : undefined);
 
                           return (
@@ -724,6 +762,11 @@ export function AdminAttendanceTab({
                 <Badge variant="outline" className="text-[10px] font-normal">
                   {employee.isOffice ? "Office" : "Site"}
                 </Badge>
+                {weekOffUiEnabled(employee.isOffice) && (
+                  <Button size="sm" variant="outline" className="ml-auto font-normal" onClick={() => setSwapOpen(true)}>
+                    <ArrowLeftRight /> Swap weekly off
+                  </Button>
+                )}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4 pt-0">
@@ -745,6 +788,40 @@ export function AdminAttendanceTab({
                   </p>
                 </div>
               </div>
+
+              {/* Always listed when present (even if the swap UI is off for this
+                  category), so existing swaps can still be seen and deleted. */}
+              {employeeSwaps.length > 0 && (
+                <div className="rounded-md border border-border">
+                  <p className="border-b border-border px-3 py-2 text-xs font-medium text-muted-foreground">
+                    Weekly-off swaps (this range + upcoming)
+                  </p>
+                  <ul className="divide-y divide-border">
+                    {employeeSwaps.map((s) => (
+                      <li key={s.id} className="flex items-center gap-2 px-3 py-2 text-sm">
+                        <span className="tabular-nums">
+                          Works <span className="font-medium">{shortDate(s.workedDate)}</span>
+                          {" → "}
+                          <Badge variant="muted">Week Off</Badge>{" "}
+                          <span className="font-medium">{shortDate(s.offDate)}</span>
+                        </span>
+                        {s.note && <span className="truncate text-xs text-muted-foreground">{s.note}</span>}
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="ml-auto h-7 w-7 text-muted-foreground hover:text-destructive"
+                          aria-label="Delete swap"
+                          title="Delete swap"
+                          disabled={deletingSwap === s.id}
+                          onClick={() => deleteSwap(s.id)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
 
               <div className="overflow-x-auto">
                 <Table>
@@ -902,6 +979,15 @@ export function AdminAttendanceTab({
         />
       )}
 
+      {swapOpen && employee && (
+        <WeekOffSwapDialog
+          member={employee}
+          holidays={board.holidays}
+          onClose={() => setSwapOpen(false)}
+          onSaved={() => router.refresh()}
+        />
+      )}
+
       <AdminMarkAttendanceDialog
         open={markContext !== null}
         onClose={() => setMarkContext(null)}
@@ -914,6 +1000,10 @@ export function AdminAttendanceTab({
       />
     </div>
   );
+}
+
+function shortDate(d: string) {
+  return new Date(`${d}T00:00:00`).toLocaleDateString("en-IN", { weekday: "short", day: "2-digit", month: "short" });
 }
 
 function LegendDot({ className, label }: { className: string; label: string }) {

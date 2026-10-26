@@ -34,6 +34,8 @@ export interface MyAttendanceData {
   officeGeofence: { lat: number | null; lng: number | null; radiusM: number | null };
   /** Declared company holidays — excluded from the office 1-paid-Leave-per-month count. */
   holidays: OrgHoliday[];
+  /** The caller's weekly off rule (0047) — SUNDAY_OFF until the migration is applied. */
+  weekOff: WeekOffRule;
   employeeId: string;
   userName: string;
   month: string; // "YYYY-MM"
@@ -46,12 +48,25 @@ export interface AttendanceMember {
   role: Role;
   /** True when this member has no project_members roster entry — the office (not site) flow applies to them. */
   isOffice: boolean;
+  /** Default weekly off day + recorded swaps (0047) — SUNDAY_OFF until the migration is applied. */
+  weekOff: WeekOffRule;
 }
 
 export interface AttendanceAdminBoard {
   records: EmployeeAttendance[];
   members: AttendanceMember[];
   holidays: OrgHoliday[];
+  /** Every recorded weekly-off swap in the org (0047), for listing/deleting — already folded into each member's `weekOff`. */
+  weekOffSwaps: WeekOffSwap[];
+}
+
+/** One recorded weekly-off swap row (attendance_week_off_swaps, 0047). */
+export interface WeekOffSwap {
+  id: string;
+  userId: string;
+  workedDate: string;
+  offDate: string;
+  note: string;
 }
 
 /** Single org for now; make per-org when a second timezone shows up. */
@@ -167,7 +182,109 @@ export function isHolidayFor(date: string, holidays: OrgHoliday[], isOffice: boo
 }
 
 /**
- * Status of one calendar day given the user's records. Sundays are always
+ * An employee's weekly off: a default day of the week (Team page, Sunday
+ * unless changed) plus Admin/HR-recorded swaps — "works `workedDate` (a
+ * default off day), takes `offDate` off instead", same week (±6 days).
+ * Pay treats a weekly off exactly like the old hard-coded Sunday.
+ */
+export interface WeekOffRule {
+  defaultDow: number; // 0 = Sunday … 6 = Saturday (JS getDay()) — the current default
+  /**
+   * Changes to the default (attendance_weekly_off_history), sorted by `from`
+   * ("YYYY-MM-DD"). A date uses the latest entry with from <= date (Sunday if
+   * none), so changing the default never rewrites history. Absent/empty =
+   * `defaultDow` applies to every date (never changed).
+   */
+  history?: { dow: number; from: string }[];
+  swaps: { workedDate: string; offDate: string }[];
+}
+
+/** The pre-0047 behaviour: everyone is off on Sunday, no swaps. */
+export const SUNDAY_OFF: WeekOffRule = { defaultDow: 0, swaps: [] };
+
+/** Day of week (0 = Sunday) of a "YYYY-MM-DD" date — UTC, so the host timezone never shifts it. */
+function dowOf(date: string): number {
+  const [y, m, d] = date.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+}
+
+/** The default weekly-off weekday in force on `date` (before any swaps). */
+export function defaultDowOn(rule: WeekOffRule, date: string): number {
+  if (!rule.history?.length) return rule.defaultDow;
+  let dow = 0; // no entry at or before `date` → the pre-0047 Sunday
+  for (const h of rule.history) {
+    if (h.from <= date) dow = h.dow;
+    else break; // sorted by `from`
+  }
+  return dow;
+}
+
+/** True when `date` is a weekly off under `rule` (a swap's off day, or the default day not swapped away). */
+export function isWeeklyOff(date: string, rule: WeekOffRule = SUNDAY_OFF): boolean {
+  if (rule.swaps.some((s) => s.offDate === date)) return true;
+  return dowOf(date) === defaultDowOn(rule, date) && !rule.swaps.some((s) => s.workedDate === date);
+}
+
+/** Sorts history rows (any order) into WeekOffRule["history"]. */
+export function toWeekOffHistory(rows: { dow: number; effective_from: string }[]): { dow: number; from: string }[] {
+  return rows
+    .map((r) => ({ dow: r.dow, from: r.effective_from }))
+    .sort((a, b) => a.from.localeCompare(b.from));
+}
+
+/**
+ * Who sees the weekly-off UI (Team select, swap dialog). Data and
+ * calculations already apply to everyone — add "office" here to extend the
+ * UI to office staff.
+ */
+export const WEEK_OFF_UI_FOR: ("site" | "office")[] = ["site"];
+
+export function weekOffUiEnabled(isOffice: boolean): boolean {
+  return WEEK_OFF_UI_FOR.includes(isOffice ? "office" : "site");
+}
+
+/** Whole days from `a` to `b` ("YYYY-MM-DD"), via UTC so DST never skews it. */
+function daysBetween(a: string, b: string): number {
+  const utc = (d: string) => {
+    const [y, m, day] = d.split("-").map(Number);
+    return Date.UTC(y, m - 1, day);
+  };
+  return Math.round((utc(b) - utc(a)) / 86_400_000);
+}
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Checks a proposed swap (work `workedDate`, take `offDate` off) against the
+ * employee's current rule. Returns an error message, or null when valid.
+ * Run on the client for instant feedback and again on the server with fresh
+ * data before inserting.
+ */
+export function validateWeekOffSwap(
+  rule: WeekOffRule,
+  workedDate: string,
+  offDate: string,
+  holidays: OrgHoliday[],
+  isOffice: boolean
+): string | null {
+  if (!ISO_DATE.test(workedDate) || !ISO_DATE.test(offDate)) return "Enter valid dates.";
+  if (workedDate === offDate) return "The replacement off day must be a different day.";
+  if (Math.abs(daysBetween(workedDate, offDate)) > 6) {
+    return "The replacement off day must be within 6 days of the worked day (same week).";
+  }
+  const used = (d: string) => rule.swaps.some((s) => s.workedDate === d || s.offDate === d);
+  if (used(workedDate)) return "The worked day is already part of another swap.";
+  if (used(offDate)) return "The replacement off day is already part of another swap.";
+  if (!isWeeklyOff(workedDate, rule)) return "The worked day isn't one of this employee's weekly off days.";
+  if (isHolidayFor(workedDate, holidays, isOffice)) return "The worked day is a declared holiday — record it as worked on the holiday instead.";
+  if (isWeeklyOff(offDate, rule)) return "The replacement off day is already a weekly off.";
+  if (isHolidayFor(offDate, holidays, isOffice)) return "The replacement off day is already a declared holiday.";
+  return null;
+}
+
+/**
+ * Status of one calendar day given the user's records. Weekly offs (see
+ * isWeeklyOff — Sunday unless the employee's rule says otherwise) are
  * holidays; `isExtraHoliday` additionally marks admin-declared holidays
  * (already filtered to whether they apply to this employee — see
  * isHolidayFor). A past working day without a record is absent; today/future
@@ -177,10 +294,11 @@ export function dayStatus(
   date: string,
   hasRecord: boolean,
   today: string = orgToday(),
-  isExtraHoliday: boolean = false
+  isExtraHoliday: boolean = false,
+  rule: WeekOffRule = SUNDAY_OFF
 ): DayStatus {
   if (hasRecord) return "present";
-  if (new Date(`${date}T00:00:00`).getDay() === 0 || isExtraHoliday) return "holiday";
+  if (isWeeklyOff(date, rule) || isExtraHoliday) return "holiday";
   return date < today ? "absent" : "future";
 }
 
@@ -371,7 +489,8 @@ export interface MonthlySummary {
   leave: number;             // Paid Leave days (also counted in `present`'s paid-day weight)
   unpaidLeave: number;       // Office staff only: Leave days converted to unpaid (2nd+ in the month)
   absent: number;            // No-record days + explicit Absent days
-  holiday: number;
+  holiday: number;           // Declared company holidays only
+  weekOff: number;           // Weekly off days (default day or swapped-in off day) not worked
 }
 
 /** List every day of a "YYYY-MM" month as "YYYY-MM-DD" strings. */
@@ -386,7 +505,8 @@ export function monthlySummary(
   month: string,
   today: string = orgToday(),
   holidays: OrgHoliday[] = [],
-  isOffice: boolean = false
+  isOffice: boolean = false,
+  rule: WeekOffRule = SUNDAY_OFF
 ): MonthlySummary {
   const evalResult = evaluateEmployeeMonthAttendance(records, month, isOffice, holidays);
   // Days with an explicit-absent or declared-holiday row already have a
@@ -402,6 +522,7 @@ export function monthlySummary(
   const recorded = new Set(records.filter((r) => r.date.startsWith(month)).map((r) => r.date));
   let absent = 0;
   let holiday = 0;
+  let weekOff = 0;
 
   for (const date of daysOfMonth(month)) {
     if (explicitAbsentDates.has(date)) {
@@ -412,9 +533,14 @@ export function monthlySummary(
       holiday += 1;
       continue;
     }
-    const status = dayStatus(date, recorded.has(date), today, isHolidayFor(date, holidays, isOffice));
+    const isDeclared = isHolidayFor(date, holidays, isOffice);
+    const status = dayStatus(date, recorded.has(date), today, isDeclared, rule);
     if (status === "absent") absent += 1;
-    else if (status === "holiday") holiday += 1;
+    // A declared holiday that also lands on a weekly off counts once, as Holiday.
+    else if (status === "holiday") {
+      if (isDeclared) holiday += 1;
+      else weekOff += 1;
+    }
   }
 
   return {
@@ -425,5 +551,6 @@ export function monthlySummary(
     unpaidLeave: evalResult.unpaidLeave,
     absent,
     holiday,
+    weekOff,
   };
 }

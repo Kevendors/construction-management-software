@@ -8,15 +8,19 @@ import { getAuthContext } from "@/lib/auth/context";
 import {
   orgThisMonth,
   orgToday,
+  SUNDAY_OFF,
+  toWeekOffHistory,
   type AttendanceAdminBoard,
   type AttendanceMember,
   type MyAttendanceData,
   type OrgHoliday,
+  type WeekOffRule,
+  type WeekOffSwap,
 } from "@/lib/attendance/compute";
 import { mapProject, mapSpotCheck, type ProjectRow, type SpotCheckRow } from "./mappers";
 
 // Re-export the client-safe board types for existing import sites.
-export type { AttendanceAdminBoard, AttendanceMember, MyAttendanceData, OrgHoliday };
+export type { AttendanceAdminBoard, AttendanceMember, MyAttendanceData, OrgHoliday, WeekOffSwap };
 
 // mock fallback
 import {
@@ -128,6 +132,33 @@ async function myIsOffice(
   return (data?.is_office as boolean | null | undefined) ?? null;
 }
 
+type SwapRow = { user_id: string; worked_date: string; off_date: string };
+type HistoryRow = { dow: number; effective_from: string };
+const toSwap = (r: SwapRow) => ({ workedDate: r.worked_date, offDate: r.off_date });
+
+/**
+ * The caller's weekly off rule (0047): default day from memberships plus
+ * their own swaps (RLS lets an employee read their own). Separate queries so
+ * a missing column/table (0047 unapplied — 42703 / PGRST204 / PGRST205) just
+ * falls back to SUNDAY_OFF instead of breaking the page.
+ */
+async function myWeekOff(
+  supabase: Awaited<ReturnType<typeof createSupabase>>,
+  userId: string
+): Promise<WeekOffRule> {
+  const [dowRes, swapsRes, historyRes] = await Promise.all([
+    supabase.from("memberships").select("weekly_off_dow").eq("user_id", userId).limit(1).maybeSingle(),
+    supabase.from("attendance_week_off_swaps").select("user_id, worked_date, off_date").eq("user_id", userId),
+    supabase.from("attendance_weekly_off_history").select("dow, effective_from").eq("user_id", userId),
+  ]);
+  const dow = dowRes.error ? null : (dowRes.data?.weekly_off_dow as number | null | undefined);
+  return {
+    defaultDow: typeof dow === "number" ? dow : SUNDAY_OFF.defaultDow,
+    history: historyRes.error ? [] : toWeekOffHistory((historyRes.data ?? []) as HistoryRow[]),
+    swaps: swapsRes.error ? [] : ((swapsRes.data ?? []) as SwapRow[]).map(toSwap),
+  };
+}
+
 export async function getMyAttendancePage(month?: string): Promise<MyAttendanceData> {
   const activeMonth = /^\d{4}-\d{2}$/.test(month ?? "") ? (month as string) : orgThisMonth();
   const today = orgToday();
@@ -153,6 +184,7 @@ export async function getMyAttendancePage(month?: string): Promise<MyAttendanceD
       isOffice: assignedIds.size === 0,
       officeGeofence: { lat: null, lng: null, radiusM: null },
       holidays: [],
+      weekOff: SUNDAY_OFF,
       employeeId: "KV001",
       userName: mockCurrentUser.name,
       month: activeMonth,
@@ -171,6 +203,7 @@ export async function getMyAttendancePage(month?: string): Promise<MyAttendanceD
       isOffice: false,
       officeGeofence: { lat: null, lng: null, radiusM: null },
       holidays: [],
+      weekOff: SUNDAY_OFF,
       employeeId: "",
       userName: "",
       month: activeMonth,
@@ -181,7 +214,7 @@ export async function getMyAttendancePage(month?: string): Promise<MyAttendanceD
   const { from, to } = monthRange(activeMonth);
   // Explicit user_id filter: super_admin's RLS read is org-wide, but this
   // page is always "my own attendance".
-  const [monthRes, todayRes, unclosedRes, pmRes, projRes, employeeId, isOfficeRaw, orgRes, holidaysRes, pendingSpotRes] = await Promise.all([
+  const [monthRes, todayRes, unclosedRes, pmRes, projRes, employeeId, isOfficeRaw, orgRes, holidaysRes, pendingSpotRes, weekOff] = await Promise.all([
     supabase
       .from("employee_attendance")
       .select("*")
@@ -223,6 +256,7 @@ export async function getMyAttendancePage(month?: string): Promise<MyAttendanceD
       .order("notified_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
+    myWeekOff(supabase, ctx.userId),
   ]);
   if (monthRes.error) throw monthRes.error;
 
@@ -289,6 +323,7 @@ export async function getMyAttendancePage(month?: string): Promise<MyAttendanceD
       radiusM: officeRow?.office_radius_m ?? null,
     },
     holidays,
+    weekOff,
     employeeId,
     userName: ctx.name,
     month: activeMonth,
@@ -311,14 +346,16 @@ export async function getAttendanceAdminBoard(): Promise<AttendanceAdminBoard> {
         employeeId: `KV${String(i + 1).padStart(3, "0")}`,
         role: u.role,
         isOffice: !rosterUserIds.has(u.id),
+        weekOff: SUNDAY_OFF,
       })),
       holidays: [],
+      weekOffSwaps: [],
     };
   }
 
   const ctx = await getAuthContext();
   if (!ctx?.orgId || !(ctx.role === "super_admin" || ctx.role === "hr")) {
-    return { records: [], members: [], holidays: [] };
+    return { records: [], members: [], holidays: [], weekOffSwaps: [] };
   }
 
   const admin = createAdminClient();
@@ -353,7 +390,7 @@ export async function getAttendanceAdminBoard(): Promise<AttendanceAdminBoard> {
   memRows = memRows.filter((m) => m.is_active ?? true);
 
   const ids = memRows.map((m) => m.user_id);
-  const [profRes, attRes, pmRes, holidaysRes] = await Promise.all([
+  const [profRes, attRes, pmRes, holidaysRes, dowRes, swapsRes, historyRes] = await Promise.all([
     admin
       .from("profiles")
       .select("id, name")
@@ -365,8 +402,43 @@ export async function getAttendanceAdminBoard(): Promise<AttendanceAdminBoard> {
       .order("date", { ascending: false }),
     admin.from("project_members").select("user_id").in("user_id", ids.length ? ids : ["00000000-0000-0000-0000-000000000000"]),
     admin.from("org_holidays").select("date, label, applies_to").eq("org_id", ctx.orgId),
+    // Weekly off (0047) — separate queries so a missing column/table just
+    // falls back to SUNDAY_OFF below instead of breaking the board.
+    admin.from("memberships").select("user_id, weekly_off_dow").eq("org_id", ctx.orgId),
+    admin
+      .from("attendance_week_off_swaps")
+      .select("id, user_id, worked_date, off_date, note")
+      .eq("org_id", ctx.orgId)
+      .order("worked_date", { ascending: false }),
+    admin.from("attendance_weekly_off_history").select("user_id, dow, effective_from").eq("org_id", ctx.orgId),
   ]);
   if (attRes.error) throw attRes.error;
+
+  const dowById = new Map(
+    dowRes.error
+      ? []
+      : ((dowRes.data ?? []) as { user_id: string; weekly_off_dow: number | null }[]).map((r) => [r.user_id, r.weekly_off_dow])
+  );
+  // Missing history table (0047 unapplied) = no history for anyone.
+  const historyRowsById = new Map<string, HistoryRow[]>();
+  if (!historyRes.error) {
+    for (const r of (historyRes.data ?? []) as (HistoryRow & { user_id: string })[]) {
+      historyRowsById.set(r.user_id, [...(historyRowsById.get(r.user_id) ?? []), r]);
+    }
+  }
+  const weekOffSwaps: WeekOffSwap[] = swapsRes.error
+    ? []
+    : ((swapsRes.data ?? []) as (SwapRow & { id: string; note: string | null })[]).map((r) => ({
+        id: r.id,
+        userId: r.user_id,
+        workedDate: r.worked_date,
+        offDate: r.off_date,
+        note: r.note ?? "",
+      }));
+  const swapsById = new Map<string, WeekOffRule["swaps"]>();
+  for (const sw of weekOffSwaps) {
+    swapsById.set(sw.userId, [...(swapsById.get(sw.userId) ?? []), { workedDate: sw.workedDate, offDate: sw.offDate }]);
+  }
 
   const nameById = new Map((profRes.data ?? []).map((p) => [p.id as string, (p.name as string) || "User"]));
   const rosterUserIds = new Set((pmRes.data ?? []).map((r) => (r as { user_id: string }).user_id));
@@ -379,6 +451,11 @@ export async function getAttendanceAdminBoard(): Promise<AttendanceAdminBoard> {
       // Explicit per-member setting (Team page), independent of project
       // assignment. Falls back to the old auto-inference only pre-migration.
       isOffice: hasIsOfficeColumn ? m.is_office ?? true : !rosterUserIds.has(m.user_id),
+      weekOff: {
+        defaultDow: dowById.get(m.user_id) ?? SUNDAY_OFF.defaultDow,
+        history: toWeekOffHistory(historyRowsById.get(m.user_id) ?? []),
+        swaps: swapsById.get(m.user_id) ?? [],
+      },
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
   const memberById = new Map(members.map((m) => [m.userId, m]));
@@ -399,5 +476,6 @@ export async function getAttendanceAdminBoard(): Promise<AttendanceAdminBoard> {
     }),
     members,
     holidays,
+    weekOffSwaps,
   };
 }

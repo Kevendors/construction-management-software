@@ -5,6 +5,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { isAdminRole } from "@/lib/auth/permissions";
 import { logActivity } from "@/lib/activity/log";
 import { roleLabel } from "@/lib/labels";
+import { orgToday } from "@/lib/attendance/compute";
 import type { Role } from "@/lib/types";
 
 export interface ActionResult {
@@ -284,6 +285,96 @@ export async function setMemberOfficeAction(userId: string, isOffice: boolean): 
     entityType: "member",
     entityId: userId,
     summary: `Set attendance category to ${isOffice ? "Office" : "Site"}`,
+  });
+  return { id: userId };
+}
+
+const WEEKDAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+const WEEK_OFF_PENDING = "Weekly-off table pending: run 0047_attendance_weekly_off.sql in Supabase SQL Editor.";
+
+/**
+ * Admin-only: set a member's default weekly off day (0 = Sunday … 6 =
+ * Saturday, migration 0047). Same gate as the Office/Site setter. Swaps
+ * against this default are recorded separately (attendance/week-off-actions).
+ *
+ * The new day takes effect from today: each change is a row in
+ * attendance_weekly_off_history, so past attendance keeps whatever day was
+ * in force then. The first change also records a baseline row (the previous
+ * day, from 2000-01-01). Refused while the member has upcoming swaps, which
+ * were validated against the old day.
+ */
+export async function setWeeklyOffDayAction(userId: string, dow: number): Promise<ActionResult> {
+  const ctx = await getAuthContext();
+  if (!ctx || !isAdminRole(ctx.role)) return { error: "Not authorized." };
+  if (!ctx.orgId) return { error: "No organization found." };
+  if (!Number.isInteger(dow) || dow < 0 || dow > 6) return { error: "Pick a day of the week." };
+  const admin = createAdminClient();
+  const today = orgToday();
+  const isPending = (code?: string) =>
+    code === "42703" || code === "PGRST204" || code === "PGRST205" || code === "42P01";
+
+  const { data: upcoming, error: swapErr } = await admin
+    .from("attendance_week_off_swaps")
+    .select("id")
+    .eq("org_id", ctx.orgId)
+    .eq("user_id", userId)
+    .or(`worked_date.gte.${today},off_date.gte.${today}`)
+    .limit(1);
+  if (swapErr) return { error: isPending(swapErr.code) ? WEEK_OFF_PENDING : swapErr.message };
+  if (upcoming?.length) {
+    return { error: "Delete this employee's upcoming week-off swaps first, then change their weekly off." };
+  }
+
+  const { data: current, error: curErr } = await admin
+    .from("memberships")
+    .select("weekly_off_dow")
+    .eq("org_id", ctx.orgId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (curErr) return { error: isPending(curErr.code) ? WEEK_OFF_PENDING : curErr.message };
+  if (!current) return { error: "Member not found." };
+
+  // Fresh builder per call — a reused one can carry headers (e.g. count) over.
+  const history = () => admin.from("attendance_weekly_off_history");
+  const { count, error: countErr } = await history()
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId);
+  if (countErr) return { error: isPending(countErr.code) ? WEEK_OFF_PENDING : countErr.message };
+  if (!count) {
+    // First change: pin the old day for every past date explicitly.
+    const { error: baseErr } = await history().upsert(
+      {
+        org_id: ctx.orgId,
+        user_id: userId,
+        dow: (current.weekly_off_dow as number | null) ?? 0,
+        effective_from: "2000-01-01",
+        created_by: ctx.userId,
+      },
+      { onConflict: "user_id,effective_from" }
+    );
+    if (baseErr) return { error: isPending(baseErr.code) ? WEEK_OFF_PENDING : baseErr.message };
+  }
+  // Same-day correction overwrites today's row.
+  const { error: histErr } = await history().upsert(
+    { org_id: ctx.orgId, user_id: userId, dow, effective_from: today, created_by: ctx.userId },
+    { onConflict: "user_id,effective_from" }
+  );
+  if (histErr) return { error: isPending(histErr.code) ? WEEK_OFF_PENDING : histErr.message };
+
+  const { data: updated, error } = await admin
+    .from("memberships")
+    .update({ weekly_off_dow: dow })
+    .eq("org_id", ctx.orgId)
+    .eq("user_id", userId)
+    .select("user_id");
+  if (error) return { error: isPending(error.code) ? WEEK_OFF_PENDING : error.message };
+  if (!updated?.length) return { error: "Member not found." };
+  await logActivity({
+    action: "updated",
+    entityType: "member",
+    entityId: userId,
+    summary: `Set weekly off to ${WEEKDAY_NAMES[dow]}`,
   });
   return { id: userId };
 }

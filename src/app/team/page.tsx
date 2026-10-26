@@ -66,6 +66,16 @@ export default async function TeamPage() {
   const rows = memberships;
   const ids = rows.map((m) => m.user_id);
 
+  // Weekly off day (0047) — its own query so a missing column just leaves
+  // everyone on the Sunday default instead of tripping the fallbacks above.
+  const { data: dowRows, error: dowErr } = await admin
+    .from("memberships")
+    .select("user_id, weekly_off_dow")
+    .eq("org_id", ctx.orgId);
+  const dowById = new Map(
+    dowErr ? [] : ((dowRows ?? []) as { user_id: string; weekly_off_dow: number | null }[]).map((r) => [r.user_id, r.weekly_off_dow])
+  );
+
   const { data: profiles } = await admin
     .from("profiles")
     .select("id, name")
@@ -90,10 +100,18 @@ export default async function TeamPage() {
       canViewPurchaseOrders: m.can_view_purchase_orders ?? false,
       employeeId: m.employee_id ?? "",
       isOffice: m.is_office ?? true,
+      weeklyOffDow: dowById.get(m.user_id) ?? 0,
     };
   });
 
   members.sort((a, b) => a.name.localeCompare(b.name));
 
-  return <TeamBoard members={members} currentUserId={ctx.userId} migrationPending={migrationPending} />;
+  return (
+    <TeamBoard
+      members={members}
+      currentUserId={ctx.userId}
+      migrationPending={migrationPending}
+      weekOffPending={Boolean(dowErr)}
+    />
+  );
 }

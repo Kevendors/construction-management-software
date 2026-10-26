@@ -26,8 +26,10 @@ import {
   setMemberOfficeAction,
   setMemberPoAccessAction,
   setMemberRoleAction,
+  setWeeklyOffDayAction,
   updateMemberPhoneAction,
 } from "@/app/team/actions";
+import { weekOffUiEnabled } from "@/lib/attendance/compute";
 import { roleLabel } from "@/lib/labels";
 import type { Role } from "@/lib/types";
 
@@ -43,7 +45,11 @@ export interface TeamMember {
   canViewPurchaseOrders: boolean;
   /** Explicit Office/Site setting (attendance leave/holiday policy + badge) — independent of project assignment. */
   isOffice: boolean;
+  /** Default weekly off day, 0 = Sunday … 6 = Saturday (0047; Sunday until applied). */
+  weeklyOffDow: number;
 }
+
+const WEEKDAYS_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 /** Roles an admin can assign (in menu order) — the full catalog. */
 const ASSIGNABLE: Role[] = [
@@ -308,10 +314,13 @@ export function TeamBoard({
   members: initialMembers,
   currentUserId,
   migrationPending,
+  weekOffPending,
 }: {
   members: TeamMember[];
   currentUserId: string;
   migrationPending?: boolean;
+  /** weekly_off_dow column missing (0047 not applied) — the select is disabled. */
+  weekOffPending?: boolean;
 }) {
   const router = useRouter();
   const [members, setMembers] = React.useState(initialMembers);
@@ -360,6 +369,18 @@ export function TeamBoard({
     }
   }
 
+  async function changeWeeklyOff(userId: string, prevDow: number, next: number) {
+    // Optimistic, same as toggleOffice — revert only if the save fails.
+    setMembers((prev) => prev.map((m) => (m.userId === userId ? { ...m, weeklyOffDow: next } : m)));
+    setBusy(userId);
+    const res = await setWeeklyOffDayAction(userId, next);
+    setBusy(null);
+    if (res.error) {
+      window.alert(res.error);
+      setMembers((prev) => prev.map((m) => (m.userId === userId ? { ...m, weeklyOffDow: prevDow } : m)));
+    }
+  }
+
   return (
     <>
       <PageHeader
@@ -390,6 +411,7 @@ export function TeamBoard({
                 <TableHead>Login</TableHead>
                 <TableHead>Role</TableHead>
                 <TableHead>Office / Site</TableHead>
+                <TableHead>Weekly off</TableHead>
                 <TableHead>Purchase Orders</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Action</TableHead>
@@ -460,6 +482,33 @@ export function TeamBoard({
                       </Select>
                     </TableCell>
                     <TableCell>
+                      {weekOffUiEnabled(m.isOffice) ? (
+                        <Select
+                          aria-label={`${m.name}'s weekly off`}
+                          value={String(m.weeklyOffDow)}
+                          disabled={busy === m.userId || weekOffPending}
+                          onChange={(e) => changeWeeklyOff(m.userId, m.weeklyOffDow, Number(e.target.value))}
+                          className="h-8 w-20 text-xs"
+                          title={
+                            weekOffPending
+                              ? "Run 0047_attendance_weekly_off.sql in Supabase first"
+                              : "Default weekly off day (applies from today) — swaps are recorded on the Attendance tab"
+                          }
+                        >
+                          {WEEKDAYS_SHORT.map((d, i) => (
+                            <option key={d} value={i}>{d}</option>
+                          ))}
+                        </Select>
+                      ) : m.weeklyOffDow !== 0 ? (
+                        // UI not enabled for this category, but a non-default day still applies — show it.
+                        <span className="text-xs text-muted-foreground" title="Weekly off (read-only for this category)">
+                          {WEEKDAYS_SHORT[m.weeklyOffDow]}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
                       {m.role === "super_admin" ? (
                         <Badge variant="success">Always</Badge>
                       ) : (
@@ -504,7 +553,7 @@ export function TeamBoard({
               })}
               {members.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={8} className="py-10 text-center text-sm text-muted-foreground">
+                  <TableCell colSpan={9} className="py-10 text-center text-sm text-muted-foreground">
                     No members yet — add one with “New Member”.
                   </TableCell>
                 </TableRow>

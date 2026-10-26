@@ -7,7 +7,12 @@ import {
   evaluateEmployeeMonthAttendance,
   formatDuration,
   formatTime,
+  isHolidayFor,
+  isWeeklyOff,
+  orgToday,
+  SUNDAY_OFF,
   type OrgHoliday,
+  type WeekOffRule,
 } from "@/lib/attendance/compute";
 import { cn } from "@/lib/utils";
 import type { EmployeeAttendance } from "@/lib/types";
@@ -23,11 +28,13 @@ export function HistoryCalendar({
   month,
   isOffice = false,
   holidays = [],
+  weekOff = SUNDAY_OFF,
 }: {
   records: EmployeeAttendance[];
   month: string;
   isOffice?: boolean;
   holidays?: OrgHoliday[];
+  weekOff?: WeekOffRule;
 }) {
   const [selected, setSelected] = React.useState<EmployeeAttendance | null>(null);
 
@@ -54,6 +61,7 @@ export function HistoryCalendar({
         {days.map((date) => {
           const ev = evalResult.recordMap.get(date);
           const record = ev?.record;
+          const isDeclared = isHolidayFor(date, holidays, isOffice);
           // explicit_absent/declared_holiday have a real row, so dayStatus()
           // (which only knows "does a row exist") would otherwise call them present.
           const status =
@@ -61,7 +69,9 @@ export function HistoryCalendar({
               ? "absent"
               : ev?.creditType === "declared_holiday"
               ? "holiday"
-              : dayStatus(date, Boolean(record));
+              : dayStatus(date, Boolean(record), orgToday(), isDeclared, weekOff);
+          // A declared holiday on a weekly off reads as Holiday, not Week Off.
+          const isWeekOff = status === "holiday" && !isDeclared && isWeeklyOff(date, weekOff);
           const dayNum = Number(date.slice(-2));
 
           const isHalfDay = ev?.creditType === "explicit_half_day";
@@ -73,7 +83,7 @@ export function HistoryCalendar({
               type="button"
               disabled={!record}
               onClick={() => record && setSelected(record)}
-              title={ev?.reason || undefined}
+              title={ev?.reason || (isWeekOff ? "Week Off" : undefined)}
               className={cn(
                 "relative flex aspect-square flex-col items-center justify-center gap-0.5 rounded-lg text-sm tabular-nums transition-colors",
                 status === "present" && !isHalfDay && !isUnpaidLeave && "bg-success/15 font-medium text-success hover:bg-success/25",
@@ -85,6 +95,7 @@ export function HistoryCalendar({
               )}
             >
               <span>{dayNum}</span>
+              {isWeekOff && <span className="text-[9px] font-semibold leading-none">Week Off</span>}
               {ev && record && status !== "holiday" && (
                 <span className="text-[9px] font-semibold leading-none">
                   {isHalfDay ? "HD (0.5)" : isUnpaidLeave ? "LU (0)" : record.totalMinutes > 0 ? formatDuration(record.totalMinutes) : "P"}
@@ -111,7 +122,7 @@ export function HistoryCalendar({
           <span className="h-2.5 w-2.5 rounded-full bg-destructive/60" /> Absent
         </span>
         <span className="inline-flex items-center gap-1.5">
-          <span className="h-2.5 w-2.5 rounded-full bg-muted-foreground/40" /> Holiday
+          <span className="h-2.5 w-2.5 rounded-full bg-muted-foreground/40" /> Holiday / Week Off
         </span>
       </div>
 
