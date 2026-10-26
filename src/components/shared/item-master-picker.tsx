@@ -15,10 +15,14 @@ import type { MasterItem } from "@/lib/quotation/item-master";
 export function ItemMasterPicker({
   items,
   onPick,
+  loading = false,
   className = "",
 }: {
   items: MasterItem[];
   onPick: (id: string) => void;
+  /** True while the org's saved items are still being fetched — avoids a
+   *  misleading "No matches" before they've arrived. */
+  loading?: boolean;
   className?: string;
 }) {
   const [q, setQ] = React.useState("");
@@ -36,7 +40,12 @@ export function ItemMasterPicker({
   const term = q.trim().toLowerCase();
   const results = (
     term
-      ? items.filter((i) => i.name.toLowerCase().includes(term) || i.category.toLowerCase().includes(term))
+      ? items.filter(
+          (i) =>
+            i.name.toLowerCase().includes(term) ||
+            i.category.toLowerCase().includes(term) ||
+            i.description.toLowerCase().includes(term)
+        )
       : items
   ).slice(0, 30);
 
@@ -68,7 +77,7 @@ export function ItemMasterPicker({
         <div className="absolute left-0 right-0 top-full z-30 mt-1 max-h-72 w-80 overflow-y-auto rounded-lg border border-border bg-card p-1 shadow-lg">
           {results.length === 0 ? (
             <p className="px-3 py-4 text-center text-xs text-muted-foreground">
-              No matches{term ? ` for "${q.trim()}"` : ""}.
+              {loading ? "Loading saved items…" : `No matches${term ? ` for "${q.trim()}"` : ""}.`}
             </p>
           ) : (
             results.map((i) => (

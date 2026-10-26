@@ -65,9 +65,12 @@ export default function NewInvoicePage() {
   const [savedMsg, setSavedMsg] = React.useState<string | null>(null);
 
   const [customMaster, setCustomMaster] = React.useState<MasterItem[]>([]);
+  const [customMasterLoading, setCustomMasterLoading] = React.useState(true);
   const allMaster = React.useMemo(() => [...ITEM_MASTER, ...customMaster], [customMaster]);
   React.useEffect(() => {
-    listOrgItemMasterAction().then(setCustomMaster);
+    listOrgItemMasterAction()
+      .then(setCustomMaster)
+      .finally(() => setCustomMasterLoading(false));
   }, []);
 
   // Line ids ticked for a bulk lumpsum change. Held by id, not index, so
@@ -338,7 +341,7 @@ export default function NewInvoicePage() {
             <CardHeader className="flex-row items-center justify-between">
               <CardTitle className="text-base">Line Items</CardTitle>
               <div className="flex gap-2">
-                <ItemMasterPicker items={allMaster} onPick={addFromMaster} className="w-56" />
+                <ItemMasterPicker items={allMaster} onPick={addFromMaster} loading={customMasterLoading} className="w-56" />
                 <Button size="sm" variant="outline" onClick={addLine}><Plus /> Custom</Button>
               </div>
             </CardHeader>

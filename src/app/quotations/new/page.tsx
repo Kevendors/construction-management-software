@@ -103,9 +103,12 @@ export default function NewQuotationPage() {
   // items from past quotations/invoices) — merged with the built-in
   // ITEM_MASTER list below so they show up in the same dropdown.
   const [customMaster, setCustomMaster] = React.useState<MasterItem[]>([]);
+  const [customMasterLoading, setCustomMasterLoading] = React.useState(true);
   const allMaster = React.useMemo(() => [...ITEM_MASTER, ...customMaster], [customMaster]);
   React.useEffect(() => {
-    listOrgItemMasterAction().then(setCustomMaster);
+    listOrgItemMasterAction()
+      .then(setCustomMaster)
+      .finally(() => setCustomMasterLoading(false));
   }, []);
 
   // Load an existing quote when opened with ?id=, a freshly-uploaded quote
@@ -473,7 +476,7 @@ export default function NewQuotationPage() {
             <CardHeader className="flex-row items-center justify-between">
               <CardTitle className="text-base">Items</CardTitle>
               <div className="flex gap-2">
-                <ItemMasterPicker items={allMaster} onPick={addFromMaster} className="w-56" />
+                <ItemMasterPicker items={allMaster} onPick={addFromMaster} loading={customMasterLoading} className="w-56" />
                 <Button size="sm" variant="outline" onClick={addCustom}><Plus /> Custom</Button>
                 <Button size="sm" variant="outline" onClick={() => setPasteOpen(true)}><ClipboardPaste /> Paste from Excel</Button>
               </div>
