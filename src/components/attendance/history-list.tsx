@@ -171,7 +171,7 @@ export function HistoryList({
                     ) : ev.creditType === "leave" ? (
                       <Badge variant="success">Leave</Badge>
                     ) : ev.creditType === "leave_unpaid" ? (
-                      <Badge variant="destructive">Leave (Unpaid)</Badge>
+                      <Badge variant="destructive">Absent</Badge>
                     ) : ev.creditType === "explicit_half_day" ? (
                       <Badge variant="warning">Half Day</Badge>
                     ) : ev.creditType === "explicit_absent" ? (

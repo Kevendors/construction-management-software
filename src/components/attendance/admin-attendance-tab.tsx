@@ -242,7 +242,7 @@ export function AdminAttendanceTab({
       r.status !== "present" ? "" : r.projectId ? projectById.get(r.projectId)?.name ?? "" : "Office";
     const declarativeLabel = (r: EmployeeAttendance, isOffice: boolean) => {
       if (isDeclaredHolidayFor(r.userId, r.date, isOffice)) return "Holiday";
-      if (r.status === "leave" && isLeaveUnpaidFor(r.userId, r.date, isOffice)) return "Leave (Unpaid)";
+      if (r.status === "leave" && isLeaveUnpaidFor(r.userId, r.date, isOffice)) return "Absent";
       return STATUS_LABEL[r.status];
     };
 
@@ -285,13 +285,12 @@ export function AdminAttendanceTab({
     } else {
       downloadCsv(
         `attendance-${month}.csv`,
-        ["Employee", "Employee ID", "Present", "Leave", "Leave (Unpaid)", "Half-Day", "Absent", "Holiday", "Week Off", "Overtime"],
+        ["Employee", "Employee ID", "Present", "Leave", "Half-Day", "Absent", "Holiday", "Week Off", "Overtime"],
         monthlyRows.map(({ member, records, summary }) => [
           member.name,
           member.employeeId || "—",
           summary.present,
           summary.leave,
-          summary.unpaidLeave,
           summary.halfDay,
           summary.absent,
           summary.holiday,
@@ -542,7 +541,7 @@ export function AdminAttendanceTab({
                                   className={record.status === "half_day" ? "border-amber-400 bg-amber-500/15 text-amber-800 dark:text-amber-400 font-semibold" : undefined}
                                   title={isUnpaidLeave ? unpaidLeaveReasonFor(member.userId, date, member.isOffice) : undefined}
                                 >
-                                  {record.status === "leave" && isUnpaidLeave ? "Leave (Unpaid)" : STATUS_LABEL[record.status]}
+                                  {record.status === "leave" && isUnpaidLeave ? "Absent" : STATUS_LABEL[record.status]}
                                 </Badge>
                               )
                             ) : isOpenShift ? (
@@ -735,7 +734,7 @@ export function AdminAttendanceTab({
                               : isLeave
                               ? "LV"
                               : isUnpaidLeave
-                              ? "LU"
+                              ? "A"
                               : status === "present"
                               ? ev?.glyph || (record?.source === "admin" ? "P*" : "P")
                               : status === "absent" ? "A" : status === "holiday" ? "" : "";
@@ -766,7 +765,7 @@ export function AdminAttendanceTab({
                                     : isLeave
                                     ? "bg-blue-500/20 text-blue-700 dark:text-blue-300"
                                     : isUnpaidLeave
-                                    ? "bg-slate-500/20 text-slate-700 dark:text-slate-300 border border-slate-400/40"
+                                    ? "bg-destructive/15 text-destructive"
                                     : status === "present" && isHalf
                                     ? "bg-orange-500/20 text-orange-700 dark:text-orange-300"
                                     : status === "present"
@@ -788,7 +787,6 @@ export function AdminAttendanceTab({
                           <div className="mt-0.5 flex justify-end gap-1.5 whitespace-nowrap text-[10px] tabular-nums text-muted-foreground">
                             <span className="text-success">{summary.present}P</span>
                             {summary.leave > 0 && <span className="text-blue-600 dark:text-blue-400">{summary.leave}LV</span>}
-                            {summary.unpaidLeave > 0 && <span className="text-slate-600 dark:text-slate-400">{summary.unpaidLeave}LU</span>}
                             {summary.halfDay > 0 && <span className="text-orange-600 dark:text-orange-400">{summary.halfDay}HD</span>}
                             <span className="text-destructive">{summary.absent}A</span>
                           </div>
@@ -947,7 +945,7 @@ export function AdminAttendanceTab({
                                 className={record.status === "half_day" ? "border-amber-400 bg-amber-500/15 text-amber-800 dark:text-amber-400 font-semibold" : undefined}
                                 title={isUnpaidLeave ? unpaidLeaveReasonFor(record.userId, record.date, employee?.isOffice ?? false) : undefined}
                               >
-                                {record.status === "leave" && isUnpaidLeave ? "Leave (Unpaid)" : STATUS_LABEL[record.status]}
+                                {record.status === "leave" && isUnpaidLeave ? "Absent" : STATUS_LABEL[record.status]}
                               </Badge>
                             )
                           ) : isOpenShift ? (

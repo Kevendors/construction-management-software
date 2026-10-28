@@ -11,7 +11,6 @@ import {
   isHolidayFor,
   missedAbsentReason,
   orgToday,
-  SITE_UNPAID_LEAVE_FROM,
   SUNDAY_OFF,
   type OrgHoliday,
   type WeekOffRule,
@@ -95,7 +94,7 @@ export function HistoryCalendar({
                 "relative flex aspect-square flex-col items-center justify-center gap-0.5 rounded-lg text-sm tabular-nums transition-colors",
                 status === "present" && !isHalfDay && !isUnpaidLeave && "bg-success/15 font-medium text-success hover:bg-success/25",
                 status === "present" && isHalfDay && "bg-orange-500/25 font-bold text-orange-900 dark:text-orange-300 hover:bg-orange-500/35 border border-orange-400/40",
-                status === "present" && isUnpaidLeave && "bg-slate-500/20 font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-500/30 border border-slate-400/40",
+                status === "present" && isUnpaidLeave && "bg-destructive/10 text-destructive hover:bg-destructive/20",
                 status === "absent" && !autoLeave && "bg-destructive/10 text-destructive",
                 autoLeave && "bg-blue-500/20 font-medium text-blue-700 dark:text-blue-300",
                 status === "holiday" && "bg-muted text-muted-foreground",
@@ -107,7 +106,7 @@ export function HistoryCalendar({
               {autoLeave && <span className="text-[9px] font-semibold leading-none">LV</span>}
               {ev && record && status !== "holiday" && (
                 <span className="text-[9px] font-semibold leading-none">
-                  {isHalfDay ? "HD (0.5)" : isUnpaidLeave ? "LU (0)" : record.totalMinutes > 0 ? formatDuration(record.totalMinutes) : "P"}
+                  {isHalfDay ? "HD (0.5)" : isUnpaidLeave ? "A" : record.totalMinutes > 0 ? formatDuration(record.totalMinutes) : "P"}
                 </span>
               )}
             </button>
@@ -122,21 +121,12 @@ export function HistoryCalendar({
         <span className="inline-flex items-center gap-1.5">
           <span className="h-2.5 w-2.5 rounded-full bg-orange-600" /> Half Day (manual, 0.5d)
         </span>
-        {isOffice ? (
-          <>
-            <span className="inline-flex items-center gap-1.5">
-              <span className="h-2.5 w-2.5 rounded-full bg-blue-500/70" /> Leave (incl. missed day)
-            </span>
-            <span className="inline-flex items-center gap-1.5">
-              <span className="h-2.5 w-2.5 rounded-full bg-slate-500" /> Leave (Unpaid, 2nd+ day off/mo)
-            </span>
-          </>
-        ) : month >= SITE_UNPAID_LEAVE_FROM.slice(0, 7) ? (
-          // Site staff have no paid leave from SITE_UNPAID_LEAVE_FROM; earlier months keep the old legend.
+        {/* An unpaid Leave is shown as Absent, so there's no separate legend entry for it. */}
+        {isOffice && (
           <span className="inline-flex items-center gap-1.5">
-            <span className="h-2.5 w-2.5 rounded-full bg-slate-500" /> Leave (Unpaid — no paid leave)
+            <span className="h-2.5 w-2.5 rounded-full bg-blue-500/70" /> Leave (incl. missed day)
           </span>
-        ) : null}
+        )}
         <span className="inline-flex items-center gap-1.5">
           <span className="h-2.5 w-2.5 rounded-full bg-destructive/60" /> Absent
         </span>

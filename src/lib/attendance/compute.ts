@@ -598,15 +598,15 @@ export function evaluateEmployeeMonthAttendance(
         creditType = "leave_unpaid";
         dayCredit = 0;
         unpaidLeave += 1;
-        badgeLabel = "Leave (Unpaid)";
-        glyph = "LU";
-        reason = `Site staff have no paid leave — recorded as unpaid Leave.${r.note ? ` ${r.note}` : ""}`;
+        badgeLabel = "Absent";
+        glyph = "A";
+        reason = `Site staff have no paid leave — marked Leave, counted as Absent.${r.note ? ` ${r.note}` : ""}`;
       } else if (leavesAreUnpaid) {
         creditType = "leave_unpaid";
         dayCredit = 0;
         unpaidLeave += 1;
-        badgeLabel = "Leave (Unpaid)";
-        glyph = "LU";
+        badgeLabel = "Absent";
+        glyph = "A";
         reason =
           daysOffCount === totalLeaveCount
             ? `Office staff get 1 paid Leave per month — this is Leave #${
@@ -723,8 +723,9 @@ export interface MonthlySummary {
   halfDay: number;           // Half days (0.5 credits) — explicit admin-marked Half-Day only
   effectivePaidDays: number; // present + 0.5 * halfDay
   leave: number;             // Paid Leave days (also counted in `present`'s paid-day weight)
-  unpaidLeave: number;       // Unpaid explicit Leave (office 2nd+ day off in the month; site Leave from SITE_UNPAID_LEAVE_FROM)
-  absent: number;            // No-record working days (except an office member's paid auto-leave day) + explicit Absent days
+  /** Always 0 now — an unpaid Leave is shown and counted as Absent. Kept for older callers. */
+  unpaidLeave: number;
+  absent: number;            // No-record working days (except an office member's paid auto-leave day) + explicit Absent days + unpaid Leave
   holiday: number;           // Declared company holidays only
   weekOff: number;           // Weekly off days (default day or swapped-in off day) not worked
 }
@@ -790,8 +791,9 @@ export function monthlySummary(
     halfDay: evalResult.halfDays,
     effectivePaidDays: evalResult.effectivePaidDays,
     leave,
-    unpaidLeave: evalResult.unpaidLeave,
-    absent,
+    unpaidLeave: 0,
+    // An unpaid Leave (office 2nd+ day off; any site Leave) is shown as Absent.
+    absent: absent + evalResult.unpaidLeave,
     holiday,
     weekOff,
   };
