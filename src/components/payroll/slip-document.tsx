@@ -1,4 +1,5 @@
 import { slipTotals } from "@/lib/payroll/compute";
+import { orgToday } from "@/lib/attendance/compute";
 import { departmentLabel } from "@/lib/labels";
 import type { Employee, SalarySlip } from "@/lib/types";
 
@@ -85,7 +86,17 @@ export function SlipDocument({ slip, employee }: { slip: SalarySlip; employee: E
     month: "long",
     year: "numeric",
   });
-  const lopDays = Math.max(0, slip.monthDays - slip.paidDays);
+  // A slip for the month in progress pays only days so far, so the days
+  // still ahead aren't loss-of-pay — show them separately.
+  const today = orgToday();
+  const elapsed =
+    slip.month < today.slice(0, 7)
+      ? slip.monthDays
+      : slip.month === today.slice(0, 7)
+      ? Math.min(slip.monthDays, Number(today.slice(8, 10)))
+      : 0;
+  const notYetDue = slip.monthDays - elapsed;
+  const lopDays = Math.max(0, elapsed - slip.paidDays);
   const joinDateStr = formatDateDDMMYYYY(emp?.joinDate);
   const payDateStr = getPayDate(slip.month);
 
@@ -213,6 +224,12 @@ export function SlipDocument({ slip, employee }: { slip: SalarySlip; employee: E
                   <td className="py-1 text-slate-500">LOP Days</td>
                   <td className="py-1 text-right font-semibold text-slate-900 tabular-nums">: {lopDays}</td>
                 </tr>
+                {notYetDue > 0 && (
+                  <tr>
+                    <td className="py-1 text-slate-500">Days not yet due</td>
+                    <td className="py-1 text-right font-semibold text-slate-900 tabular-nums">: {notYetDue}</td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>

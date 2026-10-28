@@ -73,6 +73,16 @@ export function EmployeesTab({
     return m ? m.isOffice : null;
   };
 
+  // Days of `month` that have happened so far (today counts): the whole month
+  // once it's over, today's day-of-month while it's in progress, 0 for a
+  // future month.
+  const daysElapsedIn = (m: string): number => {
+    const today = orgToday();
+    if (m < today.slice(0, 7)) return daysOfMonth(m).length;
+    if (m === today.slice(0, 7)) return Number(today.slice(8, 10));
+    return 0;
+  };
+
   // Count GPS verified attendance days and half-day evaluation for this employee in the active month
   const attendanceStatsFor = (emp: Employee) => {
     if (!attendanceBoard?.records?.length) return null;
@@ -88,8 +98,9 @@ export function EmployeesTab({
     const member = memberFor(emp);
     // Calendar-days method: every day of the month is paid except unpaid ones
     // (Absent incl. unpaid Leave = 1 day, Half-Day = 0.5). Weekly offs and
-    // declared holidays are paid; days still ahead in the month aren't
-    // deducted, so a mid-month draft assumes they'll be worked.
+    // declared holidays are paid. For the month in progress only days up to
+    // and including today are paid (a draft till the 28th pays 28 − absent);
+    // Recalc after the month ends pays the full month.
     const summary = monthlySummary(
       matching,
       month,
@@ -104,7 +115,7 @@ export function EmployeesTab({
       rawDays: matching.length,
       unpaidDays,
       halfDays: summary.halfDay,
-      paidDays: Math.max(0, daysOfMonth(month).length - unpaidDays),
+      paidDays: Math.max(0, daysElapsedIn(month) - unpaidDays),
     };
   };
 
@@ -194,7 +205,7 @@ export function EmployeesTab({
                             {stats !== null && (
                               <span
                                 className="inline-flex items-center gap-1 rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-800 dark:text-emerald-400"
-                                title={`${daysOfMonth(month).length}-day month − ${stats.unpaidDays} unpaid day(s) (Absent = 1, Half-Day = 0.5). Weekly offs and holidays are paid.`}
+                                title={`${daysElapsedIn(month)} day(s) so far of ${daysOfMonth(month).length} − ${stats.unpaidDays} unpaid (Absent = 1, Half-Day = 0.5). Weekly offs and holidays are paid. Salary = monthly ÷ ${daysOfMonth(month).length} × paid days.`}
                               >
                                 {stats.paidDays}d paid
                                 {stats.halfDays > 0 && (
