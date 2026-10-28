@@ -21,7 +21,7 @@ import {
 import { PayrollBreakdownChart } from "@/components/charts/payroll-chart";
 import { SetSalaryDialog } from "./set-salary-dialog";
 import type { PayrollBoard } from "@/lib/payroll/compute";
-import { evaluateEmployeeMonthAttendance, type AttendanceAdminBoard } from "@/lib/attendance/compute";
+import { daysOfMonth, monthlySummary, orgToday, type AttendanceAdminBoard } from "@/lib/attendance/compute";
 import { payrollByDepartment, slipTotals } from "@/lib/payroll/compute";
 import { addEmployeeAction, generateSlipAction } from "@/app/payroll/actions";
 import { departmentLabel, salarySlipStatusMeta, roleLabel } from "@/lib/labels";
@@ -85,23 +85,26 @@ export function EmployeesTab({
     });
     if (matching.length === 0) return null;
     const isOffice = isOfficeFor(emp) ?? false;
-    // Weekly off decides which no-record days are working days, so an office
-    // employee's paid auto-leave day (1 missed day this month) is paid here too.
     const member = memberFor(emp);
-    const ev = evaluateEmployeeMonthAttendance(
+    // Calendar-days method: every day of the month is paid except unpaid ones
+    // (Absent incl. unpaid Leave = 1 day, Half-Day = 0.5). Weekly offs and
+    // declared holidays are paid; days still ahead in the month aren't
+    // deducted, so a mid-month draft assumes they'll be worked.
+    const summary = monthlySummary(
       matching,
       month,
-      isOffice,
+      orgToday(),
       attendanceBoard.holidays,
+      isOffice,
       member?.weekOff,
-      undefined,
       member?.startDate
     );
+    const unpaidDays = summary.absent + summary.halfDay * 0.5;
     return {
       rawDays: matching.length,
-      fullDays: ev.fullDays,
-      halfDays: ev.halfDays,
-      paidDays: ev.effectivePaidDays,
+      unpaidDays,
+      halfDays: summary.halfDay,
+      paidDays: Math.max(0, daysOfMonth(month).length - unpaidDays),
     };
   };
 
@@ -114,10 +117,10 @@ export function EmployeesTab({
     const tracked = emp ? isOfficeFor(emp) !== null : false;
     // Trust the computed attendance days whenever this employee is tracked,
     // including a genuine 0 (no attendance recorded this month) -- that must
-    // NOT silently become a full paid month. Only default to 30 when there's
-    // no attendance tracking for them at all (e.g. a manually-paid employee
-    // with no login/roster entry), where there's nothing to compute from.
-    const daysToPay = tracked ? stats?.paidDays ?? 0 : 30;
+    // NOT silently become a full paid month. Only pay the full month when
+    // there's no attendance tracking for them at all (e.g. a manually-paid
+    // employee with no login/roster entry), where there's nothing to compute from.
+    const daysToPay = tracked ? stats?.paidDays ?? 0 : daysOfMonth(month).length;
     const res = await generateSlipAction(empId, month, daysToPay);
     setBusyId(null);
     if (!res.error) router.refresh();
@@ -191,7 +194,7 @@ export function EmployeesTab({
                             {stats !== null && (
                               <span
                                 className="inline-flex items-center gap-1 rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-800 dark:text-emerald-400"
-                                title={`${stats.fullDays} full days, ${stats.halfDays} half days`}
+                                title={`${daysOfMonth(month).length}-day month − ${stats.unpaidDays} unpaid day(s) (Absent = 1, Half-Day = 0.5). Weekly offs and holidays are paid.`}
                               >
                                 {stats.paidDays}d paid
                                 {stats.halfDays > 0 && (

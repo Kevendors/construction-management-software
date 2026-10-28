@@ -275,7 +275,10 @@ export async function generateSlipAction(
   if (empErr) return { error: empErr.message };
   if (!emp) return { error: "Employee not found." };
 
-  const monthDays = 30;
+  // Calendar-days method: per-day pay = monthly salary ÷ days in this month
+  // (28–31), so pay = salary − per-day × unpaid days.
+  const [slipYear, slipMonth] = month.split("-").map(Number);
+  const monthDays = new Date(slipYear, slipMonth, 0).getDate() || 30;
   // `paidDays` is a required number, including a legitimate 0 (zero attendance
   // that month) -- never substitute a default for it here (a `|| monthDays`
   // would silently turn a real 0 into a full month's pay).
