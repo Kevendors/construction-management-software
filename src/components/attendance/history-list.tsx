@@ -12,42 +12,73 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
+  autoLeaveLabel,
   evaluateEmployeeMonthAttendance,
   formatDuration,
   formatTime,
+  SUNDAY_OFF,
   type EvaluatedAttendanceRecord,
   type OrgHoliday,
+  type WeekOffRule,
 } from "@/lib/attendance/compute";
 import type { EmployeeAttendance } from "@/lib/types";
 import { RecordDetailDialog } from "./record-detail-dialog";
 
-/** List view of the month's records with a from/to date filter and late policy badges. */
+type AutoLeave = NonNullable<ReturnType<typeof autoLeaveLabel>>;
+type Row = { kind: "record"; record: EmployeeAttendance } | { kind: "auto"; date: string; label: AutoLeave };
+
+/**
+ * List view of the month's records with a from/to date filter and late policy
+ * badges. For office staff it also lists auto-leave days (missed working days,
+ * no record) as Leave / Leave (Unpaid); `month` makes sure the viewed month is
+ * evaluated even when it has no records yet.
+ */
 export function HistoryList({
   records,
+  month,
   isOffice = false,
   holidays = [],
+  weekOff = SUNDAY_OFF,
+  startDate,
 }: {
   records: EmployeeAttendance[];
+  month?: string;
   isOffice?: boolean;
   holidays?: OrgHoliday[];
+  weekOff?: WeekOffRule;
+  startDate?: string;
 }) {
   const [from, setFrom] = React.useState("");
   const [to, setTo] = React.useState("");
   const [selected, setSelected] = React.useState<EmployeeAttendance | null>(null);
 
-  const evalMap = React.useMemo(() => {
+  const { evalMap, autoLeaves } = React.useMemo(() => {
     const months = new Set(records.map((r) => r.date.slice(0, 7)));
+    if (month) months.add(month);
     const map = new Map<string, EvaluatedAttendanceRecord>();
+    const auto: { date: string; label: AutoLeave }[] = [];
     for (const m of months) {
-      const res = evaluateEmployeeMonthAttendance(records, m, isOffice, holidays);
+      const res = evaluateEmployeeMonthAttendance(records, m, isOffice, holidays, weekOff, undefined, startDate);
       for (const [d, ev] of res.recordMap) {
         map.set(d, ev);
       }
+      for (const d of res.autoLeaveDates) {
+        const label = autoLeaveLabel(res, d);
+        if (label) auto.push({ date: d, label });
+      }
     }
-    return map;
-  }, [records, isOffice, holidays]);
+    return { evalMap: map, autoLeaves: auto };
+  }, [records, month, isOffice, holidays, weekOff, startDate]);
 
-  const rows = records.filter((r) => (!from || r.date >= from) && (!to || r.date <= to));
+  const inRange = (d: string) => (!from || d >= from) && (!to || d <= to);
+  // Records and auto-leave days (office staff only) share one list, in the
+  // records' own order (newest first) — auto-leave days slot in by date.
+  const rows: Row[] = [
+    ...records.filter((r) => inRange(r.date)).map((r) => ({ kind: "record" as const, record: r })),
+    ...autoLeaves.filter((a) => inRange(a.date)).map((a) => ({ kind: "auto" as const, ...a })),
+  ];
+  const rowDate = (row: Row) => (row.kind === "record" ? row.record.date : row.date);
+  if (autoLeaves.length > 0) rows.sort((a, b) => rowDate(b).localeCompare(rowDate(a)));
 
   return (
     <>
@@ -81,7 +112,34 @@ export function HistoryList({
               </TableCell>
             </TableRow>
           )}
-          {rows.map((r) => {
+          {rows.map((row) => {
+            if (row.kind === "auto") {
+              return (
+                <TableRow key={`auto-${row.date}`} title={row.label.reason}>
+                  <TableCell className="tabular-nums font-medium">
+                    {new Date(`${row.date}T00:00:00`).toLocaleDateString("en-IN", {
+                      day: "2-digit",
+                      month: "short",
+                    })}
+                  </TableCell>
+                  <TableCell className="tabular-nums">—</TableCell>
+                  <TableCell className="tabular-nums">—</TableCell>
+                  <TableCell className="text-right tabular-nums">—</TableCell>
+                  <TableCell>
+                    <Badge
+                      variant={row.label.glyph === "LU" ? "destructive" : "outline"}
+                      className={row.label.glyph === "LV" ? "border-transparent bg-blue-500/20 text-blue-700 dark:text-blue-300" : undefined}
+                    >
+                      {row.label.label}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <span className="text-muted-foreground">—</span>
+                  </TableCell>
+                </TableRow>
+              );
+            }
+            const r = row.record;
             const ev = evalMap.get(r.date);
             return (
               <TableRow key={r.id} className="cursor-pointer" onClick={() => setSelected(r)}>

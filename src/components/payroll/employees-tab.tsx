@@ -61,13 +61,15 @@ export function EmployeesTab({
   // independent of the manually-set `department` field (engineering/design/site/accounts/admin),
   // which is a separate HR label and can legitimately disagree with this (e.g. an "Admin"
   // department employee who is also assigned to a project is still "Site" here).
-  const isOfficeFor = (emp: Employee): boolean | null => {
-    const m = attendanceBoard?.members.find(
+  const memberFor = (emp: Employee) =>
+    attendanceBoard?.members.find(
       (m) =>
         (emp.profileId && m.userId === emp.profileId) ||
         m.employeeId.toLowerCase() === emp.id.toLowerCase() ||
         m.name.toLowerCase() === emp.name.toLowerCase()
     );
+  const isOfficeFor = (emp: Employee): boolean | null => {
+    const m = memberFor(emp);
     return m ? m.isOffice : null;
   };
 
@@ -83,7 +85,18 @@ export function EmployeesTab({
     });
     if (matching.length === 0) return null;
     const isOffice = isOfficeFor(emp) ?? false;
-    const ev = evaluateEmployeeMonthAttendance(matching, month, isOffice, attendanceBoard.holidays);
+    // Weekly off decides which no-record days are working days, so an office
+    // employee's paid auto-leave day (1 missed day this month) is paid here too.
+    const member = memberFor(emp);
+    const ev = evaluateEmployeeMonthAttendance(
+      matching,
+      month,
+      isOffice,
+      attendanceBoard.holidays,
+      member?.weekOff,
+      undefined,
+      member?.startDate
+    );
     return {
       rawDays: matching.length,
       fullDays: ev.fullDays,

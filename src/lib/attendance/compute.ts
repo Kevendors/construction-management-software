@@ -36,6 +36,8 @@ export interface MyAttendanceData {
   holidays: OrgHoliday[];
   /** The caller's weekly off rule (0047) — SUNDAY_OFF until the migration is applied. */
   weekOff: WeekOffRule;
+  /** Membership created_at as an org-local date — office auto-leave never counts days before it. Absent = no floor. */
+  startDate?: string;
   employeeId: string;
   userName: string;
   month: string; // "YYYY-MM"
@@ -50,6 +52,8 @@ export interface AttendanceMember {
   isOffice: boolean;
   /** Default weekly off day + recorded swaps (0047) — SUNDAY_OFF until the migration is applied. */
   weekOff: WeekOffRule;
+  /** Membership created_at as an org-local date — office auto-leave never counts days before it. Absent = no floor. */
+  startDate?: string;
 }
 
 export interface AttendanceAdminBoard {
@@ -120,6 +124,14 @@ export function timeInOrgTimezone(iso: string): string {
  */
 export function orgToday(): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: ORG_TIMEZONE }).format(new Date());
+}
+
+/** The org-local date ("YYYY-MM-DD") of an ISO timestamp, e.g. a row's created_at ("" when unparseable). */
+export function orgDateOf(iso: string): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  return new Intl.DateTimeFormat("en-CA", { timeZone: ORG_TIMEZONE }).format(d);
 }
 
 /** Current month ("YYYY-MM") in the org's timezone. */
@@ -327,9 +339,28 @@ export interface MonthlyAttendanceEvaluation {
   totalDaysAttended: number; // raw record count
   fullDays: number;          // count of 1.0 day credits
   halfDays: number;          // count of 0.5 day credits
-  unpaidLeave: number;       // count of Leave days converted to unpaid (office staff, 2nd+ Leave this month)
+  unpaidLeave: number;       // count of Leave days converted to unpaid (office staff, 2nd+ day off this month) — incl. unpaid auto-leave days
   effectivePaidDays: number; // fullDays + 0.5 * halfDays
+  /**
+   * Office staff only (empty for Site): past working days with no record at
+   * all — not a weekly off, not a declared holiday, before `today` — which
+   * count as Leave automatically instead of Absent. Paid when they're the
+   * month's only day off, otherwise unpaid (see `autoLeavePaid`).
+   */
+  autoLeaveDates: string[];
+  /** Whether the `autoLeaveDates` are paid (1 day off in the month) or unpaid (2+). Meaningless when there are none. */
+  autoLeavePaid: boolean;
+  /** Office staff: days off counted toward the 1-paid-Leave rule (explicit Leave + auto-leave + Absent marks). 0 for Site. */
+  daysOffCount: number;
 }
+
+/**
+ * Office auto-leave (missed working day = Leave) and the wider days-off count
+ * (Absent marks, weekly-off exclusion) only apply from this date. Earlier days
+ * keep the old rules exactly: a missed day is Absent, and only explicit Leave
+ * counts toward the 2nd-Leave-makes-both-unpaid trigger.
+ */
+export const OFFICE_AUTO_LEAVE_FROM = "2026-10-01";
 
 const DECLARED_STATUS_LABEL: Record<string, string> = { leave: "Leave", half_day: "Half Day", absent: "Absent" };
 function badgeLabelFor(status: string): string {
@@ -345,9 +376,21 @@ function badgeLabelFor(status: string): string {
  * explicit admin-declared Leave/Half-Day/Absent changes the day's credit.
  *
  * Office staff get 1 paid Leave per month — `isOffice` only matters for this.
- * Taking a 2nd Leave in the same month makes BOTH (every Leave that month,
- * not just the extra one) unpaid, so the whole month is re-evaluated as a
- * unit rather than deciding each Leave record in isolation as it's reached.
+ * A past working day with no record at all (not a weekly off under `rule`,
+ * not a declared holiday, before `today`) counts as Leave automatically —
+ * an "auto-leave" day, see `autoLeaveDates`. Days off in the month = explicit
+ * Leave + auto-leave + explicit Absent marks; a 2nd day off makes EVERY
+ * Leave and auto-leave day that month unpaid (not just the extra one), so
+ * the whole month is re-evaluated as a unit rather than deciding each Leave
+ * record in isolation as it's reached. Absent marks stay Absent (never
+ * Leave) but still count toward that 2nd day. Leave/Absent marks on a
+ * weekly off or a declared holiday never count. Site staff are unaffected:
+ * a missed day stays Absent and explicit Leave is always paid.
+ *
+ * All of that only applies on/after OFFICE_AUTO_LEAVE_FROM, and missed days
+ * also only from `startDate` (the member's join date, IST) when given —
+ * before those dates the old rules hold (missed = Absent; only explicit
+ * Leave counts).
  *
  * A declarative mark (Leave/Half-Day/Absent) dated on a declared company
  * holiday is shown and counted as a Holiday instead — not as Leave (paid or
@@ -363,7 +406,10 @@ export function evaluateEmployeeMonthAttendance(
   records: EmployeeAttendance[],
   month: string,
   isOffice: boolean = false,
-  holidays: OrgHoliday[] = []
+  holidays: OrgHoliday[] = [],
+  rule: WeekOffRule = SUNDAY_OFF,
+  today: string = orgToday(),
+  startDate?: string
 ): MonthlyAttendanceEvaluation {
   const monthRecords = records
     .filter((r) => r.date.startsWith(month))
@@ -371,8 +417,31 @@ export function evaluateEmployeeMonthAttendance(
 
   const isDeclaredHolidayRecord = (r: EmployeeAttendance) =>
     r.status !== "present" && isHolidayFor(r.date, holidays, isOffice);
-  const totalLeaveCount = monthRecords.filter((r) => r.status === "leave" && !isDeclaredHolidayRecord(r)).length;
-  const leavesAreUnpaid = isOffice && totalLeaveCount > 1;
+  // Which explicit marks count toward the 1-paid-Leave rule. Before
+  // OFFICE_AUTO_LEAVE_FROM: Leave only (the old rule). From it: Leave and
+  // Absent, but not on a weekly off. Never on a declared holiday.
+  const countsAsLeaveDayOff = (r: EmployeeAttendance) =>
+    r.status === "leave" && !isDeclaredHolidayRecord(r) && (r.date < OFFICE_AUTO_LEAVE_FROM || !isWeeklyOff(r.date, rule));
+  const countsAsAbsentDayOff = (r: EmployeeAttendance) =>
+    r.status === "absent" && r.date >= OFFICE_AUTO_LEAVE_FROM && !isDeclaredHolidayRecord(r) && !isWeeklyOff(r.date, rule);
+  const totalLeaveCount = monthRecords.filter(countsAsLeaveDayOff).length;
+  const recordedDates = new Set(monthRecords.map((r) => r.date));
+  // Office only: past working days nobody recorded anything for, from the
+  // policy start (and the member's own start, when known).
+  const autoLeaveDates = isOffice
+    ? daysOfMonth(month).filter(
+        (d) =>
+          d >= OFFICE_AUTO_LEAVE_FROM &&
+          (!startDate || d >= startDate) &&
+          d < today &&
+          !recordedDates.has(d) &&
+          !isWeeklyOff(d, rule) &&
+          !isHolidayFor(d, holidays, isOffice)
+      )
+    : [];
+  const explicitAbsentCount = monthRecords.filter(countsAsAbsentDayOff).length;
+  const daysOffCount = isOffice ? totalLeaveCount + autoLeaveDates.length + explicitAbsentCount : 0;
+  const leavesAreUnpaid = isOffice && daysOffCount > 1;
 
   let fullDays = 0;
   let halfDays = 0;
@@ -405,9 +474,12 @@ export function evaluateEmployeeMonthAttendance(
         unpaidLeave += 1;
         badgeLabel = "Leave (Unpaid)";
         glyph = "LU";
-        reason = `Office staff get 1 paid Leave per month — this is Leave #${
-          monthRecords.filter((x) => x.status === "leave" && !isDeclaredHolidayRecord(x) && x.date <= r.date).length
-        } this month, so it (and the earlier one) is unpaid.${r.note ? ` ${r.note}` : ""}`;
+        reason =
+          daysOffCount === totalLeaveCount
+            ? `Office staff get 1 paid Leave per month — this is Leave #${
+                monthRecords.filter((x) => countsAsLeaveDayOff(x) && x.date <= r.date).length
+              } this month, so it (and the earlier one) is unpaid.${r.note ? ` ${r.note}` : ""}`
+            : `${autoLeaveUnpaidReason(daysOffCount)}${r.note ? ` ${r.note}` : ""}`;
       } else {
         creditType = "leave";
         dayCredit = 1.0;
@@ -461,13 +533,17 @@ export function evaluateEmployeeMonthAttendance(
   // more common case of no row at all — nobody works a holiday, so nothing
   // in `monthRecords` represents that day. Only counts up to today, so a
   // holiday later this month isn't paid before it's even happened.
-  const today = orgToday();
-  const recordedDates = new Set(monthRecords.map((r) => r.date));
   for (const date of daysOfMonth(month)) {
     if (date > today) break;
     if (recordedDates.has(date)) continue;
     if (isHolidayFor(date, holidays, isOffice)) fullDays += 1;
   }
+
+  // Auto-leave days have no row, so they're credited here: paid like an
+  // explicit Leave when they're the month's only day off, else unpaid.
+  const autoLeavePaid = !leavesAreUnpaid;
+  if (autoLeavePaid) fullDays += autoLeaveDates.length;
+  else unpaidLeave += autoLeaveDates.length;
 
   const effectivePaidDays = fullDays + halfDays * 0.5;
 
@@ -479,7 +555,33 @@ export function evaluateEmployeeMonthAttendance(
     halfDays,
     unpaidLeave,
     effectivePaidDays,
+    autoLeaveDates,
+    autoLeavePaid,
+    daysOffCount,
   };
+}
+
+function autoLeaveUnpaidReason(daysOff: number): string {
+  return `Office staff get 1 paid Leave per month — ${daysOff} days off this month (incl. missed days / Absent), so all Leave is unpaid.`;
+}
+
+/**
+ * How the UI shows a no-record day: Leave / Leave (Unpaid) when it's one of
+ * the evaluation's auto-leave days (office staff), else null — fall back to
+ * the usual Absent / Holiday / Week Off rendering.
+ */
+export function autoLeaveLabel(
+  evaluation: MonthlyAttendanceEvaluation,
+  date: string
+): { label: "Leave" | "Leave (Unpaid)"; glyph: "LV" | "LU"; reason: string } | null {
+  if (!evaluation.autoLeaveDates.includes(date)) return null;
+  return evaluation.autoLeavePaid
+    ? { label: "Leave", glyph: "LV", reason: "No attendance recorded — counted as Leave automatically (office staff get 1 paid Leave per month)." }
+    : {
+        label: "Leave (Unpaid)",
+        glyph: "LU",
+        reason: `No attendance recorded — counted as Leave automatically. ${autoLeaveUnpaidReason(evaluation.daysOffCount)}`,
+      };
 }
 
 export interface MonthlySummary {
@@ -487,8 +589,8 @@ export interface MonthlySummary {
   halfDay: number;           // Half days (0.5 credits) — explicit admin-marked Half-Day only
   effectivePaidDays: number; // present + 0.5 * halfDay
   leave: number;             // Paid Leave days (also counted in `present`'s paid-day weight)
-  unpaidLeave: number;       // Office staff only: Leave days converted to unpaid (2nd+ in the month)
-  absent: number;            // No-record days + explicit Absent days
+  unpaidLeave: number;       // Office staff only: Leave + auto-leave days converted to unpaid (2nd+ day off in the month)
+  absent: number;            // No-record days (Site staff only — office ones are auto-leave) + explicit Absent days
   holiday: number;           // Declared company holidays only
   weekOff: number;           // Weekly off days (default day or swapped-in off day) not worked
 }
@@ -506,9 +608,10 @@ export function monthlySummary(
   today: string = orgToday(),
   holidays: OrgHoliday[] = [],
   isOffice: boolean = false,
-  rule: WeekOffRule = SUNDAY_OFF
+  rule: WeekOffRule = SUNDAY_OFF,
+  startDate?: string
 ): MonthlySummary {
-  const evalResult = evaluateEmployeeMonthAttendance(records, month, isOffice, holidays);
+  const evalResult = evaluateEmployeeMonthAttendance(records, month, isOffice, holidays, rule, today, startDate);
   // Days with an explicit-absent or declared-holiday row already have a
   // record, so dayStatus() (which only knows "does a row exist") would
   // wrongly call them present — count them separately and add them in.
@@ -518,7 +621,11 @@ export function monthlySummary(
   const declaredHolidayDates = new Set(
     evalResult.evaluatedRecords.filter((e) => e.creditType === "declared_holiday").map((e) => e.record.date)
   );
-  const leave = evalResult.evaluatedRecords.filter((e) => e.creditType === "leave").length;
+  const autoLeaveDates = new Set(evalResult.autoLeaveDates);
+  // Paid auto-leave days count as Leave; unpaid ones are already in evalResult.unpaidLeave.
+  const leave =
+    evalResult.evaluatedRecords.filter((e) => e.creditType === "leave").length +
+    (evalResult.autoLeavePaid ? autoLeaveDates.size : 0);
   const recorded = new Set(records.filter((r) => r.date.startsWith(month)).map((r) => r.date));
   let absent = 0;
   let holiday = 0;
@@ -533,6 +640,7 @@ export function monthlySummary(
       holiday += 1;
       continue;
     }
+    if (autoLeaveDates.has(date)) continue; // office missed day: Leave, not Absent (counted above)
     const isDeclared = isHolidayFor(date, holidays, isOffice);
     const status = dayStatus(date, recorded.has(date), today, isDeclared, rule);
     if (status === "absent") absent += 1;

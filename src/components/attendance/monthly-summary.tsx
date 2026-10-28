@@ -11,20 +11,22 @@ export function MonthlySummary({
   isOffice = false,
   holidays = [],
   weekOff = SUNDAY_OFF,
+  startDate,
 }: {
   records: EmployeeAttendance[];
   month: string;
   isOffice?: boolean;
   holidays?: OrgHoliday[];
   weekOff?: WeekOffRule;
+  startDate?: string;
 }) {
-  const summary = monthlySummary(records, month, undefined, holidays, isOffice, weekOff);
+  const summary = monthlySummary(records, month, undefined, holidays, isOffice, weekOff, startDate);
 
   const chips = [
     { label: "Full Present", value: String(summary.present), hint: "1.0 day credit", className: "bg-success/15 text-success" },
     { label: "Half Days", value: String(summary.halfDay), hint: "0.5 day credit", className: summary.halfDay > 0 ? "bg-amber-500/20 text-amber-700 dark:text-amber-400 font-semibold" : "bg-muted text-muted-foreground" },
     ...(isOffice
-      ? [{ label: "Leave (Unpaid)", value: String(summary.unpaidLeave), hint: "2nd+ this month", className: summary.unpaidLeave > 0 ? "bg-slate-500/20 text-slate-700 dark:text-slate-300 font-semibold" : "bg-muted text-muted-foreground" }]
+      ? [{ label: "Leave (Unpaid)", value: String(summary.unpaidLeave), hint: "2nd+ day off this month", className: summary.unpaidLeave > 0 ? "bg-slate-500/20 text-slate-700 dark:text-slate-300 font-semibold" : "bg-muted text-muted-foreground" }]
       : []),
     { label: "Effective Paid", value: `${summary.effectivePaidDays}d`, hint: "salary credit", className: "bg-primary/10 text-primary font-semibold" },
     { label: "Absent", value: String(summary.absent), hint: "unexcused", className: summary.absent > 0 ? "bg-destructive/15 text-destructive" : "bg-muted text-muted-foreground" },
@@ -51,7 +53,7 @@ export function MonthlySummary({
           Shift runs until <strong>6:00 PM</strong>. Checking in after <strong>10:30 AM</strong> counts as a late arrival — the first 3 in a calendar month still credit a full paid day; the 4th and later auto-marks that day Half-Day. A Super Admin can also mark a day Half-Day/Absent by hand for any other reason.
           {isOffice && (
             <>
-              {" "}Office staff get <strong>1 paid Leave per month</strong> — taking a 2nd makes both unpaid.
+              {" "}Office staff get <strong>1 paid Leave per month</strong> — a missed working day counts as Leave automatically; taking a 2nd day off (missed, Leave or Absent) makes all Leave that month unpaid.
             </>
           )}
         </div>

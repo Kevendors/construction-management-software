@@ -6,6 +6,7 @@ import { createClient as createSupabase } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getAuthContext } from "@/lib/auth/context";
 import {
+  orgDateOf,
   orgThisMonth,
   orgToday,
   SUNDAY_OFF,
@@ -159,6 +160,22 @@ async function myWeekOff(
   };
 }
 
+/**
+ * The caller's join date (membership created_at, org-local "YYYY-MM-DD") —
+ * the floor for office auto-leave. Any error just means no floor.
+ */
+async function myStartDate(
+  supabase: Awaited<ReturnType<typeof createSupabase>>,
+  userId: string,
+  orgId: string | null
+): Promise<string | undefined> {
+  let query = supabase.from("memberships").select("created_at").eq("user_id", userId);
+  if (orgId) query = query.eq("org_id", orgId);
+  const { data, error } = await query.limit(1).maybeSingle();
+  if (error) return undefined;
+  return orgDateOf((data?.created_at as string | null | undefined) ?? "") || undefined;
+}
+
 export async function getMyAttendancePage(month?: string): Promise<MyAttendanceData> {
   const activeMonth = /^\d{4}-\d{2}$/.test(month ?? "") ? (month as string) : orgThisMonth();
   const today = orgToday();
@@ -213,8 +230,9 @@ export async function getMyAttendancePage(month?: string): Promise<MyAttendanceD
   const supabase = await createSupabase();
   const { from, to } = monthRange(activeMonth);
   // Explicit user_id filter: super_admin's RLS read is org-wide, but this
-  // page is always "my own attendance".
-  const [monthRes, todayRes, unclosedRes, pmRes, projRes, employeeId, isOfficeRaw, orgRes, holidaysRes, pendingSpotRes, weekOff] = await Promise.all([
+  // page is always "my own attendance". The month query is one user's one
+  // month (at most ~31 rows), so it needs no pagination past the 1000-row cap.
+  const [monthRes, todayRes, unclosedRes, pmRes, projRes, employeeId, isOfficeRaw, orgRes, holidaysRes, pendingSpotRes, weekOff, startDate] = await Promise.all([
     supabase
       .from("employee_attendance")
       .select("*")
@@ -257,6 +275,7 @@ export async function getMyAttendancePage(month?: string): Promise<MyAttendanceD
       .limit(1)
       .maybeSingle(),
     myWeekOff(supabase, ctx.userId),
+    myStartDate(supabase, ctx.userId, ctx.orgId),
   ]);
   if (monthRes.error) throw monthRes.error;
 
@@ -324,10 +343,39 @@ export async function getMyAttendancePage(month?: string): Promise<MyAttendanceD
     },
     holidays,
     weekOff,
+    startDate,
     employeeId,
     userName: ctx.name,
     month: activeMonth,
   };
+}
+
+const PAGE_SIZE = 1000;
+
+/**
+ * Every attendance row in the org. PostgREST caps a response at 1000 rows, so
+ * a single unbounded select silently drops the oldest ones — page through with
+ * .range() until a page comes back short. Ordered by date then id so pages
+ * never overlap or skip. Returns { data, error } like a single query would.
+ */
+async function allOrgAttendance(
+  admin: ReturnType<typeof createAdminClient>,
+  orgId: string
+): Promise<{ data: EmployeeAttendanceRow[]; error: unknown }> {
+  const rows: EmployeeAttendanceRow[] = [];
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await admin
+      .from("employee_attendance")
+      .select("*")
+      .eq("org_id", orgId)
+      .order("date", { ascending: false })
+      .order("id", { ascending: true })
+      .range(from, from + PAGE_SIZE - 1);
+    if (error) return { data: rows, error };
+    const page = (data ?? []) as EmployeeAttendanceRow[];
+    rows.push(...page);
+    if (page.length < PAGE_SIZE) return { data: rows, error: null };
+  }
 }
 
 /**
@@ -390,16 +438,12 @@ export async function getAttendanceAdminBoard(): Promise<AttendanceAdminBoard> {
   memRows = memRows.filter((m) => m.is_active ?? true);
 
   const ids = memRows.map((m) => m.user_id);
-  const [profRes, attRes, pmRes, holidaysRes, dowRes, swapsRes, historyRes] = await Promise.all([
+  const [profRes, attRes, pmRes, holidaysRes, dowRes, swapsRes, historyRes, startRes] = await Promise.all([
     admin
       .from("profiles")
       .select("id, name")
       .in("id", ids.length ? ids : ["00000000-0000-0000-0000-000000000000"]),
-    admin
-      .from("employee_attendance")
-      .select("*")
-      .eq("org_id", ctx.orgId)
-      .order("date", { ascending: false }),
+    allOrgAttendance(admin, ctx.orgId),
     admin.from("project_members").select("user_id").in("user_id", ids.length ? ids : ["00000000-0000-0000-0000-000000000000"]),
     admin.from("org_holidays").select("date, label, applies_to").eq("org_id", ctx.orgId),
     // Weekly off (0047) — separate queries so a missing column/table just
@@ -411,8 +455,19 @@ export async function getAttendanceAdminBoard(): Promise<AttendanceAdminBoard> {
       .eq("org_id", ctx.orgId)
       .order("worked_date", { ascending: false }),
     admin.from("attendance_weekly_off_history").select("user_id, dow, effective_from").eq("org_id", ctx.orgId),
+    // Join date = office auto-leave floor. Separate query: any error = no floor.
+    admin.from("memberships").select("user_id, created_at").eq("org_id", ctx.orgId),
   ]);
   if (attRes.error) throw attRes.error;
+
+  const startById = new Map(
+    startRes.error
+      ? []
+      : ((startRes.data ?? []) as { user_id: string; created_at: string | null }[]).map((r) => [
+          r.user_id,
+          orgDateOf(r.created_at ?? "") || undefined,
+        ])
+  );
 
   const dowById = new Map(
     dowRes.error
@@ -456,6 +511,7 @@ export async function getAttendanceAdminBoard(): Promise<AttendanceAdminBoard> {
         history: toWeekOffHistory(historyRowsById.get(m.user_id) ?? []),
         swaps: swapsById.get(m.user_id) ?? [],
       },
+      startDate: startById.get(m.user_id),
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
   const memberById = new Map(members.map((m) => [m.userId, m]));
