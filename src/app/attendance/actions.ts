@@ -224,11 +224,15 @@ export async function checkInAction(input: CheckInInput): Promise<ActionResult> 
 
   const supabase = await createClient();
 
-  // Project must be visible to the caller; non-super-admins must be on its roster.
-  const { data: project } = await supabase
+  // Look the project up org-scoped with the service role: an unassigned Site
+  // employee can't read projects through RLS (list_org_projects only returns
+  // their roster), yet may check in to any open project. Who may use which
+  // project is decided by the role/roster check below, not by RLS.
+  const { data: project } = await createAdminClient()
     .from("projects")
     .select("name, geofence_lat, geofence_lng, geofence_radius_m")
     .eq("id", input.projectId)
+    .eq("org_id", ctx.orgId)
     .maybeSingle();
   if (!project) return { error: "Project not found." };
 
@@ -400,10 +404,13 @@ export async function checkOutAction(input: CheckOutInput): Promise<ActionResult
   let projectName = "";
   const outsideReason = (input.outsideReason ?? "").trim().slice(0, MAX_OUTSIDE_REASON);
   if (row.project_id) {
-    const { data: project } = await supabase
+    // Service role, org-scoped: same reason as in checkInAction (unassigned
+    // Site staff can't read the project through RLS).
+    const { data: project } = await createAdminClient()
       .from("projects")
       .select("name, geofence_lat, geofence_lng, geofence_radius_m")
       .eq("id", row.project_id)
+      .eq("org_id", ctx.orgId)
       .maybeSingle();
     projectName = (project?.name as string | undefined) ?? "";
     outsideM = outsideSiteDistance(project as GeofenceRow | null, input.lat, input.lng, input.accuracy);

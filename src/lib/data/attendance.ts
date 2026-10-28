@@ -330,11 +330,19 @@ export async function getMyAttendancePage(month?: string): Promise<MyAttendanceD
   // (unassigned is not the same as office).
   const isOffice = isOfficeRaw ?? assignedIds.size === 0;
   const rostered = projects.filter((p) => assignedIds.has(p.id));
-  const assignedProjects = isOffice
-    ? []
-    : rostered.length
-    ? rostered
-    : projects.filter((p) => p.status !== "completed");
+  let assignedProjects = isOffice ? [] : rostered;
+  if (!isOffice && rostered.length === 0) {
+    // list_org_projects() only returns a non-super-admin's roster, so an
+    // unassigned Site employee would see an empty picker. Load the org's open
+    // projects with the service role instead (value hidden — it's admin-only).
+    const { data: openRows } = await createAdminClient()
+      .from("projects")
+      .select("*")
+      .eq("org_id", ctx.orgId)
+      .neq("status", "completed")
+      .order("name");
+    assignedProjects = ((openRows ?? []) as ProjectRow[]).map((r) => ({ ...mapProject(r), value: 0 }));
+  }
   const officeRow = orgRes?.data as { office_lat: number | null; office_lng: number | null; office_radius_m: number | null } | null;
   const holidays = (holidaysRes?.data ?? []).map((h) => ({
     date: (h as { date: string }).date,
