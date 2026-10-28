@@ -9,8 +9,9 @@ import {
   formatDuration,
   formatTime,
   isHolidayFor,
-  isWeeklyOff,
+  missedAbsentReason,
   orgToday,
+  SITE_UNPAID_LEAVE_FROM,
   SUNDAY_OFF,
   type OrgHoliday,
   type WeekOffRule,
@@ -72,15 +73,16 @@ export function HistoryCalendar({
               ? "absent"
               : ev?.creditType === "declared_holiday"
               ? "holiday"
-              : dayStatus(date, Boolean(record), orgToday(), isDeclared, weekOff);
+              : dayStatus(date, Boolean(record), orgToday(), isDeclared, weekOff, evalResult.weekOffDates);
           // A declared holiday on a weekly off reads as Holiday, not Week Off.
-          const isWeekOff = status === "holiday" && !isDeclared && isWeeklyOff(date, weekOff);
+          const isWeekOff = status === "holiday" && !isDeclared && evalResult.weekOffDates.has(date);
           const dayNum = Number(date.slice(-2));
 
           const isHalfDay = ev?.creditType === "explicit_half_day";
           const isUnpaidLeave = ev?.creditType === "leave_unpaid";
-          // Office staff: a missed working day (no record) counts as Leave, not Absent.
+          // Office staff: the month's only missed working day (no record) is paid Leave, not Absent.
           const autoLeave = record ? null : autoLeaveLabel(evalResult, date);
+          const absentReason = record ? null : missedAbsentReason(evalResult, date);
 
           return (
             <button
@@ -88,24 +90,21 @@ export function HistoryCalendar({
               type="button"
               disabled={!record}
               onClick={() => record && setSelected(record)}
-              title={ev?.reason || autoLeave?.reason || (isWeekOff ? "Week Off" : undefined)}
+              title={ev?.reason || autoLeave?.reason || absentReason || (isWeekOff ? "Week Off" : undefined)}
               className={cn(
                 "relative flex aspect-square flex-col items-center justify-center gap-0.5 rounded-lg text-sm tabular-nums transition-colors",
                 status === "present" && !isHalfDay && !isUnpaidLeave && "bg-success/15 font-medium text-success hover:bg-success/25",
                 status === "present" && isHalfDay && "bg-orange-500/25 font-bold text-orange-900 dark:text-orange-300 hover:bg-orange-500/35 border border-orange-400/40",
                 status === "present" && isUnpaidLeave && "bg-slate-500/20 font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-500/30 border border-slate-400/40",
                 status === "absent" && !autoLeave && "bg-destructive/10 text-destructive",
-                autoLeave?.glyph === "LV" && "bg-blue-500/20 font-medium text-blue-700 dark:text-blue-300",
-                autoLeave?.glyph === "LU" && "bg-slate-500/20 font-bold text-slate-700 dark:text-slate-300 border border-slate-400/40",
+                autoLeave && "bg-blue-500/20 font-medium text-blue-700 dark:text-blue-300",
                 status === "holiday" && "bg-muted text-muted-foreground",
                 status === "future" && "text-muted-foreground/50"
               )}
             >
               <span>{dayNum}</span>
               {isWeekOff && <span className="text-[9px] font-semibold leading-none">Week Off</span>}
-              {autoLeave && (
-                <span className="text-[9px] font-semibold leading-none">{autoLeave.glyph === "LU" ? "LU (0)" : "LV"}</span>
-              )}
+              {autoLeave && <span className="text-[9px] font-semibold leading-none">LV</span>}
               {ev && record && status !== "holiday" && (
                 <span className="text-[9px] font-semibold leading-none">
                   {isHalfDay ? "HD (0.5)" : isUnpaidLeave ? "LU (0)" : record.totalMinutes > 0 ? formatDuration(record.totalMinutes) : "P"}
@@ -123,7 +122,7 @@ export function HistoryCalendar({
         <span className="inline-flex items-center gap-1.5">
           <span className="h-2.5 w-2.5 rounded-full bg-orange-600" /> Half Day (manual, 0.5d)
         </span>
-        {isOffice && (
+        {isOffice ? (
           <>
             <span className="inline-flex items-center gap-1.5">
               <span className="h-2.5 w-2.5 rounded-full bg-blue-500/70" /> Leave (incl. missed day)
@@ -132,7 +131,12 @@ export function HistoryCalendar({
               <span className="h-2.5 w-2.5 rounded-full bg-slate-500" /> Leave (Unpaid, 2nd+ day off/mo)
             </span>
           </>
-        )}
+        ) : month >= SITE_UNPAID_LEAVE_FROM.slice(0, 7) ? (
+          // Site staff have no paid leave from SITE_UNPAID_LEAVE_FROM; earlier months keep the old legend.
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-2.5 w-2.5 rounded-full bg-slate-500" /> Leave (Unpaid — no paid leave)
+          </span>
+        ) : null}
         <span className="inline-flex items-center gap-1.5">
           <span className="h-2.5 w-2.5 rounded-full bg-destructive/60" /> Absent
         </span>

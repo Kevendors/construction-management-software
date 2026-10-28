@@ -4,7 +4,13 @@ import { getAuthContext } from "@/lib/auth/context";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { logActivity } from "@/lib/activity/log";
-import { toWeekOffHistory, validateWeekOffSwap, type OrgHoliday, type WeekOffRule } from "@/lib/attendance/compute";
+import {
+  toWeekOffHistory,
+  toWeekOffKind,
+  validateWeekOffSwap,
+  type OrgHoliday,
+  type WeekOffRule,
+} from "@/lib/attendance/compute";
 
 export interface ActionResult {
   id?: string;
@@ -49,20 +55,36 @@ export async function createWeekOffSwapAction(input: WeekOffSwapInput): Promise<
   if (memErr) return { error: isMigrationPending(memErr.code) ? PENDING : memErr.message };
   if (!member) return { error: "That member isn't in your organization." };
 
-  const [swapsRes, holidaysRes, historyRes] = await Promise.all([
+  const [swapsRes, holidaysRes, historyRes, kindRes, historyKindRes] = await Promise.all([
     admin.from(TABLE).select("worked_date, off_date").eq("user_id", input.userId),
     admin.from("org_holidays").select("date, label, applies_to").eq("org_id", ctx.orgId),
     admin.from("attendance_weekly_off_history").select("dow, effective_from").eq("user_id", input.userId),
+    // Weekly-off kind / anchor (0049) — own queries: missing columns = "fixed".
+    admin
+      .from("memberships")
+      .select("weekly_off_kind, weekly_off_anchor")
+      .eq("org_id", ctx.orgId)
+      .eq("user_id", input.userId)
+      .maybeSingle(),
+    admin.from("attendance_weekly_off_history").select("effective_from, kind, anchor").eq("user_id", input.userId),
   ]);
   if (swapsRes.error) return { error: isMigrationPending(swapsRes.error.code) ? PENDING : swapsRes.error.message };
   if (holidaysRes.error) return { error: holidaysRes.error.message };
   if (historyRes.error && !isMigrationPending(historyRes.error.code)) return { error: historyRes.error.message };
 
+  const kind = kindRes.error ? null : (kindRes.data as { weekly_off_kind: string | null; weekly_off_anchor: string | null } | null);
   const rule: WeekOffRule = {
     defaultDow: (member.weekly_off_dow as number | null) ?? 0,
+    kind: toWeekOffKind(kind?.weekly_off_kind),
+    anchor: kind?.weekly_off_anchor ?? undefined,
     history: historyRes.error
       ? []
-      : toWeekOffHistory((historyRes.data ?? []) as { dow: number; effective_from: string }[]),
+      : toWeekOffHistory(
+          (historyRes.data ?? []) as { dow: number; effective_from: string }[],
+          historyKindRes.error
+            ? []
+            : ((historyKindRes.data ?? []) as { effective_from: string; kind: string | null; anchor: string | null }[])
+        ),
     swaps: ((swapsRes.data ?? []) as { worked_date: string; off_date: string }[]).map((s) => ({
       workedDate: s.worked_date,
       offDate: s.off_date,

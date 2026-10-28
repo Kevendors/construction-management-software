@@ -11,6 +11,7 @@ import {
   orgToday,
   SUNDAY_OFF,
   toWeekOffHistory,
+  toWeekOffKind,
   type AttendanceAdminBoard,
   type AttendanceMember,
   type MyAttendanceData,
@@ -135,27 +136,41 @@ async function myIsOffice(
 
 type SwapRow = { user_id: string; worked_date: string; off_date: string };
 type HistoryRow = { dow: number; effective_from: string };
+/** 0049 columns, read in their own queries — missing = everyone "fixed". */
+type HistoryKindRow = { effective_from: string; kind: string | null; anchor: string | null };
+type KindRow = { weekly_off_kind: string | null; weekly_off_anchor: string | null };
 const toSwap = (r: SwapRow) => ({ workedDate: r.worked_date, offDate: r.off_date });
 
 /**
  * The caller's weekly off rule (0047): default day from memberships plus
  * their own swaps (RLS lets an employee read their own). Separate queries so
  * a missing column/table (0047 unapplied — 42703 / PGRST204 / PGRST205) just
- * falls back to SUNDAY_OFF instead of breaking the page.
+ * falls back to SUNDAY_OFF instead of breaking the page. The 0049 kind /
+ * anchor columns likewise: missing = "fixed".
  */
 async function myWeekOff(
   supabase: Awaited<ReturnType<typeof createSupabase>>,
   userId: string
 ): Promise<WeekOffRule> {
-  const [dowRes, swapsRes, historyRes] = await Promise.all([
+  const [dowRes, swapsRes, historyRes, kindRes, historyKindRes] = await Promise.all([
     supabase.from("memberships").select("weekly_off_dow").eq("user_id", userId).limit(1).maybeSingle(),
     supabase.from("attendance_week_off_swaps").select("user_id, worked_date, off_date").eq("user_id", userId),
     supabase.from("attendance_weekly_off_history").select("dow, effective_from").eq("user_id", userId),
+    supabase.from("memberships").select("weekly_off_kind, weekly_off_anchor").eq("user_id", userId).limit(1).maybeSingle(),
+    supabase.from("attendance_weekly_off_history").select("effective_from, kind, anchor").eq("user_id", userId),
   ]);
   const dow = dowRes.error ? null : (dowRes.data?.weekly_off_dow as number | null | undefined);
+  const kind = kindRes.error ? null : (kindRes.data as KindRow | null);
   return {
     defaultDow: typeof dow === "number" ? dow : SUNDAY_OFF.defaultDow,
-    history: historyRes.error ? [] : toWeekOffHistory((historyRes.data ?? []) as HistoryRow[]),
+    kind: toWeekOffKind(kind?.weekly_off_kind),
+    anchor: kind?.weekly_off_anchor ?? undefined,
+    history: historyRes.error
+      ? []
+      : toWeekOffHistory(
+          (historyRes.data ?? []) as HistoryRow[],
+          historyKindRes.error ? [] : ((historyKindRes.data ?? []) as HistoryKindRow[])
+        ),
     swaps: swapsRes.error ? [] : ((swapsRes.data ?? []) as SwapRow[]).map(toSwap),
   };
 }
@@ -438,7 +453,7 @@ export async function getAttendanceAdminBoard(): Promise<AttendanceAdminBoard> {
   memRows = memRows.filter((m) => m.is_active ?? true);
 
   const ids = memRows.map((m) => m.user_id);
-  const [profRes, attRes, pmRes, holidaysRes, dowRes, swapsRes, historyRes, startRes] = await Promise.all([
+  const [profRes, attRes, pmRes, holidaysRes, dowRes, swapsRes, historyRes, startRes, kindRes, historyKindRes] = await Promise.all([
     admin
       .from("profiles")
       .select("id, name")
@@ -457,6 +472,9 @@ export async function getAttendanceAdminBoard(): Promise<AttendanceAdminBoard> {
     admin.from("attendance_weekly_off_history").select("user_id, dow, effective_from").eq("org_id", ctx.orgId),
     // Join date = office auto-leave floor. Separate query: any error = no floor.
     admin.from("memberships").select("user_id, created_at").eq("org_id", ctx.orgId),
+    // Weekly-off kind / anchor (0049) — own queries: missing columns = everyone "fixed".
+    admin.from("memberships").select("user_id, weekly_off_kind, weekly_off_anchor").eq("org_id", ctx.orgId),
+    admin.from("attendance_weekly_off_history").select("user_id, effective_from, kind, anchor").eq("org_id", ctx.orgId),
   ]);
   if (attRes.error) throw attRes.error;
 
@@ -479,6 +497,15 @@ export async function getAttendanceAdminBoard(): Promise<AttendanceAdminBoard> {
   if (!historyRes.error) {
     for (const r of (historyRes.data ?? []) as (HistoryRow & { user_id: string })[]) {
       historyRowsById.set(r.user_id, [...(historyRowsById.get(r.user_id) ?? []), r]);
+    }
+  }
+  const kindById = new Map(
+    kindRes.error ? [] : ((kindRes.data ?? []) as (KindRow & { user_id: string })[]).map((r) => [r.user_id, r])
+  );
+  const historyKindsById = new Map<string, HistoryKindRow[]>();
+  if (!historyKindRes.error) {
+    for (const r of (historyKindRes.data ?? []) as (HistoryKindRow & { user_id: string })[]) {
+      historyKindsById.set(r.user_id, [...(historyKindsById.get(r.user_id) ?? []), r]);
     }
   }
   const weekOffSwaps: WeekOffSwap[] = swapsRes.error
@@ -508,7 +535,9 @@ export async function getAttendanceAdminBoard(): Promise<AttendanceAdminBoard> {
       isOffice: hasIsOfficeColumn ? m.is_office ?? true : !rosterUserIds.has(m.user_id),
       weekOff: {
         defaultDow: dowById.get(m.user_id) ?? SUNDAY_OFF.defaultDow,
-        history: toWeekOffHistory(historyRowsById.get(m.user_id) ?? []),
+        kind: toWeekOffKind(kindById.get(m.user_id)?.weekly_off_kind),
+        anchor: kindById.get(m.user_id)?.weekly_off_anchor ?? undefined,
+        history: toWeekOffHistory(historyRowsById.get(m.user_id) ?? [], historyKindsById.get(m.user_id) ?? []),
         swaps: swapsById.get(m.user_id) ?? [],
       },
       startDate: startById.get(m.user_id),

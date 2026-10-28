@@ -194,6 +194,31 @@ export function isHolidayFor(date: string, holidays: OrgHoliday[], isOffice: boo
 }
 
 /**
+ * How an employee's weekly offs are decided (0049):
+ * - "fixed": one weekday every week (`dow`; Sunday unless changed).
+ * - "alternate_sunday": every other Sunday — `anchor` is one off Sunday; a
+ *   Sunday an even number of weeks from it (either direction) is off, the
+ *   other Sundays are working days.
+ * - "flexible": no fixed off days — the employee may skip as many days as
+ *   the month has Sundays; the first that many missed days (no record) are
+ *   weekly offs. Resolved per month, see weekOffDatesForMonth.
+ */
+export type WeekOffKind = "fixed" | "alternate_sunday" | "flexible";
+export const WEEK_OFF_KINDS: WeekOffKind[] = ["fixed", "alternate_sunday", "flexible"];
+
+/** Normalises a DB value (missing column / null / junk) to a kind — anything unknown is "fixed". */
+export function toWeekOffKind(v: unknown): WeekOffKind {
+  return WEEK_OFF_KINDS.includes(v as WeekOffKind) ? (v as WeekOffKind) : "fixed";
+}
+
+/** The weekly-off pattern in force on one date (kind + its weekday / anchor). */
+export interface WeekOffPattern {
+  kind: WeekOffKind;
+  dow: number;
+  anchor?: string;
+}
+
+/**
  * An employee's weekly off: a default day of the week (Team page, Sunday
  * unless changed) plus Admin/HR-recorded swaps — "works `workedDate` (a
  * default off day), takes `offDate` off instead", same week (±6 days).
@@ -201,13 +226,17 @@ export function isHolidayFor(date: string, holidays: OrgHoliday[], isOffice: boo
  */
 export interface WeekOffRule {
   defaultDow: number; // 0 = Sunday … 6 = Saturday (JS getDay()) — the current default
+  /** The current kind (0049) — absent = "fixed". */
+  kind?: WeekOffKind;
+  /** alternate_sunday: one off Sunday ("YYYY-MM-DD"). */
+  anchor?: string;
   /**
    * Changes to the default (attendance_weekly_off_history), sorted by `from`
-   * ("YYYY-MM-DD"). A date uses the latest entry with from <= date (Sunday if
-   * none), so changing the default never rewrites history. Absent/empty =
-   * `defaultDow` applies to every date (never changed).
+   * ("YYYY-MM-DD"). A date uses the latest entry with from <= date (fixed
+   * Sunday if none), so changing the default never rewrites history.
+   * Absent/empty = the top-level fields apply to every date (never changed).
    */
-  history?: { dow: number; from: string }[];
+  history?: { dow: number; from: string; kind?: WeekOffKind; anchor?: string }[];
   swaps: { workedDate: string; offDate: string }[];
 }
 
@@ -220,27 +249,103 @@ function dowOf(date: string): number {
   return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
 }
 
-/** The default weekly-off weekday in force on `date` (before any swaps). */
-export function defaultDowOn(rule: WeekOffRule, date: string): number {
-  if (!rule.history?.length) return rule.defaultDow;
-  let dow = 0; // no entry at or before `date` → the pre-0047 Sunday
+/** True when a "YYYY-MM-DD" date is a Sunday. */
+export function isSunday(date: string): boolean {
+  return ISO_DATE.test(date) && dowOf(date) === 0;
+}
+
+/** The weekly-off pattern in force on `date` (before any swaps). */
+export function weekOffPatternOn(rule: WeekOffRule, date: string): WeekOffPattern {
+  if (!rule.history?.length) return { kind: rule.kind ?? "fixed", dow: rule.defaultDow, anchor: rule.anchor };
+  let pattern: WeekOffPattern = { kind: "fixed", dow: 0 }; // no entry at or before `date` → the pre-0047 Sunday
   for (const h of rule.history) {
-    if (h.from <= date) dow = h.dow;
+    if (h.from <= date) pattern = { kind: h.kind ?? "fixed", dow: h.dow, anchor: h.anchor };
     else break; // sorted by `from`
   }
-  return dow;
+  return pattern;
 }
 
-/** True when `date` is a weekly off under `rule` (a swap's off day, or the default day not swapped away). */
+/** The default weekly-off weekday in force on `date` (before any swaps). */
+export function defaultDowOn(rule: WeekOffRule, date: string): number {
+  return weekOffPatternOn(rule, date).dow;
+}
+
+/** Whether `date` is off under one pattern, ignoring swaps. Flexible is never off here (month-level, see weekOffDatesForMonth). */
+function isOffUnderPattern(date: string, p: WeekOffPattern): boolean {
+  if (p.kind === "flexible") return false;
+  if (p.kind === "alternate_sunday") {
+    if (dowOf(date) !== 0) return false;
+    if (!p.anchor) return true; // no anchor recorded — every Sunday, the safe default
+    const weeks = Math.floor(daysBetween(p.anchor, date) / 7);
+    return ((weeks % 2) + 2) % 2 === 0;
+  }
+  return dowOf(date) === p.dow;
+}
+
+/**
+ * True when `date` is a weekly off under `rule` (a swap's off day, or the
+ * default day not swapped away). Always false on a "flexible" day — those
+ * offs depend on the month's records; use weekOffDatesForMonth.
+ */
 export function isWeeklyOff(date: string, rule: WeekOffRule = SUNDAY_OFF): boolean {
   if (rule.swaps.some((s) => s.offDate === date)) return true;
-  return dowOf(date) === defaultDowOn(rule, date) && !rule.swaps.some((s) => s.workedDate === date);
+  return isOffUnderPattern(date, weekOffPatternOn(rule, date)) && !rule.swaps.some((s) => s.workedDate === date);
 }
 
-/** Sorts history rows (any order) into WeekOffRule["history"]. */
-export function toWeekOffHistory(rows: { dow: number; effective_from: string }[]): { dow: number; from: string }[] {
+/**
+ * Every weekly-off date in `month` for one member. Fixed / alternate days
+ * come from isWeeklyOff. On days where "flexible" is in force, the first N
+ * missed days in date order are weekly offs, N = Sundays in the month; a
+ * missed day is before `today`, has no record, isn't a declared holiday for
+ * the member and is on/after `startDate` when given. Missed days beyond N
+ * stay working days (Absent). Days with any row never use up the allowance.
+ */
+export function weekOffDatesForMonth(
+  month: string,
+  rule: WeekOffRule,
+  records: EmployeeAttendance[],
+  holidays: OrgHoliday[],
+  isOffice: boolean,
+  today: string = orgToday(),
+  startDate?: string
+): Set<string> {
+  const days = daysOfMonth(month);
+  const recorded = new Set(records.filter((r) => r.date.startsWith(month)).map((r) => r.date));
+  let allowance = days.filter((d) => dowOf(d) === 0).length;
+  const out = new Set<string>();
+  for (const d of days) {
+    if (isWeeklyOff(d, rule)) {
+      out.add(d);
+      continue;
+    }
+    if (allowance <= 0 || weekOffPatternOn(rule, d).kind !== "flexible") continue;
+    if (d < today && !recorded.has(d) && !isHolidayFor(d, holidays, isOffice) && (!startDate || d >= startDate)) {
+      out.add(d);
+      allowance -= 1;
+    }
+  }
+  return out;
+}
+
+/**
+ * Sorts history rows (any order) into WeekOffRule["history"]. `kinds` are the
+ * 0049 kind/anchor columns, read separately so a missing column only drops
+ * them (every entry is then "fixed") instead of the whole history.
+ */
+export function toWeekOffHistory(
+  rows: { dow: number; effective_from: string }[],
+  kinds: { effective_from: string; kind?: string | null; anchor?: string | null }[] = []
+): NonNullable<WeekOffRule["history"]> {
+  const kindByFrom = new Map(kinds.map((k) => [k.effective_from, k]));
   return rows
-    .map((r) => ({ dow: r.dow, from: r.effective_from }))
+    .map((r) => {
+      const k = kindByFrom.get(r.effective_from);
+      return {
+        dow: r.dow,
+        from: r.effective_from,
+        ...(k ? { kind: toWeekOffKind(k.kind), ...(k.anchor ? { anchor: k.anchor } : {}) } : {}),
+      };
+    })
     .sort((a, b) => a.from.localeCompare(b.from));
 }
 
@@ -266,6 +371,9 @@ function daysBetween(a: string, b: string): number {
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
+/** Swaps only make sense for fixed / alternate-Sunday offs. */
+export const FLEXIBLE_SWAP_ERROR = "Flexible staff choose their own days off — no swap needed.";
+
 /**
  * Checks a proposed swap (work `workedDate`, take `offDate` off) against the
  * employee's current rule. Returns an error message, or null when valid.
@@ -280,6 +388,9 @@ export function validateWeekOffSwap(
   isOffice: boolean
 ): string | null {
   if (!ISO_DATE.test(workedDate) || !ISO_DATE.test(offDate)) return "Enter valid dates.";
+  if (weekOffPatternOn(rule, workedDate).kind === "flexible" || weekOffPatternOn(rule, offDate).kind === "flexible") {
+    return FLEXIBLE_SWAP_ERROR;
+  }
   if (workedDate === offDate) return "The replacement off day must be a different day.";
   if (Math.abs(daysBetween(workedDate, offDate)) > 6) {
     return "The replacement off day must be within 6 days of the worked day (same week).";
@@ -300,17 +411,20 @@ export function validateWeekOffSwap(
  * holidays; `isExtraHoliday` additionally marks admin-declared holidays
  * (already filtered to whether they apply to this employee — see
  * isHolidayFor). A past working day without a record is absent; today/future
- * without a record is not counted either way.
+ * without a record is not counted either way. Pass `weekOffDates` (the
+ * month's weekOffDatesForMonth / evaluation.weekOffDates) so flexible offs
+ * count; without it only isWeeklyOff decides.
  */
 export function dayStatus(
   date: string,
   hasRecord: boolean,
   today: string = orgToday(),
   isExtraHoliday: boolean = false,
-  rule: WeekOffRule = SUNDAY_OFF
+  rule: WeekOffRule = SUNDAY_OFF,
+  weekOffDates?: ReadonlySet<string>
 ): DayStatus {
   if (hasRecord) return "present";
-  if (isWeeklyOff(date, rule) || isExtraHoliday) return "holiday";
+  if ((weekOffDates ? weekOffDates.has(date) : isWeeklyOff(date, rule)) || isExtraHoliday) return "holiday";
   return date < today ? "absent" : "future";
 }
 
@@ -318,7 +432,7 @@ export type ShiftCreditType =
   | "on_time"           // Any real check-in -> 1.0 day credit, no flag regardless of time
   | "manual_present"    // Admin marked without check_in_at -> 1.0 day credit
   | "leave"             // Admin explicitly marked Leave, within the paid allowance -> 1.0 day credit (paid)
-  | "leave_unpaid"      // Office staff only: 2nd+ Leave this month -> 0 day credit, and retroactively so does the 1st
+  | "leave_unpaid"      // Office: 2nd+ day off this month -> 0 day credit, and retroactively so does the 1st. Site (from SITE_UNPAID_LEAVE_FROM): every Leave -> 0
   | "explicit_half_day" // Admin explicitly marked Half-Day -> 0.5 day credit
   | "explicit_absent"   // Admin explicitly marked Absent -> 0 day credit
   | "declared_holiday"; // Any non-present status landing on a declared company holiday -> shown as Holiday, not Leave/Half-Day/Absent; 1.0 day credit (paid), same as a day actually worked
@@ -339,19 +453,22 @@ export interface MonthlyAttendanceEvaluation {
   totalDaysAttended: number; // raw record count
   fullDays: number;          // count of 1.0 day credits
   halfDays: number;          // count of 0.5 day credits
-  unpaidLeave: number;       // count of Leave days converted to unpaid (office staff, 2nd+ day off this month) — incl. unpaid auto-leave days
+  unpaidLeave: number;       // count of explicit Leave rows that are unpaid (office 2nd+ day off; any site Leave from SITE_UNPAID_LEAVE_FROM). Unpaid missed days are Absent, not counted here
   effectivePaidDays: number; // fullDays + 0.5 * halfDays
   /**
    * Office staff only (empty for Site): past working days with no record at
    * all — not a weekly off, not a declared holiday, before `today` — which
-   * count as Leave automatically instead of Absent. Paid when they're the
-   * month's only day off, otherwise unpaid (see `autoLeavePaid`).
+   * count toward the office days-off rule. Paid Leave when it's the month's
+   * only day off; otherwise (2+ days off) they're Absent (unpaid) — see
+   * `autoLeavePaid`.
    */
   autoLeaveDates: string[];
-  /** Whether the `autoLeaveDates` are paid (1 day off in the month) or unpaid (2+). Meaningless when there are none. */
+  /** Whether the `autoLeaveDates` are paid Leave (1 day off in the month) or Absent (2+). Meaningless when there are none. */
   autoLeavePaid: boolean;
   /** Office staff: days off counted toward the 1-paid-Leave rule (explicit Leave + auto-leave + Absent marks). 0 for Site. */
   daysOffCount: number;
+  /** Every weekly-off date of the month (weekOffDatesForMonth) — incl. flexible offs, which isWeeklyOff alone can't see. */
+  weekOffDates: Set<string>;
 }
 
 /**
@@ -361,6 +478,9 @@ export interface MonthlyAttendanceEvaluation {
  * counts toward the 2nd-Leave-makes-both-unpaid trigger.
  */
 export const OFFICE_AUTO_LEAVE_FROM = "2026-10-01";
+
+/** Site staff have no paid leave from this date: an explicit Leave is unpaid. Earlier Site Leave stays paid. */
+export const SITE_UNPAID_LEAVE_FROM = "2026-10-01";
 
 const DECLARED_STATUS_LABEL: Record<string, string> = { leave: "Leave", half_day: "Half Day", absent: "Absent" };
 function badgeLabelFor(status: string): string {
@@ -384,8 +504,13 @@ function badgeLabelFor(status: string): string {
  * the whole month is re-evaluated as a unit rather than deciding each Leave
  * record in isolation as it's reached. Absent marks stay Absent (never
  * Leave) but still count toward that 2nd day. Leave/Absent marks on a
- * weekly off or a declared holiday never count. Site staff are unaffected:
- * a missed day stays Absent and explicit Leave is always paid.
+ * weekly off or a declared holiday never count. When the days are unpaid
+ * (2+ days off), the missed days are Absent, not Leave (same 0 credit).
+ * Site staff: a missed day stays Absent, and from SITE_UNPAID_LEAVE_FROM an
+ * explicit Leave is unpaid (no paid leave); before it Leave stays paid.
+ *
+ * Weekly offs come from weekOffDatesForMonth (so a flexible member's first N
+ * missed days are offs, never missed days); pay treats them like Sundays.
  *
  * All of that only applies on/after OFFICE_AUTO_LEAVE_FROM, and missed days
  * also only from `startDate` (the member's join date, IST) when given —
@@ -415,15 +540,16 @@ export function evaluateEmployeeMonthAttendance(
     .filter((r) => r.date.startsWith(month))
     .sort((a, b) => a.date.localeCompare(b.date) || a.checkInAt.localeCompare(b.checkInAt));
 
+  const weekOffDates = weekOffDatesForMonth(month, rule, records, holidays, isOffice, today, startDate);
   const isDeclaredHolidayRecord = (r: EmployeeAttendance) =>
     r.status !== "present" && isHolidayFor(r.date, holidays, isOffice);
   // Which explicit marks count toward the 1-paid-Leave rule. Before
   // OFFICE_AUTO_LEAVE_FROM: Leave only (the old rule). From it: Leave and
   // Absent, but not on a weekly off. Never on a declared holiday.
   const countsAsLeaveDayOff = (r: EmployeeAttendance) =>
-    r.status === "leave" && !isDeclaredHolidayRecord(r) && (r.date < OFFICE_AUTO_LEAVE_FROM || !isWeeklyOff(r.date, rule));
+    r.status === "leave" && !isDeclaredHolidayRecord(r) && (r.date < OFFICE_AUTO_LEAVE_FROM || !weekOffDates.has(r.date));
   const countsAsAbsentDayOff = (r: EmployeeAttendance) =>
-    r.status === "absent" && r.date >= OFFICE_AUTO_LEAVE_FROM && !isDeclaredHolidayRecord(r) && !isWeeklyOff(r.date, rule);
+    r.status === "absent" && r.date >= OFFICE_AUTO_LEAVE_FROM && !isDeclaredHolidayRecord(r) && !weekOffDates.has(r.date);
   const totalLeaveCount = monthRecords.filter(countsAsLeaveDayOff).length;
   const recordedDates = new Set(monthRecords.map((r) => r.date));
   // Office only: past working days nobody recorded anything for, from the
@@ -435,7 +561,7 @@ export function evaluateEmployeeMonthAttendance(
           (!startDate || d >= startDate) &&
           d < today &&
           !recordedDates.has(d) &&
-          !isWeeklyOff(d, rule) &&
+          !weekOffDates.has(d) &&
           !isHolidayFor(d, holidays, isOffice)
       )
     : [];
@@ -468,7 +594,14 @@ export function evaluateEmployeeMonthAttendance(
       glyph = "";
       reason = `Falls on a declared company holiday${r.note ? ` — ${r.note}` : ""} — recorded as Holiday (paid), not ${badgeLabelFor(r.status)}.`;
     } else if (r.status === "leave") {
-      if (leavesAreUnpaid) {
+      if (!isOffice && r.date >= SITE_UNPAID_LEAVE_FROM) {
+        creditType = "leave_unpaid";
+        dayCredit = 0;
+        unpaidLeave += 1;
+        badgeLabel = "Leave (Unpaid)";
+        glyph = "LU";
+        reason = `Site staff have no paid leave — recorded as unpaid Leave.${r.note ? ` ${r.note}` : ""}`;
+      } else if (leavesAreUnpaid) {
         creditType = "leave_unpaid";
         dayCredit = 0;
         unpaidLeave += 1;
@@ -540,10 +673,9 @@ export function evaluateEmployeeMonthAttendance(
   }
 
   // Auto-leave days have no row, so they're credited here: paid like an
-  // explicit Leave when they're the month's only day off, else unpaid.
+  // explicit Leave when they're the month's only day off, else Absent (0).
   const autoLeavePaid = !leavesAreUnpaid;
   if (autoLeavePaid) fullDays += autoLeaveDates.length;
-  else unpaidLeave += autoLeaveDates.length;
 
   const effectivePaidDays = fullDays + halfDays * 0.5;
 
@@ -558,6 +690,7 @@ export function evaluateEmployeeMonthAttendance(
     autoLeaveDates,
     autoLeavePaid,
     daysOffCount,
+    weekOffDates,
   };
 }
 
@@ -566,22 +699,23 @@ function autoLeaveUnpaidReason(daysOff: number): string {
 }
 
 /**
- * How the UI shows a no-record day: Leave / Leave (Unpaid) when it's one of
- * the evaluation's auto-leave days (office staff), else null — fall back to
- * the usual Absent / Holiday / Week Off rendering.
+ * How the UI shows a no-record day: paid Leave when it's the evaluation's
+ * (office) auto-leave day and the month's only day off, else null — fall back
+ * to the usual Absent / Holiday / Week Off rendering. Unpaid missed days
+ * (2+ days off) are plain Absent; see missedAbsentReason for their tooltip.
  */
 export function autoLeaveLabel(
   evaluation: MonthlyAttendanceEvaluation,
   date: string
-): { label: "Leave" | "Leave (Unpaid)"; glyph: "LV" | "LU"; reason: string } | null {
-  if (!evaluation.autoLeaveDates.includes(date)) return null;
-  return evaluation.autoLeavePaid
-    ? { label: "Leave", glyph: "LV", reason: "No attendance recorded — counted as Leave automatically (office staff get 1 paid Leave per month)." }
-    : {
-        label: "Leave (Unpaid)",
-        glyph: "LU",
-        reason: `No attendance recorded — counted as Leave automatically. ${autoLeaveUnpaidReason(evaluation.daysOffCount)}`,
-      };
+): { label: "Leave"; glyph: "LV"; reason: string } | null {
+  if (!evaluation.autoLeavePaid || !evaluation.autoLeaveDates.includes(date)) return null;
+  return { label: "Leave", glyph: "LV", reason: "No attendance recorded — counted as Leave automatically (office staff get 1 paid Leave per month)." };
+}
+
+/** Office staff: why a missed working day is Absent (2+ days off this month) — null for any other day. */
+export function missedAbsentReason(evaluation: MonthlyAttendanceEvaluation, date: string): string | null {
+  if (evaluation.autoLeavePaid || !evaluation.autoLeaveDates.includes(date)) return null;
+  return `No attendance recorded — Absent. Office staff get 1 paid Leave per month — ${evaluation.daysOffCount} days off this month (incl. missed days / Absent), so missed days are Absent and all Leave is unpaid.`;
 }
 
 export interface MonthlySummary {
@@ -589,8 +723,8 @@ export interface MonthlySummary {
   halfDay: number;           // Half days (0.5 credits) — explicit admin-marked Half-Day only
   effectivePaidDays: number; // present + 0.5 * halfDay
   leave: number;             // Paid Leave days (also counted in `present`'s paid-day weight)
-  unpaidLeave: number;       // Office staff only: Leave + auto-leave days converted to unpaid (2nd+ day off in the month)
-  absent: number;            // No-record days (Site staff only — office ones are auto-leave) + explicit Absent days
+  unpaidLeave: number;       // Unpaid explicit Leave (office 2nd+ day off in the month; site Leave from SITE_UNPAID_LEAVE_FROM)
+  absent: number;            // No-record working days (except an office member's paid auto-leave day) + explicit Absent days
   holiday: number;           // Declared company holidays only
   weekOff: number;           // Weekly off days (default day or swapped-in off day) not worked
 }
@@ -622,7 +756,7 @@ export function monthlySummary(
     evalResult.evaluatedRecords.filter((e) => e.creditType === "declared_holiday").map((e) => e.record.date)
   );
   const autoLeaveDates = new Set(evalResult.autoLeaveDates);
-  // Paid auto-leave days count as Leave; unpaid ones are already in evalResult.unpaidLeave.
+  // Paid auto-leave days count as Leave; unpaid ones are Absent (counted in the loop).
   const leave =
     evalResult.evaluatedRecords.filter((e) => e.creditType === "leave").length +
     (evalResult.autoLeavePaid ? autoLeaveDates.size : 0);
@@ -640,9 +774,9 @@ export function monthlySummary(
       holiday += 1;
       continue;
     }
-    if (autoLeaveDates.has(date)) continue; // office missed day: Leave, not Absent (counted above)
+    if (evalResult.autoLeavePaid && autoLeaveDates.has(date)) continue; // office's only missed day: paid Leave (counted above)
     const isDeclared = isHolidayFor(date, holidays, isOffice);
-    const status = dayStatus(date, recorded.has(date), today, isDeclared, rule);
+    const status = dayStatus(date, recorded.has(date), today, isDeclared, rule, evalResult.weekOffDates);
     if (status === "absent") absent += 1;
     // A declared holiday that also lands on a weekly off counts once, as Holiday.
     else if (status === "holiday") {

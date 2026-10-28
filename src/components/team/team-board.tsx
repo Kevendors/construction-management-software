@@ -26,10 +26,10 @@ import {
   setMemberOfficeAction,
   setMemberPoAccessAction,
   setMemberRoleAction,
-  setWeeklyOffDayAction,
+  setWeeklyOffPatternAction,
   updateMemberPhoneAction,
 } from "@/app/team/actions";
-import { weekOffUiEnabled } from "@/lib/attendance/compute";
+import { isSunday, orgToday, weekOffUiEnabled, type WeekOffKind } from "@/lib/attendance/compute";
 import { roleLabel } from "@/lib/labels";
 import type { Role } from "@/lib/types";
 
@@ -47,9 +47,55 @@ export interface TeamMember {
   isOffice: boolean;
   /** Default weekly off day, 0 = Sunday … 6 = Saturday (0047; Sunday until applied). */
   weeklyOffDow: number;
+  /** Weekly-off type (0049; "fixed" until applied). */
+  weeklyOffKind: WeekOffKind;
+  /** alternate_sunday: one off Sunday ("YYYY-MM-DD"), else "". */
+  weeklyOffAnchor: string;
 }
 
 const WEEKDAYS_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+/** The Team page's "Type" choices — "sunday" and "other" are both kind "fixed". */
+type WeekOffChoice = "sunday" | "alternate" | "flexible" | "other";
+
+function weekOffChoiceOf(m: TeamMember): WeekOffChoice {
+  if (m.weeklyOffKind === "alternate_sunday") return "alternate";
+  if (m.weeklyOffKind === "flexible") return "flexible";
+  return m.weeklyOffDow === 0 ? "sunday" : "other";
+}
+
+/** Short read-only label for a member's weekly off ("" = the default, every Sunday). */
+function weekOffSummary(m: TeamMember): string {
+  if (m.weeklyOffKind === "alternate_sunday") return "Alt. Sundays";
+  if (m.weeklyOffKind === "flexible") return "Flexible";
+  return m.weeklyOffDow === 0 ? "" : WEEKDAYS_SHORT[m.weeklyOffDow];
+}
+
+/**
+ * Off-Sunday choices for alternate Sundays: the previous 4 and next 8
+ * Sundays around today (org-local), plus `current` when it's outside that range.
+ */
+function sundayOptions(current: string): { value: string; label: string }[] {
+  const [y, mo, d] = orgToday().split("-").map(Number);
+  const start = new Date(Date.UTC(y, mo - 1, d));
+  start.setUTCDate(start.getUTCDate() - start.getUTCDay() - 4 * 7); // 4 Sundays before this week's
+  const values = Array.from({ length: 13 }, (_, i) => {
+    const s = new Date(start);
+    s.setUTCDate(s.getUTCDate() + i * 7);
+    return s.toISOString().slice(0, 10);
+  });
+  if (current && isSunday(current) && !values.includes(current)) values.push(current);
+  return values.sort().map((value) => ({
+    value,
+    label: new Date(`${value}T00:00:00Z`).toLocaleDateString("en-IN", {
+      timeZone: "UTC",
+      weekday: "short",
+      day: "2-digit",
+      month: "short",
+      ...(value.slice(0, 4) !== String(y) ? { year: "numeric" } : {}),
+    }),
+  }));
+}
 
 /** Roles an admin can assign (in menu order) — the full catalog. */
 const ASSIGNABLE: Role[] = [
@@ -315,12 +361,15 @@ export function TeamBoard({
   currentUserId,
   migrationPending,
   weekOffPending,
+  weekOffKindsPending,
 }: {
   members: TeamMember[];
   currentUserId: string;
   migrationPending?: boolean;
   /** weekly_off_dow column missing (0047 not applied) — the select is disabled. */
   weekOffPending?: boolean;
+  /** weekly_off_kind column missing (0049 not applied) — Alternate / Flexible are disabled. */
+  weekOffKindsPending?: boolean;
 }) {
   const router = useRouter();
   const [members, setMembers] = React.useState(initialMembers);
@@ -330,6 +379,16 @@ export function TeamBoard({
   const [resetting, setResetting] = React.useState<TeamMember | null>(null);
   const [renaming, setRenaming] = React.useState<TeamMember | null>(null);
   const [editingPhone, setEditingPhone] = React.useState<TeamMember | null>(null);
+  // Members switched to "Alternate Sundays off" whose off Sunday isn't chosen
+  // yet — nothing is saved until a Sunday is picked.
+  const [pendingAlternate, setPendingAlternate] = React.useState<Set<string>>(() => new Set());
+  const setAlternatePending = (userId: string, pending: boolean) =>
+    setPendingAlternate((prev) => {
+      const next = new Set(prev);
+      if (pending) next.add(userId);
+      else next.delete(userId);
+      return next;
+    });
 
   async function changeRole(userId: string, role: Role) {
     setBusy(userId);
@@ -369,16 +428,45 @@ export function TeamBoard({
     }
   }
 
-  async function changeWeeklyOff(userId: string, prevDow: number, next: number) {
+  async function changeWeeklyOff(member: TeamMember, kind: WeekOffKind, dow: number, anchor: string) {
+    const before = {
+      weeklyOffKind: member.weeklyOffKind,
+      weeklyOffDow: member.weeklyOffDow,
+      weeklyOffAnchor: member.weeklyOffAnchor,
+    };
+    const next = { weeklyOffKind: kind, weeklyOffDow: dow, weeklyOffAnchor: anchor };
     // Optimistic, same as toggleOffice — revert only if the save fails.
-    setMembers((prev) => prev.map((m) => (m.userId === userId ? { ...m, weeklyOffDow: next } : m)));
-    setBusy(userId);
-    const res = await setWeeklyOffDayAction(userId, next);
+    setMembers((prev) => prev.map((m) => (m.userId === member.userId ? { ...m, ...next } : m)));
+    setBusy(member.userId);
+    const res = await setWeeklyOffPatternAction(member.userId, { kind, dow, anchor: anchor || undefined });
     setBusy(null);
     if (res.error) {
       window.alert(res.error);
-      setMembers((prev) => prev.map((m) => (m.userId === userId ? { ...m, weeklyOffDow: prevDow } : m)));
+      setMembers((prev) => prev.map((m) => (m.userId === member.userId ? { ...m, ...before } : m)));
     }
+  }
+
+  function changeWeekOffChoice(member: TeamMember, choice: WeekOffChoice) {
+    // Alternate needs an off Sunday first — show the Sunday picker, save on pick.
+    if (choice === "alternate") {
+      if (member.weeklyOffKind !== "alternate_sunday") setAlternatePending(member.userId, true);
+      return;
+    }
+    setAlternatePending(member.userId, false);
+    if (choice === "sunday") return changeWeeklyOff(member, "fixed", 0, "");
+    if (choice === "other") {
+      const keep = member.weeklyOffKind === "fixed" && member.weeklyOffDow !== 0;
+      return changeWeeklyOff(member, "fixed", keep ? member.weeklyOffDow : 1, "");
+    }
+    return changeWeeklyOff(member, "flexible", 0, "");
+  }
+
+  /** Saves kind + anchor together, only once an off Sunday is picked. */
+  function changeWeekOffAnchor(member: TeamMember, anchor: string) {
+    if (!isSunday(anchor)) return;
+    setAlternatePending(member.userId, false);
+    if (member.weeklyOffKind === "alternate_sunday" && anchor === member.weeklyOffAnchor) return;
+    void changeWeeklyOff(member, "alternate_sunday", 0, anchor);
   }
 
   return (
@@ -483,26 +571,78 @@ export function TeamBoard({
                     </TableCell>
                     <TableCell>
                       {weekOffUiEnabled(m.isOffice) ? (
-                        <Select
-                          aria-label={`${m.name}'s weekly off`}
-                          value={String(m.weeklyOffDow)}
-                          disabled={busy === m.userId || weekOffPending}
-                          onChange={(e) => changeWeeklyOff(m.userId, m.weeklyOffDow, Number(e.target.value))}
-                          className="h-8 w-20 text-xs"
-                          title={
-                            weekOffPending
-                              ? "Run 0047_attendance_weekly_off.sql in Supabase first"
-                              : "Default weekly off day (applies from today) — swaps are recorded on the Attendance tab"
-                          }
-                        >
-                          {WEEKDAYS_SHORT.map((d, i) => (
-                            <option key={d} value={i}>{d}</option>
-                          ))}
-                        </Select>
-                      ) : m.weeklyOffDow !== 0 ? (
-                        // UI not enabled for this category, but a non-default day still applies — show it.
+                        (() => {
+                          const pendingAlt = pendingAlternate.has(m.userId);
+                          const choice = pendingAlt ? "alternate" : weekOffChoiceOf(m);
+                          const disabled = busy === m.userId || weekOffPending;
+                          const kindsTip = "Run 0049_attendance_weekly_off_types.sql in Supabase first";
+                          // Alternate / Flexible are Site-only; an office member keeps seeing a
+                          // current non-fixed value (so the select never shows a wrong choice).
+                          const showSiteKinds = (c: WeekOffChoice) => !m.isOffice || choice === c;
+                          return (
+                            <div className="flex flex-wrap items-center gap-1">
+                              <Select
+                                aria-label={`${m.name}'s weekly off type`}
+                                value={choice}
+                                disabled={disabled}
+                                onChange={(e) => changeWeekOffChoice(m, e.target.value as WeekOffChoice)}
+                                className="h-8 w-44 text-xs"
+                                title={
+                                  weekOffPending
+                                    ? "Run 0047_attendance_weekly_off.sql in Supabase first"
+                                    : "Weekly off (applies from today) — swaps are recorded on the Attendance tab"
+                                }
+                              >
+                                <option value="sunday">Every Sunday off</option>
+                                {showSiteKinds("alternate") && (
+                                  <option value="alternate" disabled={weekOffKindsPending} title={weekOffKindsPending ? kindsTip : undefined}>
+                                    Alternate Sundays off
+                                  </option>
+                                )}
+                                {showSiteKinds("flexible") && (
+                                  <option value="flexible" disabled={weekOffKindsPending} title={weekOffKindsPending ? kindsTip : undefined}>
+                                    Flexible (= Sundays in month)
+                                  </option>
+                                )}
+                                <option value="other">Fixed other day</option>
+                              </Select>
+                              {choice === "other" && (
+                                <Select
+                                  aria-label={`${m.name}'s weekly off day`}
+                                  value={String(m.weeklyOffDow)}
+                                  disabled={disabled}
+                                  onChange={(e) => changeWeeklyOff(m, "fixed", Number(e.target.value), "")}
+                                  className="h-8 w-20 text-xs"
+                                >
+                                  {WEEKDAYS_SHORT.map((d, i) =>
+                                    i === 0 ? null : <option key={d} value={i}>{d}</option>
+                                  )}
+                                </Select>
+                              )}
+                              {choice === "alternate" && (
+                                <Select
+                                  aria-label={`${m.name}'s off Sunday`}
+                                  title="An off Sunday — every other Sunday from it is off too"
+                                  value={pendingAlt ? "" : m.weeklyOffAnchor}
+                                  disabled={disabled}
+                                  onChange={(e) => changeWeekOffAnchor(m, e.target.value)}
+                                  className="h-8 w-40 text-xs"
+                                >
+                                  <option value="" disabled>
+                                    Choose an off Sunday…
+                                  </option>
+                                  {sundayOptions(m.weeklyOffAnchor).map((o) => (
+                                    <option key={o.value} value={o.value}>{o.label}</option>
+                                  ))}
+                                </Select>
+                              )}
+                            </div>
+                          );
+                        })()
+                      ) : weekOffSummary(m) ? (
+                        // UI not enabled for this category, but a non-default weekly off still applies — show it.
                         <span className="text-xs text-muted-foreground" title="Weekly off (read-only for this category)">
-                          {WEEKDAYS_SHORT[m.weeklyOffDow]}
+                          {weekOffSummary(m)}
                         </span>
                       ) : (
                         <span className="text-xs text-muted-foreground">—</span>

@@ -5,7 +5,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { isAdminRole } from "@/lib/auth/permissions";
 import { logActivity } from "@/lib/activity/log";
 import { roleLabel } from "@/lib/labels";
-import { orgToday } from "@/lib/attendance/compute";
+import { isSunday, orgToday, toWeekOffKind, WEEK_OFF_KINDS, type WeekOffKind } from "@/lib/attendance/compute";
 import type { Role } from "@/lib/types";
 
 export interface ActionResult {
@@ -274,6 +274,19 @@ export async function setMemberOfficeAction(userId: string, isOffice: boolean): 
   if (!ctx || !isAdminRole(ctx.role)) return { error: "Not authorized." };
   if (!ctx.orgId) return { error: "No organization found." };
   const admin = createAdminClient();
+  if (isOffice) {
+    // Alternate / Flexible weekly offs are Site-only (office pay keeps a
+    // fixed weekly off). Missing 0049 column = everyone is "fixed" anyway.
+    const { data: wo, error: woErr } = await admin
+      .from("memberships")
+      .select("weekly_off_kind")
+      .eq("org_id", ctx.orgId)
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (!woErr && toWeekOffKind(wo?.weekly_off_kind) !== "fixed") {
+      return { error: "Set this member's weekly off to Every Sunday or a fixed day first — Alternate and Flexible are for Site staff only." };
+    }
+  }
   const { error } = await admin
     .from("memberships")
     .update({ is_office: isOffice })
@@ -292,27 +305,57 @@ export async function setMemberOfficeAction(userId: string, isOffice: boolean): 
 const WEEKDAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 const WEEK_OFF_PENDING = "Weekly-off table pending: run 0047_attendance_weekly_off.sql in Supabase SQL Editor.";
+const WEEK_OFF_KINDS_PENDING =
+  "Weekly-off update pending: run 0049_attendance_weekly_off_types.sql in Supabase SQL Editor.";
+
+/** Missing table (PGRST205/42P01) or column (42703/PGRST204) — a migration not applied yet. */
+const isWeekOffPending = (code?: string) =>
+  code === "42703" || code === "PGRST204" || code === "PGRST205" || code === "42P01";
+
+export interface WeeklyOffPatternInput {
+  kind: WeekOffKind;
+  /** fixed: 0 = Sunday … 6 = Saturday. Ignored (stored as 0) for the other kinds. */
+  dow?: number;
+  /** alternate_sunday: one off Sunday ("YYYY-MM-DD"). */
+  anchor?: string;
+}
+
+function describeWeekOff(kind: WeekOffKind, dow: number, anchor: string | null): string {
+  if (kind === "alternate_sunday") return `alternate Sundays (off ${anchor})`;
+  if (kind === "flexible") return "flexible (= Sundays in month)";
+  return WEEKDAY_NAMES[dow];
+}
 
 /**
- * Admin-only: set a member's default weekly off day (0 = Sunday … 6 =
- * Saturday, migration 0047). Same gate as the Office/Site setter. Swaps
- * against this default are recorded separately (attendance/week-off-actions).
+ * Admin-only: set a member's weekly-off pattern — a fixed weekday (0047), or
+ * for Site staff alternate Sundays / flexible (0049). Same gate as the
+ * Office/Site setter. Swaps against it are recorded separately
+ * (attendance/week-off-actions).
  *
- * The new day takes effect from today: each change is a row in
- * attendance_weekly_off_history, so past attendance keeps whatever day was
- * in force then. The first change also records a baseline row (the previous
- * day, from 2000-01-01). Refused while the member has upcoming swaps, which
- * were validated against the old day.
+ * The new pattern takes effect from today: each change is a row in
+ * attendance_weekly_off_history, so past attendance keeps whatever pattern
+ * was in force then. The first change also records a baseline row (the
+ * previous pattern, from 2000-01-01). Refused while the member has upcoming
+ * swaps, which were validated against the old pattern. Before 0049 only a
+ * fixed day can be set (written exactly as before).
  */
-export async function setWeeklyOffDayAction(userId: string, dow: number): Promise<ActionResult> {
+export async function setWeeklyOffPatternAction(userId: string, input: WeeklyOffPatternInput): Promise<ActionResult> {
   const ctx = await getAuthContext();
   if (!ctx || !isAdminRole(ctx.role)) return { error: "Not authorized." };
   if (!ctx.orgId) return { error: "No organization found." };
-  if (!Number.isInteger(dow) || dow < 0 || dow > 6) return { error: "Pick a day of the week." };
+  const kind = input?.kind;
+  if (!WEEK_OFF_KINDS.includes(kind)) return { error: "Pick a weekly-off type." };
+  let dow = 0;
+  let anchor: string | null = null;
+  if (kind === "fixed") {
+    dow = input.dow ?? 0;
+    if (!Number.isInteger(dow) || dow < 0 || dow > 6) return { error: "Pick a day of the week." };
+  } else if (kind === "alternate_sunday") {
+    if (!input.anchor || !isSunday(input.anchor)) return { error: "Pick an off Sunday for alternate Sundays." };
+    anchor = input.anchor;
+  }
   const admin = createAdminClient();
   const today = orgToday();
-  const isPending = (code?: string) =>
-    code === "42703" || code === "PGRST204" || code === "PGRST205" || code === "42P01";
 
   const { data: upcoming, error: swapErr } = await admin
     .from("attendance_week_off_swaps")
@@ -321,7 +364,7 @@ export async function setWeeklyOffDayAction(userId: string, dow: number): Promis
     .eq("user_id", userId)
     .or(`worked_date.gte.${today},off_date.gte.${today}`)
     .limit(1);
-  if (swapErr) return { error: isPending(swapErr.code) ? WEEK_OFF_PENDING : swapErr.message };
+  if (swapErr) return { error: isWeekOffPending(swapErr.code) ? WEEK_OFF_PENDING : swapErr.message };
   if (upcoming?.length) {
     return { error: "Delete this employee's upcoming week-off swaps first, then change their weekly off." };
   }
@@ -332,17 +375,34 @@ export async function setWeeklyOffDayAction(userId: string, dow: number): Promis
     .eq("org_id", ctx.orgId)
     .eq("user_id", userId)
     .maybeSingle();
-  if (curErr) return { error: isPending(curErr.code) ? WEEK_OFF_PENDING : curErr.message };
+  if (curErr) return { error: isWeekOffPending(curErr.code) ? WEEK_OFF_PENDING : curErr.message };
   if (!current) return { error: "Member not found." };
+
+  // 0049 columns — their own query, so before 0049 a fixed day still saves exactly as before.
+  const { data: currentKind, error: kindErr } = await admin
+    .from("memberships")
+    .select("weekly_off_kind, weekly_off_anchor, is_office")
+    .eq("org_id", ctx.orgId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (kindErr && !isWeekOffPending(kindErr.code)) return { error: kindErr.message };
+  const hasKinds = !kindErr;
+  if (!hasKinds && kind !== "fixed") return { error: WEEK_OFF_KINDS_PENDING };
+  if (kind !== "fixed" && ((currentKind?.is_office as boolean | null | undefined) ?? true)) {
+    return { error: "Alternate Sundays and Flexible are for Site staff only — Office staff get a fixed weekly off." };
+  }
+  const kindFields = (k: WeekOffKind, a: string | null) => (hasKinds ? { kind: k, anchor: a } : {});
+  const pendingError = (code: string | undefined, message: string) =>
+    isWeekOffPending(code) ? (hasKinds ? WEEK_OFF_KINDS_PENDING : WEEK_OFF_PENDING) : message;
 
   // Fresh builder per call — a reused one can carry headers (e.g. count) over.
   const history = () => admin.from("attendance_weekly_off_history");
   const { count, error: countErr } = await history()
     .select("id", { count: "exact", head: true })
     .eq("user_id", userId);
-  if (countErr) return { error: isPending(countErr.code) ? WEEK_OFF_PENDING : countErr.message };
+  if (countErr) return { error: isWeekOffPending(countErr.code) ? WEEK_OFF_PENDING : countErr.message };
   if (!count) {
-    // First change: pin the old day for every past date explicitly.
+    // First change: pin the old pattern for every past date explicitly.
     const { error: baseErr } = await history().upsert(
       {
         org_id: ctx.orgId,
@@ -350,33 +410,45 @@ export async function setWeeklyOffDayAction(userId: string, dow: number): Promis
         dow: (current.weekly_off_dow as number | null) ?? 0,
         effective_from: "2000-01-01",
         created_by: ctx.userId,
+        ...kindFields(
+          toWeekOffKind(currentKind?.weekly_off_kind),
+          (currentKind?.weekly_off_anchor as string | null | undefined) ?? null
+        ),
       },
       { onConflict: "user_id,effective_from" }
     );
-    if (baseErr) return { error: isPending(baseErr.code) ? WEEK_OFF_PENDING : baseErr.message };
+    if (baseErr) return { error: pendingError(baseErr.code, baseErr.message) };
   }
   // Same-day correction overwrites today's row.
   const { error: histErr } = await history().upsert(
-    { org_id: ctx.orgId, user_id: userId, dow, effective_from: today, created_by: ctx.userId },
+    { org_id: ctx.orgId, user_id: userId, dow, effective_from: today, created_by: ctx.userId, ...kindFields(kind, anchor) },
     { onConflict: "user_id,effective_from" }
   );
-  if (histErr) return { error: isPending(histErr.code) ? WEEK_OFF_PENDING : histErr.message };
+  if (histErr) return { error: pendingError(histErr.code, histErr.message) };
 
   const { data: updated, error } = await admin
     .from("memberships")
-    .update({ weekly_off_dow: dow })
+    .update({
+      weekly_off_dow: dow,
+      ...(hasKinds ? { weekly_off_kind: kind, weekly_off_anchor: anchor } : {}),
+    })
     .eq("org_id", ctx.orgId)
     .eq("user_id", userId)
     .select("user_id");
-  if (error) return { error: isPending(error.code) ? WEEK_OFF_PENDING : error.message };
+  if (error) return { error: pendingError(error.code, error.message) };
   if (!updated?.length) return { error: "Member not found." };
   await logActivity({
     action: "updated",
     entityType: "member",
     entityId: userId,
-    summary: `Set weekly off to ${WEEKDAY_NAMES[dow]}`,
+    summary: `Set weekly off to ${describeWeekOff(kind, dow, anchor)}`,
   });
   return { id: userId };
+}
+
+/** Admin-only: set a fixed weekly off day (0 = Sunday … 6 = Saturday). Kept for existing callers. */
+export async function setWeeklyOffDayAction(userId: string, dow: number): Promise<ActionResult> {
+  return setWeeklyOffPatternAction(userId, { kind: "fixed", dow });
 }
 
 /**

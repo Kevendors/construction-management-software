@@ -4,6 +4,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { getAuthContext } from "@/lib/auth/context";
 import { isAdminRole } from "@/lib/auth/permissions";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { toWeekOffKind } from "@/lib/attendance/compute";
 import { TeamBoard, type TeamMember } from "@/components/team/team-board";
 import type { Role } from "@/lib/types";
 
@@ -75,6 +76,18 @@ export default async function TeamPage() {
   const dowById = new Map(
     dowErr ? [] : ((dowRows ?? []) as { user_id: string; weekly_off_dow: number | null }[]).map((r) => [r.user_id, r.weekly_off_dow])
   );
+  // Weekly-off type (0049) — its own query too: a missing column = everyone "fixed".
+  const { data: kindRows, error: kindErr } = await admin
+    .from("memberships")
+    .select("user_id, weekly_off_kind, weekly_off_anchor")
+    .eq("org_id", ctx.orgId);
+  const kindById = new Map(
+    kindErr
+      ? []
+      : ((kindRows ?? []) as { user_id: string; weekly_off_kind: string | null; weekly_off_anchor: string | null }[]).map(
+          (r) => [r.user_id, r]
+        )
+  );
 
   const { data: profiles } = await admin
     .from("profiles")
@@ -101,6 +114,8 @@ export default async function TeamPage() {
       employeeId: m.employee_id ?? "",
       isOffice: m.is_office ?? true,
       weeklyOffDow: dowById.get(m.user_id) ?? 0,
+      weeklyOffKind: toWeekOffKind(kindById.get(m.user_id)?.weekly_off_kind),
+      weeklyOffAnchor: kindById.get(m.user_id)?.weekly_off_anchor ?? "",
     };
   });
 
@@ -112,6 +127,7 @@ export default async function TeamPage() {
       currentUserId={ctx.userId}
       migrationPending={migrationPending}
       weekOffPending={Boolean(dowErr)}
+      weekOffKindsPending={Boolean(kindErr)}
     />
   );
 }

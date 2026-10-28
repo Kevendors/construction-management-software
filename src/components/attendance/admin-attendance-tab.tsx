@@ -24,7 +24,7 @@ import {
   formatDuration,
   formatTime,
   isHolidayFor,
-  isWeeklyOff,
+  missedAbsentReason,
   monthlySummary,
   orgThisMonth,
   orgToday,
@@ -103,9 +103,9 @@ export function AdminAttendanceTab({
   const recordFor = (userId: string, d: string) =>
     board.records.find((r) => r.userId === userId && r.date === d);
 
-  /** A no-record day that's this member's weekly off (not a declared holiday, which reads as Holiday). */
-  const isWeekOffFor = (m: AttendanceMember, d: string) =>
-    !isHolidayFor(d, board.holidays, m.isOffice) && isWeeklyOff(d, m.weekOff);
+  /** A no-record day that's a weekly off in `weekOffDates` (not a declared holiday, which reads as Holiday). */
+  const isWeekOffFor = (m: AttendanceMember, d: string, weekOffDates: ReadonlySet<string>) =>
+    !isHolidayFor(d, board.holidays, m.isOffice) && weekOffDates.has(d);
 
   /**
    * A record's `status` column alone can't tell paid Leave from unpaid, or
@@ -127,24 +127,46 @@ export function AdminAttendanceTab({
   };
   const creditTypeFor = (userId: string, d: string, isOffice: boolean) =>
     evaluationFor(userId, d.slice(0, 7), isOffice).recordMap.get(d)?.creditType;
-  /** Office member's past no-record working day → Leave / Leave (Unpaid) instead of Missed/Absent; null otherwise. */
-  const autoLeaveFor = (m: AttendanceMember, d: string) => autoLeaveLabel(evaluationFor(m.userId, d.slice(0, 7), m.isOffice), d);
   const isLeaveUnpaidFor = (userId: string, d: string, isOffice: boolean) => creditTypeFor(userId, d, isOffice) === "leave_unpaid";
+  /** Why a Leave row is unpaid (office 2nd+ day off, or site staff — no paid leave). */
+  const unpaidLeaveReasonFor = (userId: string, d: string, isOffice: boolean) =>
+    evaluationFor(userId, d.slice(0, 7), isOffice).recordMap.get(d)?.reason || "Unpaid Leave";
   const isDeclaredHolidayFor = (userId: string, d: string, isOffice: boolean) => creditTypeFor(userId, d, isOffice) === "declared_holiday";
 
   /* ---- daily view rows: one per member, "Missed" when no record ---- */
+  // The evaluation (once per row) says whether a no-record day is a weekly
+  // off (incl. flexible offs), the office member's paid auto-leave, or Absent.
   const dailyRows = members
-    .map((m) => ({ member: m, record: recordFor(m.userId, date) }))
+    .map((m) => ({ member: m, record: recordFor(m.userId, date), evaluation: evaluationFor(m.userId, date.slice(0, 7), m.isOffice) }))
     .filter((r) => !projectId || r.record?.projectId === projectId);
+  /**
+   * A no-record day in the daily view: paid auto-leave, Absent (an office
+   * member's missed day once they have 2+ days off), Week Off / Holiday, or Missed.
+   */
+  const noRecordLabel = (m: AttendanceMember, evaluation: (typeof dailyRows)[number]["evaluation"]) => {
+    const autoLeave = autoLeaveLabel(evaluation, date);
+    if (autoLeave) return autoLeave.label;
+    if (missedAbsentReason(evaluation, date)) return "Absent";
+    const isDeclared = isHolidayFor(date, board.holidays, m.isOffice);
+    if (dayStatus(date, false, orgToday(), isDeclared, m.weekOff, evaluation.weekOffDates) !== "holiday") return "Missed";
+    return isWeekOffFor(m, date, evaluation.weekOffDates) ? "Week Off" : "Holiday";
+  };
 
   /* ---- monthly matrix ---- */
   const monthDays = daysOfMonth(month);
   const monthlyRows = members
     .map((m) => {
-      const recs = board.records.filter(
-        (r) => r.userId === m.userId && r.date.startsWith(month) && (!projectId || r.projectId === projectId)
-      );
-      return { member: m, records: recs, summary: monthlySummary(recs, month, orgToday(), board.holidays, m.isOffice, m.weekOff, m.startDate) };
+      // Weekly offs (incl. flexible), auto-leave and the summary come from ALL
+      // of the member's records this month — same as the daily view and the
+      // detail dialog. The project filter only picks rows and hides cells.
+      const allRecs = board.records.filter((r) => r.userId === m.userId && r.date.startsWith(month));
+      const recs = allRecs.filter((r) => !projectId || r.projectId === projectId);
+      return {
+        member: m,
+        records: recs,
+        summary: monthlySummary(allRecs, month, orgToday(), board.holidays, m.isOffice, m.weekOff, m.startDate),
+        evaluation: evaluateEmployeeMonthAttendance(allRecs, month, m.isOffice, board.holidays, m.weekOff, undefined, m.startDate),
+      };
     })
     .filter((r) => !projectId || r.records.length > 0);
 
@@ -246,7 +268,7 @@ export function AdminAttendanceTab({
       downloadCsv(
         `attendance-${date}.csv`,
         ["Date", "Employee", "Employee ID", "Project", "Check In", "Check Out", "Hours", "Overtime", "Status"],
-        dailyRows.map(({ member, record }) => [
+        dailyRows.map(({ member, record, evaluation }) => [
           date,
           member.name,
           member.employeeId || "—",
@@ -257,7 +279,7 @@ export function AdminAttendanceTab({
           record && record.overtimeMinutes > 0 ? formatDuration(record.overtimeMinutes) : "",
           record
             ? record.status !== "present" ? declarativeLabel(record, member.isOffice) : "Present"
-            : autoLeaveFor(member, date)?.label ?? "Missed",
+            : noRecordLabel(member, evaluation),
         ])
       );
     } else {
@@ -449,14 +471,15 @@ export function AdminAttendanceTab({
                       </TableCell>
                     </TableRow>
                   )}
-                  {dailyRows.map(({ member, record }) => {
+                  {dailyRows.map(({ member, record, evaluation }) => {
                     const isDeclarative = Boolean(record && record.status !== "present");
                     const isOpenShift = Boolean(record && record.status === "present" && !record.checkOutAt);
                     const isUnpaidLeave = Boolean(
                       record?.status === "leave" && isLeaveUnpaidFor(member.userId, date, member.isOffice)
                     );
                     const isDeclaredHoliday = Boolean(isDeclarative && isDeclaredHolidayFor(member.userId, date, member.isOffice));
-                    const autoLeave = record ? null : autoLeaveFor(member, date);
+                    const autoLeave = record ? null : autoLeaveLabel(evaluation, date);
+                    const noRecord = record ? null : noRecordLabel(member, evaluation);
 
                     return (
                     <TableRow key={member.userId}>
@@ -473,7 +496,7 @@ export function AdminAttendanceTab({
                           <Badge
                             variant="outline"
                             className="text-[10px]"
-                            title={member.isOffice ? "No project assigned — office punch flow, office leave/holiday rules" : "Assigned to a project — site punch flow, no leave cap"}
+                            title={member.isOffice ? "Office staff — 1 paid Leave per month, office holiday rules" : "Site staff — no paid leave, site weekly-off types"}
                           >
                             {member.isOffice ? "Office" : "Site"}
                           </Badge>
@@ -517,7 +540,7 @@ export function AdminAttendanceTab({
                                 <Badge
                                   variant={record.status === "absent" || isUnpaidLeave ? "destructive" : record.status === "leave" ? "success" : "warning"}
                                   className={record.status === "half_day" ? "border-amber-400 bg-amber-500/15 text-amber-800 dark:text-amber-400 font-semibold" : undefined}
-                                  title={isUnpaidLeave ? "2nd+ Leave this month — unpaid per office policy" : undefined}
+                                  title={isUnpaidLeave ? unpaidLeaveReasonFor(member.userId, date, member.isOffice) : undefined}
                                 >
                                   {record.status === "leave" && isUnpaidLeave ? "Leave (Unpaid)" : STATUS_LABEL[record.status]}
                                 </Badge>
@@ -531,16 +554,18 @@ export function AdminAttendanceTab({
                           </div>
                         ) : autoLeave ? (
                           <Badge
-                            variant={autoLeave.glyph === "LU" ? "destructive" : "outline"}
-                            className={autoLeave.glyph === "LV" ? "border-transparent bg-blue-500/20 text-blue-700 dark:text-blue-300" : undefined}
+                            variant="outline"
+                            className="border-transparent bg-blue-500/20 text-blue-700 dark:text-blue-300"
                             title={autoLeave.reason}
                           >
                             {autoLeave.label}
                           </Badge>
-                        ) : dayStatus(date, false, orgToday(), isHolidayFor(date, board.holidays, member.isOffice), member.weekOff) === "holiday" ? (
-                          <Badge variant="muted">{isWeekOffFor(member, date) ? "Week Off" : "Holiday"}</Badge>
+                        ) : noRecord === "Week Off" || noRecord === "Holiday" ? (
+                          <Badge variant="muted">{noRecord}</Badge>
                         ) : (
-                          <Badge variant="destructive">Missed</Badge>
+                          <Badge variant="destructive" title={missedAbsentReason(evaluation, date) ?? undefined}>
+                            {noRecord}
+                          </Badge>
                         )}
                       </TableCell>
                       <TableCell>
@@ -575,7 +600,7 @@ export function AdminAttendanceTab({
                               <Pencil />
                             </Button>
                           ) : (
-                            dayStatus(date, false, orgToday(), isHolidayFor(date, board.holidays, member.isOffice), member.weekOff) !== "holiday" && (
+                            noRecord !== "Week Off" && noRecord !== "Holiday" && (
                               <Button
                                 size="sm"
                                 variant="ghost"
@@ -613,7 +638,7 @@ export function AdminAttendanceTab({
               <LegendDot className="bg-success" label="Present" />
               <LegendDot className="bg-orange-500" label="Half day (late-limit or manual)" />
               <LegendDot className="bg-blue-500" label="Leave (paid)" />
-              <LegendDot className="bg-slate-500" label="Leave (unpaid, office 2nd+/mo)" />
+              <LegendDot className="bg-slate-500" label="Leave (unpaid: office 2nd+/mo, site staff)" />
               <LegendDot className="bg-destructive" label="Absent" />
               <LegendDot className="bg-indigo-500" label="Company Holiday" />
               <LegendDot className="bg-muted-foreground/40" label="Week Off" />
@@ -630,7 +655,7 @@ export function AdminAttendanceTab({
                       // Shared header: shade a day only when it's a weekly off for every
                       // listed member (plain Sundays while everyone is on the default).
                       const isAllWeekOff =
-                        monthlyRows.length > 0 && monthlyRows.every(({ member }) => isWeeklyOff(d, member.weekOff));
+                        monthlyRows.length > 0 && monthlyRows.every(({ evaluation }) => evaluation.weekOffDates.has(d));
                       return (
                         <th
                           key={d}
@@ -652,16 +677,7 @@ export function AdminAttendanceTab({
                       </td>
                     </tr>
                   )}
-                  {monthlyRows.map(({ member, records, summary }, rowIdx) => {
-                    const evaluation = evaluateEmployeeMonthAttendance(
-                      records,
-                      month,
-                      member.isOffice,
-                      board.holidays,
-                      member.weekOff,
-                      undefined,
-                      member.startDate
-                    );
+                  {monthlyRows.map(({ member, records, summary, evaluation }, rowIdx) => {
                     const rowBg = rowIdx % 2 === 1 ? "bg-muted" : "bg-card";
                     return (
                       <tr key={member.userId} className={rowBg}>
@@ -685,8 +701,21 @@ export function AdminAttendanceTab({
                         {monthDays.map((d) => {
                           const ev = evaluation.recordMap.get(d);
                           const record = ev?.record;
+                          if (record && projectId && record.projectId !== projectId) {
+                            // Filtered out by the project filter — not shown here (still counted in Paid).
+                            return (
+                              <td key={d} className="px-0.5 py-1.5 text-center align-middle">
+                                <span
+                                  className="mx-auto flex h-6 w-6 items-center justify-center rounded-md text-[11px] text-muted-foreground/40"
+                                  title="Recorded outside the selected project"
+                                >
+                                  ·
+                                </span>
+                              </td>
+                            );
+                          }
                           const isDeclaredHoliday = isHolidayFor(d, board.holidays, member.isOffice);
-                          const rawStatus = dayStatus(d, Boolean(record), orgToday(), isDeclaredHoliday, member.weekOff);
+                          const rawStatus = dayStatus(d, Boolean(record), orgToday(), isDeclaredHoliday, member.weekOff, evaluation.weekOffDates);
                           // explicit_absent/declared_holiday have a real row, so dayStatus()
                           // (which only knows "does a row exist") would otherwise call them present.
                           const status =
@@ -695,10 +724,11 @@ export function AdminAttendanceTab({
                               : ev?.creditType === "declared_holiday"
                               ? "holiday"
                               : rawStatus;
-                          // Office member's missed working day: shown as Leave / Leave (Unpaid), not "A".
+                          // Office member's only missed working day: shown as paid Leave, not "A"
+                          // (with 2+ days off the missed days stay "A" — missedAbsentReason says why).
                           const autoLeave = record ? null : autoLeaveLabel(evaluation, d);
-                          const isLeave = ev?.creditType === "leave" || autoLeave?.glyph === "LV";
-                          const isUnpaidLeave = ev?.creditType === "leave_unpaid" || autoLeave?.glyph === "LU";
+                          const isLeave = ev?.creditType === "leave" || Boolean(autoLeave);
+                          const isUnpaidLeave = ev?.creditType === "leave_unpaid";
                           const glyph =
                             isDeclaredHoliday
                               ? "H"
@@ -715,6 +745,7 @@ export function AdminAttendanceTab({
                             ev?.reason ||
                             (record?.source === "admin" ? `Manually marked — ${record.note}` : undefined) ||
                             autoLeave?.reason ||
+                            (record ? undefined : missedAbsentReason(evaluation, d)) ||
                             (status === "absent" ? "Absent — click to mark attendance" : undefined) ||
                             (status === "holiday"
                               ? isDeclaredHoliday && holidayLabel
@@ -914,7 +945,7 @@ export function AdminAttendanceTab({
                               <Badge
                                 variant={record.status === "absent" || isUnpaidLeave ? "destructive" : record.status === "leave" ? "success" : "warning"}
                                 className={record.status === "half_day" ? "border-amber-400 bg-amber-500/15 text-amber-800 dark:text-amber-400 font-semibold" : undefined}
-                                title={isUnpaidLeave ? "2nd+ Leave this month — unpaid per office policy" : undefined}
+                                title={isUnpaidLeave ? unpaidLeaveReasonFor(record.userId, record.date, employee?.isOffice ?? false) : undefined}
                               >
                                 {record.status === "leave" && isUnpaidLeave ? "Leave (Unpaid)" : STATUS_LABEL[record.status]}
                               </Badge>

@@ -14,6 +14,7 @@ import {
 import {
   autoLeaveLabel,
   evaluateEmployeeMonthAttendance,
+  missedAbsentReason,
   formatDuration,
   formatTime,
   SUNDAY_OFF,
@@ -24,13 +25,14 @@ import {
 import type { EmployeeAttendance } from "@/lib/types";
 import { RecordDetailDialog } from "./record-detail-dialog";
 
-type AutoLeave = NonNullable<ReturnType<typeof autoLeaveLabel>>;
+/** A no-record office day: paid Leave (the month's only missed day) or Absent (2+ days off). */
+type AutoLeave = { label: "Leave" | "Absent"; glyph: "LV" | "A"; reason: string };
 type Row = { kind: "record"; record: EmployeeAttendance } | { kind: "auto"; date: string; label: AutoLeave };
 
 /**
  * List view of the month's records with a from/to date filter and late policy
- * badges. For office staff it also lists auto-leave days (missed working days,
- * no record) as Leave / Leave (Unpaid); `month` makes sure the viewed month is
+ * badges. For office staff it also lists missed working days (no record) as
+ * Leave (the month's only day off) or Absent (2+); `month` makes sure the viewed month is
  * evaluated even when it has no records yet.
  */
 export function HistoryList({
@@ -64,7 +66,9 @@ export function HistoryList({
       }
       for (const d of res.autoLeaveDates) {
         const label = autoLeaveLabel(res, d);
+        const absentReason = missedAbsentReason(res, d);
         if (label) auto.push({ date: d, label });
+        else if (absentReason) auto.push({ date: d, label: { label: "Absent", glyph: "A", reason: absentReason } });
       }
     }
     return { evalMap: map, autoLeaves: auto };
@@ -127,7 +131,7 @@ export function HistoryList({
                   <TableCell className="text-right tabular-nums">—</TableCell>
                   <TableCell>
                     <Badge
-                      variant={row.label.glyph === "LU" ? "destructive" : "outline"}
+                      variant={row.label.glyph === "A" ? "destructive" : "outline"}
                       className={row.label.glyph === "LV" ? "border-transparent bg-blue-500/20 text-blue-700 dark:text-blue-300" : undefined}
                     >
                       {row.label.label}

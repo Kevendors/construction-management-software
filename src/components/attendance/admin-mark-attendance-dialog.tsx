@@ -9,6 +9,7 @@ import {
   ORG_TIMEZONE,
   orgToday,
   SHIFT_START_TIME,
+  SITE_UNPAID_LEAVE_FROM,
   type AttendanceMember,
 } from "@/lib/attendance/compute";
 import { adminMarkAttendanceAction } from "@/app/attendance/actions";
@@ -62,6 +63,9 @@ export function AdminMarkAttendanceDialog({
   // applies to a real present-status punch — a declarative Half-Day/Leave/
   // Absent record has no check-out to close in the first place.
   const isOpenShift = Boolean(existing && existing.status === "present" && !existing.checkOutAt);
+  // Site staff have no paid leave (from SITE_UNPAID_LEAVE_FROM) — don't label the option "paid" for them.
+  const selectedMember = members.find((m) => m.userId === userId);
+  const leaveIsUnpaid = Boolean(selectedMember && !selectedMember.isOffice && date >= SITE_UNPAID_LEAVE_FROM);
 
   React.useEffect(() => {
     if (!open) return;
@@ -148,7 +152,7 @@ export function AdminMarkAttendanceDialog({
             >
               <option value="present">Present</option>
               <option value="half_day">Half-Day</option>
-              <option value="leave">Leave (paid)</option>
+              <option value="leave">{leaveIsUnpaid ? "Leave (unpaid)" : "Leave (paid)"}</option>
               <option value="absent">Absent</option>
             </Select>
           </div>

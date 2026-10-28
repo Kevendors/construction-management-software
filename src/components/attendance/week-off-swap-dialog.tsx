@@ -5,9 +5,11 @@ import { Dialog, Textarea } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 import {
+  FLEXIBLE_SWAP_ERROR,
   isWeeklyOff,
   orgToday,
   validateWeekOffSwap,
+  weekOffPatternOn,
   type AttendanceMember,
   type OrgHoliday,
 } from "@/lib/attendance/compute";
@@ -52,7 +54,9 @@ export function WeekOffSwapDialog({
   const [offDate, setOffDate] = React.useState("");
   const [note, setNote] = React.useState("");
   const [saving, setSaving] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
+  // Flexible staff have no fixed off days to swap — say so up front.
+  const isFlexible = weekOffPatternOn(member.weekOff, orgToday()).kind === "flexible";
+  const [error, setError] = React.useState<string | null>(isFlexible ? FLEXIBLE_SWAP_ERROR : null);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -123,7 +127,7 @@ export function WeekOffSwapDialog({
         {error && <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
         <div className="flex justify-end gap-2 pt-2">
           <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
-          <Button type="submit" disabled={saving}>{saving ? "Saving…" : "Save Swap"}</Button>
+          <Button type="submit" disabled={saving || isFlexible}>{saving ? "Saving…" : "Save Swap"}</Button>
         </div>
       </form>
     </Dialog>
