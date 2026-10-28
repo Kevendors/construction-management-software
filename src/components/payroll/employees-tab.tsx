@@ -73,6 +73,10 @@ export function EmployeesTab({
     return m ? m.isOffice : null;
   };
 
+  // Exact per-day pay for the selected month: salary ÷ days in that month.
+  const perDayFor = (ctc: number) =>
+    (ctc / daysOfMonth(month).length).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
   // Days of `month` that have happened so far (today counts): the whole month
   // once it's over, today's day-of-month while it's in progress, 0 for a
   // future month.
@@ -240,6 +244,9 @@ export function EmployeesTab({
                                 <span className="text-foreground">{formatINR(emp.monthlyCtc)}</span>
                                 <Pencil className="h-3 w-3 text-muted-foreground opacity-30 transition-opacity group-hover:opacity-100" />
                               </span>
+                              <span className="text-[10px] tabular-nums text-muted-foreground" title={`${formatINR(emp.monthlyCtc)} ÷ ${daysOfMonth(month).length} days`}>
+                                ₹{perDayFor(emp.monthlyCtc)}/day
+                              </span>
                               <span className={cn(
                                 "text-[10px]",
                                 emp.deductPf !== false ? "text-muted-foreground" : "text-amber-600 dark:text-amber-400 font-medium"
@@ -256,6 +263,9 @@ export function EmployeesTab({
                       ) : (
                         <div className="flex flex-col items-end">
                           <span className="tabular-nums text-muted-foreground">{formatINR(emp.monthlyCtc)}</span>
+                          {emp.monthlyCtc > 0 && (
+                            <span className="text-[10px] tabular-nums text-muted-foreground">₹{perDayFor(emp.monthlyCtc)}/day</span>
+                          )}
                           <span className="text-[10px] text-muted-foreground">
                             {emp.deductPf !== false ? "PF 12%" : "No PF"}
                           </span>
