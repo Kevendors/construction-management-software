@@ -380,7 +380,9 @@ function AddEmployeeDialog({
 
   // Live breakdown calculations
   const numCtc = Math.max(0, Number(monthlyCtc) || 0);
-  const perDay = Math.round(numCtc / 30);
+  // Per-day pay this month (salary ÷ days in the current month), to the paisa.
+  const thisMonthDays = daysOfMonth(orgToday().slice(0, 7)).length;
+  const perDay = (numCtc / thisMonthDays).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const basic = numCtc;
   const pf = deductPf ? Math.round(basic * 0.12) : 0;
   const esi = deductEsi ? Math.round(numCtc * 0.0075) : 0;
@@ -546,7 +548,7 @@ function AddEmployeeDialog({
               <span className="flex items-center gap-1.5 text-foreground">
                 <Calculator className="h-3 w-3 text-primary" /> Salary Breakdown
               </span>
-              <span className="font-medium text-foreground">{formatINR(perDay)}/day</span>
+              <span className="font-medium text-foreground">₹{perDay}/day ({thisMonthDays}-day month)</span>
             </div>
             <div className="grid grid-cols-4 gap-2 text-xs pt-1.5 border-t border-border/60">
               <div>

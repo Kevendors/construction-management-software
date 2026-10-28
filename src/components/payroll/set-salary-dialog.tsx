@@ -57,7 +57,10 @@ export function SetSalaryDialog({
 
   // Real-time payroll breakdown calculations
   const ctc = Math.max(0, Number(monthlyCtc) || 0);
-  const perDayRate = Math.round(ctc / 30);
+  // Per-day pay for this slip's month (salary ÷ days in that month), to the paisa.
+  const [slipYear, slipMonthNum] = month.split("-").map(Number);
+  const monthDays = new Date(slipYear, slipMonthNum, 0).getDate() || 30;
+  const perDayRate = (ctc / monthDays).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const basic = ctc; // 100% of salary as basic pay (no HRA or allowances)
   const pf = deductPf ? Math.round(basic * 0.12) : 0;
   const esi = deductEsi ? Math.round(ctc * 0.0075) : 0;
@@ -221,7 +224,7 @@ export function SetSalaryDialog({
                 <Calculator className="h-3.5 w-3.5 text-primary" /> Monthly Salary Breakdown Preview
               </span>
               <span className="font-medium tabular-nums text-foreground">
-                {formatINR(perDayRate)} / day (30d base)
+                ₹{perDayRate} / day ({monthLabel} · {monthDays} days)
               </span>
             </div>
 
