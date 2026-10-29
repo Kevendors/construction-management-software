@@ -17,24 +17,13 @@ import {
 } from "@/components/ui/table";
 import { useRole } from "@/components/layout/role-provider";
 import { useProjectTeam, useStore } from "@/lib/store/project-store";
+import { ALL_ROLES } from "@/lib/auth/roles";
 import { roleLabel } from "@/lib/labels";
 import { initialsOf } from "@/lib/utils";
 import type { Role, User } from "@/lib/types";
 
-/** Project roles a super admin can assign (full catalog, menu order). */
-const PROJECT_ROLES: Role[] = [
-  "super_admin",
-  "pm",
-  "supervisor",
-  "accountant",
-  "hr",
-  "staff",
-  "architect",
-  "engineer",
-  "subcontractor",
-  "viewer",
-  "client",
-];
+/** Project roles a super admin can assign (full shared catalog, menu order — external roles can be on a project team). */
+const PROJECT_ROLES: Role[] = ALL_ROLES;
 
 function AddMemberDialog({
   open,

@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getAuthContext } from "@/lib/auth/context";
 import { isAdminRole } from "@/lib/auth/permissions";
+import { isEmployeeRole } from "@/lib/auth/roles";
 import { logActivity } from "@/lib/activity/log";
 import { formatINR } from "@/lib/utils";
 import type {
@@ -93,6 +94,8 @@ export async function addEmployeeAction(input: AddEmployeeInput): Promise<Action
   if (input.createAccount) {
     const ctx = await getAuthContext();
     if (!ctx || !isAdminRole(ctx.role)) return { error: "Only an admin can create login accounts." };
+    // Payroll is for employees — client / subcontractor logins are created on Team & Roles.
+    if (input.accountRole && !isEmployeeRole(input.accountRole)) return { error: "Choose an employee role for this login." };
     const digits = phoneDigits(input.phone);
     if (digits.length < 6) return { error: "A valid phone number is required to create a login." };
     if (!input.accountPassword || input.accountPassword.length < 6)

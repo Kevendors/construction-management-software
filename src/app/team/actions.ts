@@ -3,6 +3,7 @@
 import { getAuthContext } from "@/lib/auth/context";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isAdminRole } from "@/lib/auth/permissions";
+import { isExternalRole } from "@/lib/auth/roles";
 import { logActivity } from "@/lib/activity/log";
 import { roleLabel } from "@/lib/labels";
 import { isSunday, orgToday, toWeekOffKind, WEEK_OFF_KINDS, type WeekOffKind } from "@/lib/attendance/compute";
@@ -94,7 +95,8 @@ export async function createMemberAction(input: NewMemberInput): Promise<ActionR
   const upsertMembership = (row: MembershipUpsert) =>
     admin.from("memberships").upsert(row, { onConflict: "org_id,user_id" });
 
-  let employeeId = await computeNextEmployeeId(admin, ctx.orgId);
+  // Employee IDs are for employees — external logins (clients / subcontractors) get none.
+  let employeeId = isExternalRole(input.role) ? null : await computeNextEmployeeId(admin, ctx.orgId);
   let { error: mErr } = await upsertMembership(
     employeeId ? { ...membership, employee_id: employeeId } : membership
   );

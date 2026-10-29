@@ -1,6 +1,7 @@
 "use server";
 
 import { getAuthContext } from "@/lib/auth/context";
+import { ATTENDANCE_EMPLOYEES_ONLY, isExternalRole } from "@/lib/auth/roles";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
@@ -26,6 +27,7 @@ export async function confirmSpotCheckAction(
   if (!isSupabaseConfigured()) return { status: "confirmed", distanceM: null };
   const ctx = await getAuthContext();
   if (!ctx?.orgId) return { error: "You must be signed in." };
+  if (isExternalRole(ctx.role)) return { error: ATTENDANCE_EMPLOYEES_ONLY };
   if (!isValidPosition(pos.lat, pos.lng, pos.accuracy)) {
     return { error: "Could not read a valid location. Enable location access and retry." };
   }

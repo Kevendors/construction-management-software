@@ -4,6 +4,8 @@ import { dispatchNotification } from "@/lib/notifications/dispatch";
 import { formatTime } from "@/lib/attendance/compute";
 import { SPOT_CHECK_WINDOW_MIN } from "@/lib/attendance/spot-checks";
 import { currentSitesFor } from "@/lib/attendance/site-visit-store";
+import { isExternalRole } from "@/lib/auth/roles";
+import type { Role } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -24,6 +26,8 @@ interface ActiveRow {
 
 /**
  * Called every 5 min by Supabase pg_cron (migration 0045). Each run:
+ * 0. cancels checks of external users (clients / subcontractors — no
+ *    attendance): never fired, never expired, no "missed" alert,
  * 1. cancels checks whose shift is already closed,
  * 2. fires due 'scheduled' checks → 'pending' + push to the employee,
  * 3. expires 'pending' checks past the 15-min window → 'missed' + alert
@@ -50,8 +54,36 @@ export async function POST(request: Request) {
     if (error.code === "PGRST205") return Response.json({ ok: true, skipped: "table pending" });
     return Response.json({ ok: false, error: error.message }, { status: 500 });
   }
-  const rows = (data ?? []) as ActiveRow[];
-  if (rows.length === 0) return Response.json({ ok: true, fired: 0, missed: 0, cancelled: 0 });
+  const activeRows = (data ?? []) as ActiveRow[];
+  if (activeRows.length === 0) return Response.json({ ok: true, fired: 0, missed: 0, cancelled: 0 });
+
+  // 0. External users have no attendance — cancel their checks outright.
+  // One memberships lookup per run; on error nobody is treated as external.
+  const { data: mems, error: memError } = await admin
+    .from("memberships")
+    .select("org_id, user_id, role")
+    .in("user_id", Array.from(new Set(activeRows.map((r) => r.user_id))));
+  const externalKeys = new Set(
+    memError
+      ? []
+      : ((mems ?? []) as { org_id: string; user_id: string; role: Role }[])
+          .filter((m) => isExternalRole(m.role))
+          .map((m) => `${m.org_id}:${m.user_id}`)
+  );
+  const isExternalRow = (r: ActiveRow) => externalKeys.has(`${r.org_id}:${r.user_id}`);
+  const rows = activeRows.filter((r) => !isExternalRow(r));
+  let cancelled = 0;
+  const externalIds = activeRows.filter(isExternalRow).map((r) => r.id);
+  if (externalIds.length) {
+    const { data: c } = await admin
+      .from(TABLE)
+      .update({ status: "cancelled" })
+      .in("id", externalIds)
+      .in("status", ["scheduled", "pending"])
+      .select("id");
+    cancelled += c?.length ?? 0;
+  }
+  if (rows.length === 0) return Response.json({ ok: true, fired: 0, missed: 0, cancelled });
 
   // 1. Shifts already closed (punch-out, closed-previous-shift, admin edit).
   const attIds = Array.from(new Set(rows.map((r) => r.attendance_id)));
@@ -62,7 +94,6 @@ export async function POST(request: Request) {
   if (attError) return Response.json({ ok: false, error: attError.message }, { status: 500 });
   const closed = new Set((atts ?? []).filter((a) => a.check_out_at).map((a) => a.id as string));
   const live = rows.filter((r) => !closed.has(r.attendance_id));
-  let cancelled = 0;
   if (closed.size) {
     const { data: c } = await admin
       .from(TABLE)
@@ -70,7 +101,7 @@ export async function POST(request: Request) {
       .in("attendance_id", Array.from(closed))
       .in("status", ["scheduled", "pending"])
       .select("id");
-    cancelled = c?.length ?? 0;
+    cancelled += c?.length ?? 0;
   }
 
   const windowMs = SPOT_CHECK_WINDOW_MIN * 60_000;

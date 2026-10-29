@@ -5,6 +5,7 @@ import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createClient as createSupabase } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getAuthContext } from "@/lib/auth/context";
+import { isExternalRole } from "@/lib/auth/roles";
 import {
   orgDateOf,
   orgThisMonth,
@@ -301,7 +302,9 @@ export async function getMyAttendancePage(month?: string): Promise<MyAttendanceD
   }
 
   const ctx = await getAuthContext();
-  if (!ctx) {
+  // External users (clients / subcontractors) have no attendance — the
+  // middleware already bounces them off /attendance; this is the backstop.
+  if (!ctx || isExternalRole(ctx.role)) {
     return {
       today: null,
       unclosedPreviousShift: null,
@@ -499,16 +502,22 @@ async function allOrgAttendance(
 export async function getAttendanceAdminBoard(): Promise<AttendanceAdminBoard> {
   if (!isSupabaseConfigured()) {
     const rosterUserIds = new Set(mockProjectMembers.map((pm) => pm.userId));
+    // Employees only — external users (clients / subcontractors) aren't in attendance.
+    const mockExternalIds = new Set(mockUsers.filter((u) => isExternalRole(u.role)).map((u) => u.id));
     return {
-      records: [...mockEmployeeAttendance].sort((a, b) => b.date.localeCompare(a.date)),
-      members: mockUsers.map((u, i) => ({
-        userId: u.id,
-        name: u.name,
-        employeeId: `KV${String(i + 1).padStart(3, "0")}`,
-        role: u.role,
-        isOffice: !rosterUserIds.has(u.id),
-        weekOff: SUNDAY_OFF,
-      })),
+      records: mockEmployeeAttendance
+        .filter((r) => !mockExternalIds.has(r.userId))
+        .sort((a, b) => b.date.localeCompare(a.date)),
+      members: mockUsers
+        .map((u, i) => ({
+          userId: u.id,
+          name: u.name,
+          employeeId: `KV${String(i + 1).padStart(3, "0")}`,
+          role: u.role,
+          isOffice: !rosterUserIds.has(u.id),
+          weekOff: SUNDAY_OFF,
+        }))
+        .filter((m) => !isExternalRole(m.role)),
       holidays: [],
       weekOffSwaps: [],
     };
@@ -548,7 +557,12 @@ export async function getAttendanceAdminBoard(): Promise<AttendanceAdminBoard> {
       memRows = (basic.data ?? []) as MemRow[];
     }
   }
-  memRows = memRows.filter((m) => m.is_active ?? true);
+  // Employees only: external users (clients / subcontractors) have no
+  // attendance. Their old rows stay in the DB but are dropped from the board
+  // (members + records). Taken before the is_active filter so a disabled
+  // external user's history is dropped too.
+  const externalIds = new Set(memRows.filter((m) => isExternalRole(m.role)).map((m) => m.user_id));
+  memRows = memRows.filter((m) => (m.is_active ?? true) && !externalIds.has(m.user_id));
 
   const ids = memRows.map((m) => m.user_id);
   const [profRes, attRes, pmRes, holidaysRes, dowRes, swapsRes, historyRes, startRes, kindRes, historyKindRes, wfoRes] = await Promise.all([
@@ -617,13 +631,15 @@ export async function getAttendanceAdminBoard(): Promise<AttendanceAdminBoard> {
   }
   const weekOffSwaps: WeekOffSwap[] = swapsRes.error
     ? []
-    : ((swapsRes.data ?? []) as (SwapRow & { id: string; note: string | null })[]).map((r) => ({
-        id: r.id,
-        userId: r.user_id,
-        workedDate: r.worked_date,
-        offDate: r.off_date,
-        note: r.note ?? "",
-      }));
+    : ((swapsRes.data ?? []) as (SwapRow & { id: string; note: string | null })[])
+        .filter((r) => !externalIds.has(r.user_id))
+        .map((r) => ({
+          id: r.id,
+          userId: r.user_id,
+          workedDate: r.worked_date,
+          offDate: r.off_date,
+          note: r.note ?? "",
+        }));
   const swapsById = new Map<string, WeekOffRule["swaps"]>();
   for (const sw of weekOffSwaps) {
     swapsById.set(sw.userId, [...(swapsById.get(sw.userId) ?? []), { workedDate: sw.workedDate, offDate: sw.offDate }]);
@@ -659,14 +675,16 @@ export async function getAttendanceAdminBoard(): Promise<AttendanceAdminBoard> {
   }));
 
   return {
-    records: ((attRes.data ?? []) as EmployeeAttendanceRow[]).map((r) => {
-      const m = memberById.get(r.user_id);
-      return mapEmployeeAttendance(r, {
-        name: m?.name ?? "User",
-        employeeId: m?.employeeId ?? "",
-        markedByName: r.marked_by ? nameById.get(r.marked_by) ?? "Admin" : undefined,
-      });
-    }),
+    records: ((attRes.data ?? []) as EmployeeAttendanceRow[])
+      .filter((r) => !externalIds.has(r.user_id))
+      .map((r) => {
+        const m = memberById.get(r.user_id);
+        return mapEmployeeAttendance(r, {
+          name: m?.name ?? "User",
+          employeeId: m?.employeeId ?? "",
+          markedByName: r.marked_by ? nameById.get(r.marked_by) ?? "Admin" : undefined,
+        });
+      }),
     members,
     holidays,
     weekOffSwaps,

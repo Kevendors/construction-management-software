@@ -33,8 +33,8 @@ const ALL: ModuleKey[] = [
  * and route guards. (DB-level RLS enforces the hard read/write boundary; this
  * drives the UI so users only see what applies to them.)
  */
-// "attendance" (self check-in at /attendance) is appended for every role —
-// appending keeps each role's landingPath (first entry) unchanged.
+// "attendance" (self check-in at /attendance) is appended for every employee
+// role — appending keeps each role's landingPath (first entry) unchanged.
 export const ROLE_MODULES: Record<Role, ModuleKey[]> = {
   super_admin: ALL,
   // Narrowed 2026-09-19 (user decision) from the former broad company-wide
@@ -56,9 +56,12 @@ export const ROLE_MODULES: Record<Role, ModuleKey[]> = {
   staff: ["projects", "expenses", "attendance"],
   architect: ["projects", "design", "attendance"],
   engineer: ["projects", "expenses", "attendance"],
-  subcontractor: ["projects", "subcon", "attendance"],
-  viewer: ["dashboard", "projects", "attendance"],
-  client: ["dashboard", "projects", "attendance"],
+  // External users (src/lib/auth/roles.ts EXTERNAL_ROLES) are not employees —
+  // no "attendance" (removed 2026-10-29; the attendance server actions refuse
+  // them too).
+  subcontractor: ["projects", "subcon"],
+  viewer: ["dashboard", "projects"],
+  client: ["dashboard", "projects"],
 };
 
 /** True if the role may access the module. Unknown/null role → deny. */

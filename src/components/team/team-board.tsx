@@ -4,7 +4,7 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, KeyRound, Pencil, UserPlus } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
@@ -32,6 +32,14 @@ import {
   updateMemberPhoneAction,
 } from "@/app/team/actions";
 import { isSunday, orgToday, weekOffUiEnabled, type WeekOffKind } from "@/lib/attendance/compute";
+import {
+  ALL_ROLES,
+  EMPLOYEE_ROLES,
+  EMPLOYEE_ROLES_LABEL,
+  EXTERNAL_ROLES,
+  EXTERNAL_ROLES_LABEL,
+  isExternalRole,
+} from "@/lib/auth/roles";
 import { roleLabel } from "@/lib/labels";
 import type { Role } from "@/lib/types";
 
@@ -103,20 +111,27 @@ function sundayOptions(current: string): { value: string; label: string }[] {
   }));
 }
 
-/** Roles an admin can assign (in menu order) — the full catalog. */
-const ASSIGNABLE: Role[] = [
-  "super_admin",
-  "pm",
-  "supervisor",
-  "accountant",
-  "hr",
-  "staff",
-  "architect",
-  "engineer",
-  "subcontractor",
-  "viewer",
-  "client",
-];
+/**
+ * Role choices from the shared catalogue (src/lib/auth/roles.ts), grouped
+ * Employees / External. `current` is still listed when it's not in the catalogue.
+ */
+function RoleOptions({ current }: { current?: Role }) {
+  return (
+    <>
+      <optgroup label={EMPLOYEE_ROLES_LABEL}>
+        {EMPLOYEE_ROLES.map((r) => (
+          <option key={r} value={r}>{roleLabel[r] ?? r}</option>
+        ))}
+      </optgroup>
+      <optgroup label={EXTERNAL_ROLES_LABEL}>
+        {EXTERNAL_ROLES.map((r) => (
+          <option key={r} value={r}>{roleLabel[r] ?? r}</option>
+        ))}
+      </optgroup>
+      {current && !ALL_ROLES.includes(current) && <option value={current}>{roleLabel[current] ?? current}</option>}
+    </>
+  );
+}
 
 function initials(name: string) {
   return name.split(" ").map((n) => n[0]).slice(0, 2).join("").toUpperCase();
@@ -169,9 +184,7 @@ function NewMemberDialog({ open, onClose }: { open: boolean; onClose: () => void
           <div className="space-y-1.5">
             <Label htmlFor="m-role">Role</Label>
             <Select id="m-role" value={role} onChange={(e) => setRole(e.target.value as Role)}>
-              {ASSIGNABLE.map((r) => (
-                <option key={r} value={r}>{roleLabel[r] ?? r}</option>
-              ))}
+              <RoleOptions />
             </Select>
           </div>
         </div>
@@ -530,6 +543,120 @@ export function TeamBoard({
     void changeWeeklyOff(member, "alternate_sunday", 0, anchor);
   }
 
+  // Employees vs external logins (clients / subcontractors). An unknown role
+  // stays with Employees so no control silently disappears.
+  const employees = members.filter((m) => !isExternalRole(m.role));
+  const externals = members.filter((m) => isExternalRole(m.role));
+
+  const isSelf = (m: TeamMember) => m.userId === currentUserId;
+  // Cells shared by the Employees and the Client & subcontractor tables.
+  const memberCell = (m: TeamMember) => (
+    <TableCell>
+      <div className="flex items-center gap-2">
+        <Avatar initials={initials(m.name)} color="#1e3a5f" className="h-7 w-7 text-[10px]" />
+        <span className="font-medium">{m.name}{isSelf(m) && <span className="ml-1 text-xs text-muted-foreground">(you)</span>}</span>
+        <Button
+          size="icon"
+          variant="ghost"
+          className="h-6 w-6 text-muted-foreground hover:text-foreground"
+          aria-label={`Edit ${m.name}'s name`}
+          title="Edit name"
+          onClick={() => setRenaming(m)}
+        >
+          <Pencil className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+    </TableCell>
+  );
+
+  const loginCell = (m: TeamMember) => (
+    <TableCell className="text-muted-foreground">
+      <div className="flex items-center gap-1.5">
+        <span>{m.phone || m.email || "—"}</span>
+        {!m.email && (
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-6 w-6 text-muted-foreground hover:text-foreground"
+            aria-label={`Edit ${m.name}'s login phone`}
+            title="Edit login phone"
+            onClick={() => setEditingPhone(m)}
+          >
+            <Pencil className="h-3.5 w-3.5" />
+          </Button>
+        )}
+      </div>
+    </TableCell>
+  );
+
+  const roleCell = (m: TeamMember) => (
+    <TableCell>
+      <Select
+        value={m.role}
+        disabled={busy === m.userId}
+        onChange={(e) => changeRole(m.userId, e.target.value as Role)}
+        className="h-8 w-44 text-xs"
+      >
+        <RoleOptions current={m.role} />
+      </Select>
+    </TableCell>
+  );
+
+  const statusCell = (m: TeamMember) => (
+    <TableCell>
+      <Badge variant={m.isActive ? "success" : "muted"}>{m.isActive ? "Active" : "Disabled"}</Badge>
+    </TableCell>
+  );
+  // External logins can't be granted Purchase Orders from here — an existing
+  // grant (from before they were external) is shown with Revoke only.
+  const externalStatusCell = (m: TeamMember) => (
+    <TableCell>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <Badge variant={m.isActive ? "success" : "muted"}>{m.isActive ? "Active" : "Disabled"}</Badge>
+        {m.canViewPurchaseOrders && (
+          <>
+            <Badge variant="warning">PO access</Badge>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={busy === m.userId}
+              onClick={() => togglePoAccess(m.userId, false)}
+              className="h-7"
+              title="Remove this login's Purchase Orders access"
+            >
+              Revoke
+            </Button>
+          </>
+        )}
+      </div>
+    </TableCell>
+  );
+
+  const actionCell = (m: TeamMember) => (
+    <TableCell className="text-right">
+      <div className="flex justify-end gap-2">
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={busy === m.userId}
+          onClick={() => setResetting(m)}
+          title="Set a new login password"
+        >
+          <KeyRound /> Reset Password
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={busy === m.userId || isSelf(m)}
+          onClick={() => toggleActive(m.userId, !m.isActive)}
+          title={isSelf(m) ? "You can't disable your own account" : undefined}
+        >
+          {m.isActive ? "Disable" : "Enable"}
+        </Button>
+      </div>
+    </TableCell>
+  );
+
   return (
     <>
       <PageHeader
@@ -551,6 +678,9 @@ export function TeamBoard({
       )}
 
       <Card>
+        <CardHeader>
+          <CardTitle>Employees</CardTitle>
+        </CardHeader>
         <CardContent className="pt-0">
           <Table>
             <TableHeader>
@@ -567,237 +697,208 @@ export function TeamBoard({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {members.map((m) => {
-                const self = m.userId === currentUserId;
-                return (
-                  <TableRow key={m.userId}>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <Avatar initials={initials(m.name)} color="#1e3a5f" className="h-7 w-7 text-[10px]" />
-                        <span className="font-medium">{m.name}{self && <span className="ml-1 text-xs text-muted-foreground">(you)</span>}</span>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="h-6 w-6 text-muted-foreground hover:text-foreground"
-                          aria-label={`Edit ${m.name}'s name`}
-                          title="Edit name"
-                          onClick={() => setRenaming(m)}
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                    <TableCell className="font-mono text-xs text-muted-foreground">{m.employeeId || "—"}</TableCell>
-                    <TableCell className="text-muted-foreground">
-                      <div className="flex items-center gap-1.5">
-                        <span>{m.phone || m.email || "—"}</span>
-                        {!m.email && (
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            className="h-6 w-6 text-muted-foreground hover:text-foreground"
-                            aria-label={`Edit ${m.name}'s login phone`}
-                            title="Edit login phone"
-                            onClick={() => setEditingPhone(m)}
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                          </Button>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Select
-                        value={m.role}
-                        disabled={busy === m.userId}
-                        onChange={(e) => changeRole(m.userId, e.target.value as Role)}
-                        className="h-8 w-44 text-xs"
+              {employees.map((m) => (
+                <TableRow key={m.userId}>
+                  {memberCell(m)}
+                  <TableCell className="font-mono text-xs text-muted-foreground">{m.employeeId || "—"}</TableCell>
+                  {loginCell(m)}
+                  {roleCell(m)}
+                  <TableCell>
+                    <Select
+                      value={m.isOffice ? "office" : "site"}
+                      disabled={busy === m.userId}
+                      onChange={(e) => toggleOffice(m.userId, e.target.value === "office")}
+                      className="h-8 w-28 text-xs"
+                      title="Which attendance leave/holiday policy applies — independent of project assignment"
+                    >
+                      <option value="office">Office</option>
+                      <option value="site">Site</option>
+                    </Select>
+                    {!m.isOffice && (
+                      <label
+                        className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground"
+                        title={
+                          workFromOfficePending
+                            ? "Run 0050_attendance_site_visits.sql in Supabase first"
+                            : !canEditWorkFromOffice
+                              ? "Only Super Admin can change this"
+                              : "Adds \"Office\" to their check-in and Switch Site choices"
+                        }
                       >
-                        {ASSIGNABLE.map((r) => (
-                          <option key={r} value={r}>{roleLabel[r] ?? r}</option>
-                        ))}
-                        {!ASSIGNABLE.includes(m.role) && <option value={m.role}>{roleLabel[m.role] ?? m.role}</option>}
-                      </Select>
-                    </TableCell>
-                    <TableCell>
-                      <Select
-                        value={m.isOffice ? "office" : "site"}
-                        disabled={busy === m.userId}
-                        onChange={(e) => toggleOffice(m.userId, e.target.value === "office")}
-                        className="h-8 w-28 text-xs"
-                        title="Which attendance leave/holiday policy applies — independent of project assignment"
+                        <input
+                          type="checkbox"
+                          className="h-3.5 w-3.5"
+                          checked={m.canWorkFromOffice}
+                          disabled={busy === m.userId || workFromOfficePending || !canEditWorkFromOffice}
+                          onChange={(e) => toggleWorkFromOffice(m.userId, e.target.checked)}
+                        />
+                        Can work from office
+                      </label>
+                    )}
+                    {m.isOffice && (
+                      <label
+                        className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground"
+                        title={
+                          clientVisitsPending
+                            ? "Run 0051_departments_client_visits.sql in Supabase first"
+                            : !canEditWorkFromOffice
+                              ? "Only Super Admin can change this"
+                              : "Lets them punch in/out away from the office with a reason (e.g. client meeting)"
+                        }
                       >
-                        <option value="office">Office</option>
-                        <option value="site">Site</option>
-                      </Select>
-                      {!m.isOffice && (
-                        <label
-                          className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground"
-                          title={
-                            workFromOfficePending
-                              ? "Run 0050_attendance_site_visits.sql in Supabase first"
-                              : !canEditWorkFromOffice
-                                ? "Only Super Admin can change this"
-                                : "Adds \"Office\" to their check-in and Switch Site choices"
-                          }
-                        >
-                          <input
-                            type="checkbox"
-                            className="h-3.5 w-3.5"
-                            checked={m.canWorkFromOffice}
-                            disabled={busy === m.userId || workFromOfficePending || !canEditWorkFromOffice}
-                            onChange={(e) => toggleWorkFromOffice(m.userId, e.target.checked)}
-                          />
-                          Can work from office
-                        </label>
-                      )}
-                      {m.isOffice && (
-                        <label
-                          className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground"
-                          title={
-                            clientVisitsPending
-                              ? "Run 0051_departments_client_visits.sql in Supabase first"
-                              : !canEditWorkFromOffice
-                                ? "Only Super Admin can change this"
-                                : "Lets them punch in/out away from the office with a reason (e.g. client meeting)"
-                          }
-                        >
-                          <input
-                            type="checkbox"
-                            className="h-3.5 w-3.5"
-                            checked={m.clientVisitsAllowed}
-                            disabled={busy === m.userId || clientVisitsPending || !canEditWorkFromOffice}
-                            onChange={(e) => toggleClientVisits(m.userId, e.target.checked)}
-                          />
-                          Client visits allowed
-                        </label>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {weekOffUiEnabled(m.isOffice) ? (
-                        (() => {
-                          const pendingAlt = pendingAlternate.has(m.userId);
-                          const choice = pendingAlt ? "alternate" : weekOffChoiceOf(m);
-                          const disabled = busy === m.userId || weekOffPending;
-                          const kindsTip = "Run 0049_attendance_weekly_off_types.sql in Supabase first";
-                          // Alternate / Flexible are Site-only; an office member keeps seeing a
-                          // current non-fixed value (so the select never shows a wrong choice).
-                          const showSiteKinds = (c: WeekOffChoice) => !m.isOffice || choice === c;
-                          return (
-                            <div className="flex flex-wrap items-center gap-1">
+                        <input
+                          type="checkbox"
+                          className="h-3.5 w-3.5"
+                          checked={m.clientVisitsAllowed}
+                          disabled={busy === m.userId || clientVisitsPending || !canEditWorkFromOffice}
+                          onChange={(e) => toggleClientVisits(m.userId, e.target.checked)}
+                        />
+                        Client visits allowed
+                      </label>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {weekOffUiEnabled(m.isOffice) ? (
+                      (() => {
+                        const pendingAlt = pendingAlternate.has(m.userId);
+                        const choice = pendingAlt ? "alternate" : weekOffChoiceOf(m);
+                        const disabled = busy === m.userId || weekOffPending;
+                        const kindsTip = "Run 0049_attendance_weekly_off_types.sql in Supabase first";
+                        // Alternate / Flexible are Site-only; an office member keeps seeing a
+                        // current non-fixed value (so the select never shows a wrong choice).
+                        const showSiteKinds = (c: WeekOffChoice) => !m.isOffice || choice === c;
+                        return (
+                          <div className="flex flex-wrap items-center gap-1">
+                            <Select
+                              aria-label={`${m.name}'s weekly off type`}
+                              value={choice}
+                              disabled={disabled}
+                              onChange={(e) => changeWeekOffChoice(m, e.target.value as WeekOffChoice)}
+                              className="h-8 w-44 text-xs"
+                              title={
+                                weekOffPending
+                                  ? "Run 0047_attendance_weekly_off.sql in Supabase first"
+                                  : "Weekly off (applies from today) — swaps are recorded on the Attendance tab"
+                              }
+                            >
+                              <option value="sunday">Every Sunday off</option>
+                              {showSiteKinds("alternate") && (
+                                <option value="alternate" disabled={weekOffKindsPending} title={weekOffKindsPending ? kindsTip : undefined}>
+                                  Alternate Sundays off
+                                </option>
+                              )}
+                              {showSiteKinds("flexible") && (
+                                <option value="flexible" disabled={weekOffKindsPending} title={weekOffKindsPending ? kindsTip : undefined}>
+                                  Flexible (= Sundays in month)
+                                </option>
+                              )}
+                              <option value="other">Fixed other day</option>
+                            </Select>
+                            {choice === "other" && (
                               <Select
-                                aria-label={`${m.name}'s weekly off type`}
-                                value={choice}
+                                aria-label={`${m.name}'s weekly off day`}
+                                value={String(m.weeklyOffDow)}
                                 disabled={disabled}
-                                onChange={(e) => changeWeekOffChoice(m, e.target.value as WeekOffChoice)}
-                                className="h-8 w-44 text-xs"
-                                title={
-                                  weekOffPending
-                                    ? "Run 0047_attendance_weekly_off.sql in Supabase first"
-                                    : "Weekly off (applies from today) — swaps are recorded on the Attendance tab"
-                                }
+                                onChange={(e) => changeWeeklyOff(m, "fixed", Number(e.target.value), "")}
+                                className="h-8 w-20 text-xs"
                               >
-                                <option value="sunday">Every Sunday off</option>
-                                {showSiteKinds("alternate") && (
-                                  <option value="alternate" disabled={weekOffKindsPending} title={weekOffKindsPending ? kindsTip : undefined}>
-                                    Alternate Sundays off
-                                  </option>
+                                {WEEKDAYS_SHORT.map((d, i) =>
+                                  i === 0 ? null : <option key={d} value={i}>{d}</option>
                                 )}
-                                {showSiteKinds("flexible") && (
-                                  <option value="flexible" disabled={weekOffKindsPending} title={weekOffKindsPending ? kindsTip : undefined}>
-                                    Flexible (= Sundays in month)
-                                  </option>
-                                )}
-                                <option value="other">Fixed other day</option>
                               </Select>
-                              {choice === "other" && (
-                                <Select
-                                  aria-label={`${m.name}'s weekly off day`}
-                                  value={String(m.weeklyOffDow)}
-                                  disabled={disabled}
-                                  onChange={(e) => changeWeeklyOff(m, "fixed", Number(e.target.value), "")}
-                                  className="h-8 w-20 text-xs"
-                                >
-                                  {WEEKDAYS_SHORT.map((d, i) =>
-                                    i === 0 ? null : <option key={d} value={i}>{d}</option>
-                                  )}
-                                </Select>
-                              )}
-                              {choice === "alternate" && (
-                                <Select
-                                  aria-label={`${m.name}'s off Sunday`}
-                                  title="An off Sunday — every other Sunday from it is off too"
-                                  value={pendingAlt ? "" : m.weeklyOffAnchor}
-                                  disabled={disabled}
-                                  onChange={(e) => changeWeekOffAnchor(m, e.target.value)}
-                                  className="h-8 w-40 text-xs"
-                                >
-                                  <option value="" disabled>
-                                    Choose an off Sunday…
-                                  </option>
-                                  {sundayOptions(m.weeklyOffAnchor).map((o) => (
-                                    <option key={o.value} value={o.value}>{o.label}</option>
-                                  ))}
-                                </Select>
-                              )}
-                            </div>
-                          );
-                        })()
-                      ) : weekOffSummary(m) ? (
-                        // UI not enabled for this category, but a non-default weekly off still applies — show it.
-                        <span className="text-xs text-muted-foreground" title="Weekly off (read-only for this category)">
-                          {weekOffSummary(m)}
-                        </span>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">—</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {m.role === "super_admin" ? (
-                        <Badge variant="success">Always</Badge>
-                      ) : (
-                        <Button
-                          size="sm"
-                          variant={m.canViewPurchaseOrders ? "default" : "outline"}
-                          disabled={busy === m.userId}
-                          onClick={() => togglePoAccess(m.userId, !m.canViewPurchaseOrders)}
-                          className="h-8"
-                        >
-                          {m.canViewPurchaseOrders ? "Granted" : "No access"}
-                        </Button>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={m.isActive ? "success" : "muted"}>{m.isActive ? "Active" : "Disabled"}</Badge>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={busy === m.userId}
-                          onClick={() => setResetting(m)}
-                          title="Set a new login password"
-                        >
-                          <KeyRound /> Reset Password
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={busy === m.userId || self}
-                          onClick={() => toggleActive(m.userId, !m.isActive)}
-                          title={self ? "You can't disable your own account" : undefined}
-                        >
-                          {m.isActive ? "Disable" : "Enable"}
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-              {members.length === 0 && (
+                            )}
+                            {choice === "alternate" && (
+                              <Select
+                                aria-label={`${m.name}'s off Sunday`}
+                                title="An off Sunday — every other Sunday from it is off too"
+                                value={pendingAlt ? "" : m.weeklyOffAnchor}
+                                disabled={disabled}
+                                onChange={(e) => changeWeekOffAnchor(m, e.target.value)}
+                                className="h-8 w-40 text-xs"
+                              >
+                                <option value="" disabled>
+                                  Choose an off Sunday…
+                                </option>
+                                {sundayOptions(m.weeklyOffAnchor).map((o) => (
+                                  <option key={o.value} value={o.value}>{o.label}</option>
+                                ))}
+                              </Select>
+                            )}
+                          </div>
+                        );
+                      })()
+                    ) : weekOffSummary(m) ? (
+                      // UI not enabled for this category, but a non-default weekly off still applies — show it.
+                      <span className="text-xs text-muted-foreground" title="Weekly off (read-only for this category)">
+                        {weekOffSummary(m)}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {m.role === "super_admin" ? (
+                      <Badge variant="success">Always</Badge>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant={m.canViewPurchaseOrders ? "default" : "outline"}
+                        disabled={busy === m.userId}
+                        onClick={() => togglePoAccess(m.userId, !m.canViewPurchaseOrders)}
+                        className="h-8"
+                      >
+                        {m.canViewPurchaseOrders ? "Granted" : "No access"}
+                      </Button>
+                    )}
+                  </TableCell>
+                  {statusCell(m)}
+                  {actionCell(m)}
+                </TableRow>
+              ))}
+              {employees.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={9} className="py-10 text-center text-sm text-muted-foreground">
-                    No members yet — add one with “New Member”.
+                    No employees yet — add one with “New Member”.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      {/* External users are logins only: no Employee ID, Office/Site, weekly off,
+          PO or client-visit controls. Changing a role moves the member between
+          the two cards (on refresh); no other flag is changed. */}
+      <Card className="mt-6">
+        <CardHeader>
+          <CardTitle>Client &amp; subcontractor logins</CardTitle>
+        </CardHeader>
+        <CardContent className="pt-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Member</TableHead>
+                <TableHead>Login</TableHead>
+                <TableHead>Role</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="text-right">Action</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {externals.map((m) => (
+                <TableRow key={m.userId}>
+                  {memberCell(m)}
+                  {loginCell(m)}
+                  {roleCell(m)}
+                  {externalStatusCell(m)}
+                  {actionCell(m)}
+                </TableRow>
+              ))}
+              {externals.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={5} className="py-10 text-center text-sm text-muted-foreground">
+                    No client or subcontractor logins.
                   </TableCell>
                 </TableRow>
               )}

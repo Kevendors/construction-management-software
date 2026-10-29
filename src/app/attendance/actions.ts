@@ -18,6 +18,8 @@ import {
   SITE_VISITS_PENDING_MSG,
 } from "@/lib/attendance/site-visits";
 import type { AuthContext } from "@/lib/auth/context";
+import type { Role } from "@/lib/types";
+import { ATTENDANCE_EMPLOYEES_ONLY, isExternalRole } from "@/lib/auth/roles";
 import {
   formatDuration,
   formatTime,
@@ -427,6 +429,7 @@ export async function checkInAction(input: CheckInInput): Promise<ActionResult> 
 
   const ctx = await getAuthContext();
   if (!ctx?.orgId) return { error: "You must be signed in." };
+  if (isExternalRole(ctx.role)) return { error: ATTENDANCE_EMPLOYEES_ONLY };
   if (!input.projectId) return { error: "Choose a project first." };
   if (!validCoords(input.lat, input.lng, input.accuracy)) {
     return { error: "Could not read a valid GPS location. Enable location access and retry." };
@@ -565,6 +568,7 @@ export async function checkOutAction(input: CheckOutInput): Promise<ActionResult
 
   const ctx = await getAuthContext();
   if (!ctx?.orgId) return { error: "You must be signed in." };
+  if (isExternalRole(ctx.role)) return { error: ATTENDANCE_EMPLOYEES_ONLY };
   if (!validCoords(input.lat, input.lng, input.accuracy)) {
     return { error: "Could not read a valid GPS location. Enable location access and retry." };
   }
@@ -698,6 +702,7 @@ export async function switchSiteAction(input: SwitchSiteInput): Promise<ActionRe
 
   const ctx = await getAuthContext();
   if (!ctx?.orgId) return { error: "You must be signed in." };
+  if (isExternalRole(ctx.role)) return { error: ATTENDANCE_EMPLOYEES_ONLY };
   if (!input.projectId) return { error: "Choose a project first." };
   if (!validCoords(input.lat, input.lng, input.accuracy)) {
     return { error: "Could not read a valid GPS location. Enable location access and retry." };
@@ -1122,6 +1127,7 @@ export async function officeCheckInAction(input: OfficePunchInput): Promise<Acti
 
   const ctx = await getAuthContext();
   if (!ctx?.orgId) return { error: "You must be signed in." };
+  if (isExternalRole(ctx.role)) return { error: ATTENDANCE_EMPLOYEES_ONLY };
   if (!validCoords(input.lat, input.lng, input.accuracy)) {
     return { error: "Could not read a valid GPS location. Enable location access and retry." };
   }
@@ -1224,6 +1230,7 @@ export async function officeCheckOutAction(input: OfficePunchInput): Promise<Act
 
   const ctx = await getAuthContext();
   if (!ctx?.orgId) return { error: "You must be signed in." };
+  if (isExternalRole(ctx.role)) return { error: ATTENDANCE_EMPLOYEES_ONLY };
   if (!validCoords(input.lat, input.lng, input.accuracy)) {
     return { error: "Could not read a valid GPS location. Enable location access and retry." };
   }
@@ -1389,6 +1396,15 @@ export async function adminMarkAttendanceAction(input: AdminMarkAttendanceInput)
     return { error: "Not authorized." };
   }
   if (!input.userId) return { error: "Choose an employee." };
+  const { data: target } = await createAdminClient()
+    .from("memberships")
+    .select("role")
+    .eq("org_id", ctx.orgId)
+    .eq("user_id", input.userId)
+    .maybeSingle();
+  // External users (clients / subcontractors) have no attendance: an admin may
+  // still close/edit an EXISTING record (e.g. a stale open shift), never add one.
+  const targetIsExternal = isExternalRole(target?.role as Role | undefined);
   if (!YMD.test(input.date) || input.date > orgToday()) return { error: "Choose a valid past or current date." };
   const note = input.note.trim();
   if (!note) return { error: "A reason is required for a manual entry." };
@@ -1418,6 +1434,7 @@ export async function adminMarkAttendanceAction(input: AdminMarkAttendanceInput)
     .eq("user_id", input.userId)
     .eq("date", input.date)
     .maybeSingle();
+  if (!existing && targetIsExternal) return { error: ATTENDANCE_EMPLOYEES_ONLY };
 
   const projectName = async (id: string | null) => {
     if (!id) return null;
@@ -1525,6 +1542,7 @@ export async function closePreviousShiftAction(
 
   const ctx = await getAuthContext();
   if (!ctx?.orgId || !ctx?.userId) return { error: "You must be signed in." };
+  if (isExternalRole(ctx.role)) return { error: ATTENDANCE_EMPLOYEES_ONLY };
 
   const admin = createAdminClient();
   const { data: record, error: fetchErr } = await admin
@@ -1613,6 +1631,7 @@ export async function recordLocationPingAction(
   if (!isSupabaseConfigured()) return { ok: true };
   const ctx = await getAuthContext();
   if (!ctx?.orgId || !ctx?.userId) return { ok: false, error: "Not signed in." };
+  if (isExternalRole(ctx.role)) return { ok: false, error: ATTENDANCE_EMPLOYEES_ONLY };
   if (!validCoords(input.lat, input.lng, input.accuracy)) {
     return { ok: false, error: "Could not read a valid location." };
   }
@@ -1711,7 +1730,7 @@ export async function getLiveLocationsAction(): Promise<LiveLocation[]> {
       .in("attendance_id", attendanceIds)
       .order("recorded_at", { ascending: false }),
     admin.from("profiles").select("id, name").in("id", userIds),
-    admin.from("memberships").select("user_id, employee_id").eq("org_id", ctx.orgId).in("user_id", userIds),
+    admin.from("memberships").select("user_id, employee_id, role").eq("org_id", ctx.orgId).in("user_id", userIds),
     projectIds.length
       ? admin.from("projects").select("id, name, geofence_lat, geofence_lng, geofence_radius_m").in("id", projectIds)
       : Promise.resolve({ data: [] as Record<string, unknown>[] }),
@@ -1727,13 +1746,16 @@ export async function getLiveLocationsAction(): Promise<LiveLocation[]> {
   const nameById = new Map(
     ((profilesRes.data ?? []) as { id: string; name: string }[]).map((p) => [p.id, p.name])
   );
-  const empIdByUser = new Map(
-    ((memRes.data ?? []) as { user_id: string; employee_id: string | null }[]).map((m) => [m.user_id, m.employee_id ?? ""])
+  type LiveMemRow = { user_id: string; employee_id: string | null; role: Role };
+  const empIdByUser = new Map(((memRes.data ?? []) as LiveMemRow[]).map((m) => [m.user_id, m.employee_id ?? ""]));
+  // Employees only — an external user's (client / subcontractor) old open shift is never mapped.
+  const externalIds = new Set(
+    ((memRes.data ?? []) as LiveMemRow[]).filter((m) => isExternalRole(m.role)).map((m) => m.user_id)
   );
   type ProjRow = { id: string; name: string; geofence_lat: number | null; geofence_lng: number | null; geofence_radius_m: number | null };
   const projectById = new Map(((projRes.data ?? []) as ProjRow[]).map((p) => [p.id, p]));
 
-  return rows.map((r) => {
+  return rows.filter((r) => !externalIds.has(r.user_id)).map((r) => {
     const currentProjectId = currentOf(r);
     const project = currentProjectId ? projectById.get(currentProjectId) : undefined;
     const lastPing = latestPingByAttendance.get(r.id) ?? null;

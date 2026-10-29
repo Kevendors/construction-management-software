@@ -28,10 +28,9 @@ import { addEmployeeAction, generateSlipAction } from "@/app/payroll/actions";
 import { salarySlipStatusMeta, roleLabel } from "@/lib/labels";
 import { useRole } from "@/components/layout/role-provider";
 import { isAdminRole } from "@/lib/auth/permissions";
+import { EMPLOYEE_ROLES, isExternalRole } from "@/lib/auth/roles";
 import { cn, formatINR } from "@/lib/utils";
 import type { Department, Employee, Role } from "@/lib/types";
-
-const ACCOUNT_ROLES: Role[] = ["supervisor", "pm", "super_admin"];
 
 export function EmployeesTab({
   board,
@@ -402,7 +401,8 @@ function AddEmployeeDialog({
   const unlinkedMembers = React.useMemo(() => {
     if (!members?.length || !existingEmployees) return [];
     const existingNames = new Set(existingEmployees.map((e) => e.name.toLowerCase()));
-    return members.filter((m) => !existingNames.has(m.name.toLowerCase()));
+    // Employees only — client / subcontractor logins never go on payroll.
+    return members.filter((m) => !isExternalRole(m.role) && !existingNames.has(m.name.toLowerCase()));
   }, [members, existingEmployees]);
 
   function handleSelectMember(userId: string) {
@@ -610,7 +610,7 @@ function AddEmployeeDialog({
                   <div className="space-y-1.5">
                     <Label htmlFor="e-role">Role</Label>
                     <Select id="e-role" value={accountRole} onChange={(e) => setAccountRole(e.target.value as Role)}>
-                      {ACCOUNT_ROLES.map((r) => <option key={r} value={r}>{roleLabel[r] ?? r}</option>)}
+                      {EMPLOYEE_ROLES.map((r) => <option key={r} value={r}>{roleLabel[r] ?? r}</option>)}
                     </Select>
                   </div>
                 </div>
