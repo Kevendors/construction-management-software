@@ -113,9 +113,9 @@ export function EmployeesTab({
       member?.weekOff,
       member?.startDate
     );
-    // Days before joining aren't Absent any more, but stay unpaid exactly as
-    // before (notJoinedUnpaid = the ones that used to count as Absent).
-    const unpaidDays = summary.absent + summary.halfDay * 0.5 + summary.notJoinedUnpaid;
+    // Salary counts only from the joining date: every day before it (incl.
+    // Sundays/holidays) is unpaid, as well as Absent and half of each Half-Day.
+    const unpaidDays = summary.absent + summary.halfDay * 0.5 + summary.notJoined;
     return {
       rawDays: matching.length,
       unpaidDays,

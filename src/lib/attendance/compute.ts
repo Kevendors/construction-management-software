@@ -708,6 +708,7 @@ export function evaluateEmployeeMonthAttendance(
   for (const date of daysOfMonth(month)) {
     if (date > today) break;
     if (recordedDates.has(date)) continue;
+    if (startDate && date < startDate) continue; // not employed yet — not a paid holiday
     if (isHolidayFor(date, holidays, isOffice)) fullDays += 1;
   }
 
