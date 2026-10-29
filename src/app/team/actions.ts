@@ -9,6 +9,8 @@ import { roleLabel } from "@/lib/labels";
 import { isSunday, orgToday, toWeekOffKind, WEEK_OFF_KINDS, type WeekOffKind } from "@/lib/attendance/compute";
 import type { Role } from "@/lib/types";
 
+const NO_EXTERNAL_LOGINS = "Clients and subcontractors don't get logins — choose an employee role.";
+
 export interface ActionResult {
   id?: string;
   error?: string;
@@ -68,6 +70,7 @@ export async function createMemberAction(input: NewMemberInput): Promise<ActionR
   if (digits.length < 6) return { error: "Enter a valid phone number." };
   if (input.password.length < 6) return { error: "Password must be at least 6 characters." };
   if (!input.name.trim()) return { error: "Name is required." };
+  if (isExternalRole(input.role)) return { error: NO_EXTERNAL_LOGINS };
 
   const admin = createAdminClient();
   const { data, error } = await admin.auth.admin.createUser({
@@ -124,6 +127,7 @@ export async function createMemberAction(input: NewMemberInput): Promise<ActionR
 export async function setMemberRoleAction(userId: string, role: Role): Promise<ActionResult> {
   const ctx = await getAuthContext();
   if (!ctx || !isAdminRole(ctx.role)) return { error: "Not authorized." };
+  if (isExternalRole(role)) return { error: NO_EXTERNAL_LOGINS };
   if (!ctx.orgId) return { error: "No organization found." };
   const admin = createAdminClient();
   const { error } = await admin

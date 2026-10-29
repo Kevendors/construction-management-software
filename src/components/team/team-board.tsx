@@ -33,11 +33,7 @@ import {
 } from "@/app/team/actions";
 import { isSunday, orgToday, weekOffUiEnabled, type WeekOffKind } from "@/lib/attendance/compute";
 import {
-  ALL_ROLES,
   EMPLOYEE_ROLES,
-  EMPLOYEE_ROLES_LABEL,
-  EXTERNAL_ROLES,
-  EXTERNAL_ROLES_LABEL,
   isExternalRole,
 } from "@/lib/auth/roles";
 import { roleLabel } from "@/lib/labels";
@@ -118,17 +114,11 @@ function sundayOptions(current: string): { value: string; label: string }[] {
 function RoleOptions({ current }: { current?: Role }) {
   return (
     <>
-      <optgroup label={EMPLOYEE_ROLES_LABEL}>
-        {EMPLOYEE_ROLES.map((r) => (
-          <option key={r} value={r}>{roleLabel[r] ?? r}</option>
-        ))}
-      </optgroup>
-      <optgroup label={EXTERNAL_ROLES_LABEL}>
-        {EXTERNAL_ROLES.map((r) => (
-          <option key={r} value={r}>{roleLabel[r] ?? r}</option>
-        ))}
-      </optgroup>
-      {current && !ALL_ROLES.includes(current) && <option value={current}>{roleLabel[current] ?? current}</option>}
+      {/* Clients and subcontractors don't get logins — employee roles only. */}
+      {EMPLOYEE_ROLES.map((r) => (
+        <option key={r} value={r}>{roleLabel[r] ?? r}</option>
+      ))}
+      {current && !EMPLOYEE_ROLES.includes(current) && <option value={current}>{roleLabel[current] ?? current}</option>}
     </>
   );
 }
@@ -870,6 +860,10 @@ export function TeamBoard({
       {/* External users are logins only: no Employee ID, Office/Site, weekly off,
           PO or client-visit controls. Changing a role moves the member between
           the two cards (on refresh); no other flag is changed. */}
+      {/* Clients and subcontractors don't get logins any more; this card only
+          appears if an older external login still exists, so it can be
+          tidied up (role changed or disabled). */}
+      {externals.length > 0 && (
       <Card className="mt-6">
         <CardHeader>
           <CardTitle>Client &amp; subcontractor logins</CardTitle>
@@ -906,6 +900,7 @@ export function TeamBoard({
           </Table>
         </CardContent>
       </Card>
+      )}
 
       <NewMemberDialog open={open} onClose={() => setOpen(false)} />
       {/* keyed per member so each open starts from a clean form */}
