@@ -71,7 +71,7 @@ export const roleLabel: Record<string, string> = {
   supervisor: "Supervisor",
   accountant: "Accountant / Finance",
   hr: "HR",
-  staff: "Employee / Staff",
+  staff: "General Staff (basic access)",
   architect: "Architect",
   engineer: "Site Engineer",
   subcontractor: "Subcontractor",
