@@ -20,6 +20,7 @@ import {
   type WeekOffSwap,
 } from "@/lib/attendance/compute";
 import { mapProject, mapSpotCheck, type ProjectRow, type SpotCheckRow } from "./mappers";
+import { OFFICE_SITE_NAME } from "@/lib/attendance/site-visits";
 
 // Re-export the client-safe board types for existing import sites.
 export type { AttendanceAdminBoard, AttendanceMember, MyAttendanceData, OrgHoliday, WeekOffSwap };
@@ -134,6 +135,19 @@ async function myIsOffice(
   return (data?.is_office as boolean | null | undefined) ?? null;
 }
 
+/** 0050 addendum: the caller's "Can work from office" tick. Missing column = false. */
+async function myCanWorkFromOffice(
+  supabase: Awaited<ReturnType<typeof createSupabase>>,
+  userId: string,
+  orgId: string | null
+): Promise<boolean> {
+  let query = supabase.from("memberships").select("can_work_from_office").eq("user_id", userId);
+  if (orgId) query = query.eq("org_id", orgId);
+  const { data, error } = await query.limit(1).maybeSingle();
+  if (error) return false;
+  return data?.can_work_from_office === true;
+}
+
 type SwapRow = { user_id: string; worked_date: string; off_date: string };
 type HistoryRow = { dow: number; effective_from: string };
 /** 0049 columns, read in their own queries — missing = everyone "fixed". */
@@ -191,6 +205,47 @@ async function myStartDate(
   return orgDateOf((data?.created_at as string | null | undefined) ?? "") || undefined;
 }
 
+/**
+ * Switch Site (0050): today's visits (RLS: own rows) plus the names of every
+ * site involved, looked up org-scoped with the service role (unassigned Site
+ * staff can't read projects through RLS). Any error — incl. the table not
+ * existing yet (PGRST205 / 42P01) — just means "no visits".
+ */
+async function myTodaySites(
+  supabase: Awaited<ReturnType<typeof createSupabase>>,
+  orgId: string | null,
+  todayRow: EmployeeAttendanceRow | null,
+  /** "Can work from office" member: a null-project visit = the Office (else a since-deleted project). */
+  officeAllowed: boolean
+): Promise<Pick<MyAttendanceData, "todayVisits" | "todayProjectName">> {
+  // Office check-ins included: a "Can work from office" member may check in
+  // at the Office (project_id null) and switch to a project later.
+  if (!todayRow || !orgId) return { todayVisits: [], todayProjectName: "" };
+  const { data, error } = await supabase
+    .from("attendance_site_visits")
+    .select("id, project_id, arrived_at")
+    .eq("attendance_id", todayRow.id)
+    .order("arrived_at", { ascending: true });
+  const rows = error ? [] : ((data ?? []) as { id: string; project_id: string | null; arrived_at: string }[]);
+  const ids = Array.from(
+    new Set([todayRow.project_id, ...rows.map((r) => r.project_id)].filter((p): p is string => Boolean(p)))
+  );
+  const { data: names } = ids.length
+    ? await createAdminClient().from("projects").select("id, name").eq("org_id", orgId).in("id", ids)
+    : { data: [] };
+  const nameOf = new Map(((names ?? []) as { id: string; name: string }[]).map((p) => [p.id, p.name]));
+  return {
+    todayVisits: rows.map((r) => ({
+      id: r.id,
+      projectId: r.project_id,
+      // A null-project visit = the Office for a "Can work from office" member (0050 addendum).
+      projectName: r.project_id ? nameOf.get(r.project_id) ?? "Site" : officeAllowed ? OFFICE_SITE_NAME : "Removed project",
+      arrivedAt: r.arrived_at,
+    })),
+    todayProjectName: todayRow.project_id ? nameOf.get(todayRow.project_id) ?? "" : "",
+  };
+}
+
 export async function getMyAttendancePage(month?: string): Promise<MyAttendanceData> {
   const activeMonth = /^\d{4}-\d{2}$/.test(month ?? "") ? (month as string) : orgThisMonth();
   const today = orgToday();
@@ -204,16 +259,24 @@ export async function getMyAttendancePage(month?: string): Promise<MyAttendanceD
       mockCurrentUser.role === "super_admin"
         ? mockProjects
         : mockProjects.filter((p) => assignedIds.has(p.id));
+    const mockToday = mine.find((r) => r.date === today) ?? null;
+    // Sample data: someone with project punches is Site (the demo super_admin
+    // isn't rostered but checks in at a project) — demos Switch Site.
+    const mockIsSite = assignedIds.size > 0 || mine.some((r) => r.projectId);
     return {
-      today: mine.find((r) => r.date === today) ?? null,
+      today: mockToday,
       unclosedPreviousShift: null,
       pendingSpotCheck: null,
+      todayVisits: [],
+      todayProjectName: mockToday?.projectId ? mockProjects.find((p) => p.id === mockToday.projectId)?.name ?? "" : "",
       records: mine
         .filter((r) => r.date.startsWith(activeMonth))
         .sort((a, b) => b.date.localeCompare(a.date)),
       assignedProjects: mockAssigned,
-      usesSiteFlow: assignedIds.size > 0,
-      isOffice: assignedIds.size === 0,
+      usesSiteFlow: mockIsSite,
+      isOffice: !mockIsSite,
+      // Sample data demos the "Office as a site" option for the Site user.
+      canWorkFromOffice: mockIsSite,
       officeGeofence: { lat: null, lng: null, radiusM: null },
       holidays: [],
       weekOff: SUNDAY_OFF,
@@ -229,10 +292,13 @@ export async function getMyAttendancePage(month?: string): Promise<MyAttendanceD
       today: null,
       unclosedPreviousShift: null,
       pendingSpotCheck: null,
+      todayVisits: [],
+      todayProjectName: "",
       records: [],
       assignedProjects: [],
       usesSiteFlow: false,
       isOffice: false,
+      canWorkFromOffice: false,
       officeGeofence: { lat: null, lng: null, radiusM: null },
       holidays: [],
       weekOff: SUNDAY_OFF,
@@ -247,7 +313,7 @@ export async function getMyAttendancePage(month?: string): Promise<MyAttendanceD
   // Explicit user_id filter: super_admin's RLS read is org-wide, but this
   // page is always "my own attendance". The month query is one user's one
   // month (at most ~31 rows), so it needs no pagination past the 1000-row cap.
-  const [monthRes, todayRes, unclosedRes, pmRes, projRes, employeeId, isOfficeRaw, orgRes, holidaysRes, pendingSpotRes, weekOff, startDate] = await Promise.all([
+  const [monthRes, todayRes, unclosedRes, pmRes, projRes, employeeId, isOfficeRaw, orgRes, holidaysRes, pendingSpotRes, weekOff, startDate, canWorkFromOfficeRaw] = await Promise.all([
     supabase
       .from("employee_attendance")
       .select("*")
@@ -291,6 +357,7 @@ export async function getMyAttendancePage(month?: string): Promise<MyAttendanceD
       .maybeSingle(),
     myWeekOff(supabase, ctx.userId),
     myStartDate(supabase, ctx.userId, ctx.orgId),
+    myCanWorkFromOffice(supabase, ctx.userId, ctx.orgId),
   ]);
   if (monthRes.error) throw monthRes.error;
 
@@ -343,6 +410,7 @@ export async function getMyAttendancePage(month?: string): Promise<MyAttendanceD
       .order("name");
     assignedProjects = ((openRows ?? []) as ProjectRow[]).map((r) => ({ ...mapProject(r), value: 0 }));
   }
+  const { todayVisits, todayProjectName } = await myTodaySites(supabase, ctx.orgId, todayRow, !isOffice && canWorkFromOfficeRaw);
   const officeRow = orgRes?.data as { office_lat: number | null; office_lng: number | null; office_radius_m: number | null } | null;
   const holidays = (holidaysRes?.data ?? []).map((h) => ({
     date: (h as { date: string }).date,
@@ -355,10 +423,14 @@ export async function getMyAttendancePage(month?: string): Promise<MyAttendanceD
     unclosedPreviousShift: unclosedRow ? mapEmployeeAttendance(unclosedRow, identityFor(unclosedRow)) : null,
     // Errors (incl. 0045 not applied yet) just mean "no pending check".
     pendingSpotCheck: pendingSpotRes?.data ? mapSpotCheck(pendingSpotRes.data as SpotCheckRow) : null,
+    todayVisits,
+    todayProjectName,
     records: monthRows.map((r) => mapEmployeeAttendance(r, identityFor(r))),
     assignedProjects,
     usesSiteFlow: !isOffice,
     isOffice,
+    // Only Site members can use the Office as a site.
+    canWorkFromOffice: !isOffice && canWorkFromOfficeRaw,
     officeGeofence: {
       lat: officeRow?.office_lat ?? null,
       lng: officeRow?.office_lng ?? null,
@@ -461,7 +533,7 @@ export async function getAttendanceAdminBoard(): Promise<AttendanceAdminBoard> {
   memRows = memRows.filter((m) => m.is_active ?? true);
 
   const ids = memRows.map((m) => m.user_id);
-  const [profRes, attRes, pmRes, holidaysRes, dowRes, swapsRes, historyRes, startRes, kindRes, historyKindRes] = await Promise.all([
+  const [profRes, attRes, pmRes, holidaysRes, dowRes, swapsRes, historyRes, startRes, kindRes, historyKindRes, wfoRes] = await Promise.all([
     admin
       .from("profiles")
       .select("id, name")
@@ -483,7 +555,16 @@ export async function getAttendanceAdminBoard(): Promise<AttendanceAdminBoard> {
     // Weekly-off kind / anchor (0049) — own queries: missing columns = everyone "fixed".
     admin.from("memberships").select("user_id, weekly_off_kind, weekly_off_anchor").eq("org_id", ctx.orgId),
     admin.from("attendance_weekly_off_history").select("user_id, effective_from, kind, anchor").eq("org_id", ctx.orgId),
+    // "Can work from office" (0050) — own query: a missing column = false for everyone.
+    admin.from("memberships").select("user_id, can_work_from_office").eq("org_id", ctx.orgId),
   ]);
+  const wfoIds = new Set(
+    wfoRes.error
+      ? []
+      : ((wfoRes.data ?? []) as { user_id: string; can_work_from_office: boolean | null }[])
+          .filter((r) => r.can_work_from_office === true)
+          .map((r) => r.user_id)
+  );
   if (attRes.error) throw attRes.error;
 
   const startById = new Map(
@@ -541,6 +622,7 @@ export async function getAttendanceAdminBoard(): Promise<AttendanceAdminBoard> {
       // Explicit per-member setting (Team page), independent of project
       // assignment. Falls back to the old auto-inference only pre-migration.
       isOffice: hasIsOfficeColumn ? m.is_office ?? true : !rosterUserIds.has(m.user_id),
+      canWorkFromOffice: wfoIds.has(m.user_id),
       weekOff: {
         defaultDow: dowById.get(m.user_id) ?? SUNDAY_OFF.defaultDow,
         kind: toWeekOffKind(kindById.get(m.user_id)?.weekly_off_kind),

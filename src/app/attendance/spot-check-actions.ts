@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { logActivity } from "@/lib/activity/log";
+import { currentSiteFor } from "@/lib/attendance/site-visit-store";
 import {
   isValidPosition,
   judgeSpotCheck,
@@ -41,12 +42,27 @@ export async function confirmSpotCheckAction(
     return { error: "Time's up — this location check has expired." };
   }
 
+  // Judge against the CURRENT site (after any Switch Site, 0050), not the
+  // project the check was scheduled under; the row is re-pointed to it below.
+  const current = await currentSiteFor(ctx.orgId, {
+    id: row.attendance_id as string,
+    projectId: (row.project_id as string | null) ?? null,
+    userId: ctx.userId,
+  });
+  if (current.atOffice) {
+    // Currently at the Office (Switch Site, 0050): checks only apply at a
+    // project. The switch already cancels them; this catches a race.
+    await admin.from(TABLE).update({ status: "cancelled" }).eq("id", id).eq("status", "pending");
+    return { error: "You're at the Office — this location check no longer applies." };
+  }
+  // No known site (not a "Can work from office" member) → no fence, as before.
+  const projectId = current.projectId ?? ((row.project_id as string | null) ?? null);
   let fence: SpotCheckFence | null = null;
-  if (row.project_id) {
+  if (current.projectId) {
     const { data: p } = await admin
       .from("projects")
       .select("geofence_lat, geofence_lng, geofence_radius_m")
-      .eq("id", row.project_id)
+      .eq("id", current.projectId)
       .maybeSingle();
     if (p) fence = { lat: p.geofence_lat, lng: p.geofence_lng, radiusM: p.geofence_radius_m };
   }
@@ -61,6 +77,7 @@ export async function confirmSpotCheckAction(
       lng: pos.lng,
       accuracy: pos.accuracy,
       distance_m: verdict.distanceM,
+      project_id: projectId,
     })
     .eq("id", id)
     .eq("status", "pending")

@@ -13,9 +13,10 @@ import {
   overtimeOf,
   type MyAttendanceData,
 } from "@/lib/attendance/compute";
+import { currentProjectIdFrom, isSiteFlowShift, OFFICE_SITE, OFFICE_SITE_NAME } from "@/lib/attendance/site-visits";
 import type { EmployeeAttendance } from "@/lib/types";
 import { CheckInCard } from "./check-in-card";
-import { CheckInFlow, type FlowSuccess } from "./check-in-flow";
+import { CheckInFlow, type FlowMode, type FlowSuccess } from "./check-in-flow";
 import { OfficeCheckInFlow } from "./office-check-in-flow";
 import { HistoryCalendar } from "./history-calendar";
 import { HistoryList } from "./history-list";
@@ -34,24 +35,64 @@ function shiftMonth(month: string, delta: number): string {
 export function MyAttendance({ data }: { data: MyAttendanceData }) {
   const router = useRouter();
   const [view, setView] = React.useState<"calendar" | "list">("calendar");
-  const [flowMode, setFlowMode] = React.useState<"in" | "out" | null>(null);
+  const [flowMode, setFlowMode] = React.useState<FlowMode | null>(null);
   // Optimistic override so the card flips immediately (and mock mode, whose
   // actions are no-ops, still demos the full flow until the next reload).
   const [localToday, setLocalToday] = React.useState<EmployeeAttendance | null>(null);
 
   const today = localToday ?? data.today;
-  // Site staff only — an office check-in has no project, so nothing to track.
-  const isTracking = Boolean(
-    today && today.source === "self" && !today.checkOutAt && today.projectId && !data.isOffice
-  );
-  const tracking = useLiveTracking(isTracking);
-  // An open self-punched shift closes with the flow it was opened in (so a
-  // Team-page Office/Site change mid-shift can't strand it); otherwise the
-  // Team-page setting decides.
+  // 0050 addendum: a Site member allowed to use "Office" as a site — their
+  // office check-in (project_id null) is still a site-flow shift.
+  const worksFromOffice = data.canWorkFromOffice && !data.isOffice;
+  const isOpenSelfShift = Boolean(today && today.source === "self" && today.checkInAt && !today.checkOutAt);
+  // Switch Site (0050): server visits plus any just made here that the
+  // refreshed data doesn't include yet (always the case in mock mode).
+  const [localVisits, setLocalVisits] = React.useState<MyAttendanceData["todayVisits"]>([]);
+  const todayVisits = React.useMemo(() => {
+    const serverIds = new Set(data.todayVisits.map((v) => v.id));
+    return [...data.todayVisits, ...localVisits.filter((v) => !serverIds.has(v.id))].sort((a, b) =>
+      a.arrivedAt.localeCompare(b.arrivedAt)
+    );
+  }, [data.todayVisits, localVisits]);
+  // An open self-punched shift closes with the flow it was opened in, decided
+  // from the row itself (project, check-in selfie, visits) — so a Team-page
+  // Office/Site or "Can work from office" change mid-shift can't strand it;
+  // otherwise the Team-page setting decides.
   const usesSiteFlow =
-    today && today.source === "self" && today.checkInAt && !today.checkOutAt
-      ? Boolean(today.projectId)
+    isOpenSelfShift && today
+      ? isSiteFlowShift(
+          { projectId: today.projectId || null, checkInSelfiePath: today.checkInSelfiePath || null },
+          todayVisits.length,
+          worksFromOffice
+        )
       : data.usesSiteFlow;
+  const isOpenSiteShift = isOpenSelfShift && usesSiteFlow;
+  // Current site: latest visit, else today's project; null = the Office
+  // (a null-project visit counts as the Office only while allowed — same
+  // rule as the server).
+  const currentProjectId = isOpenSiteShift
+    ? currentProjectIdFrom(todayVisits, today?.projectId || null, worksFromOffice)
+    : null;
+  const latestVisit = [...todayVisits].reverse().find((v) => (v.projectId || null) === currentProjectId);
+  const currentSite =
+    isOpenSiteShift && today
+      ? latestVisit
+        ? { name: latestVisit.projectName, since: latestVisit.arrivedAt }
+        : {
+            name: !currentProjectId
+              ? OFFICE_SITE_NAME
+              : data.todayProjectName ||
+                data.assignedProjects.find((p) => p.id === today.projectId)?.name ||
+                "Your site",
+            since: today.checkInAt,
+          }
+      : null;
+  // Site staff only — and only while at a project: an office check-in, or a
+  // hybrid member currently at the Office, has nothing to track.
+  const isTracking = isOpenSiteShift && Boolean(currentProjectId) && !data.isOffice;
+  const tracking = useLiveTracking(isTracking);
+  // Site staff only (the explicit Team-page Office/Site setting).
+  const canSwitchSite = isOpenSiteShift && !data.isOffice;
   const isCurrentMonth = data.month === orgThisMonth();
   const records = React.useMemo(() => {
     if (!localToday || !isCurrentMonth) return data.records;
@@ -65,18 +106,33 @@ export function MyAttendance({ data }: { data: MyAttendanceData }) {
   });
 
   function handleSuccess(result: FlowSuccess) {
-    if (flowMode === "in") {
+    if (flowMode === "switch") {
+      setLocalVisits((prev) => [
+        ...prev,
+        {
+          id: result.id && result.id !== "mock" ? result.id : `local-${result.at}`,
+          projectId: result.projectId === OFFICE_SITE ? null : result.projectId,
+          projectName:
+            result.projectId === OFFICE_SITE
+              ? OFFICE_SITE_NAME
+              : data.assignedProjects.find((p) => p.id === result.projectId)?.name ?? "New site",
+          arrivedAt: result.at,
+        },
+      ]);
+    } else if (flowMode === "in") {
       setLocalToday({
         id: `local-${result.at}`,
         userId: "",
         employeeId: data.employeeId,
         userName: data.userName,
-        projectId: result.projectId,
+        projectId: result.projectId === OFFICE_SITE ? "" : result.projectId,
         date: orgToday(),
         checkInAt: result.at,
         checkInLat: result.lat,
         checkInLng: result.lng,
-        checkInSelfiePath: "",
+        // Placeholder so a just-made SITE check-in stays on the site flow
+        // (isSiteFlowShift keys on it); an office punch never has a selfie.
+        checkInSelfiePath: usesSiteFlow ? "local" : "",
         checkOutAt: "",
         checkOutLat: null,
         checkOutLng: null,
@@ -121,6 +177,8 @@ export function MyAttendance({ data }: { data: MyAttendanceData }) {
         <CheckInCard
           today={today}
           usesSiteFlow={usesSiteFlow}
+          currentSite={currentSite}
+          canSwitchSite={canSwitchSite}
           onStart={setFlowMode}
         />
 
@@ -182,14 +240,16 @@ export function MyAttendance({ data }: { data: MyAttendanceData }) {
           open={flowMode !== null}
           mode={flowMode ?? "in"}
           projects={data.assignedProjects}
-          activeProjectId={today?.projectId}
+          activeProjectId={isOpenSiteShift ? currentProjectId ?? OFFICE_SITE : today?.projectId}
+          canWorkFromOffice={worksFromOffice}
+          officeGeofence={data.officeGeofence}
           onClose={() => setFlowMode(null)}
           onSuccess={handleSuccess}
         />
       ) : (
         <OfficeCheckInFlow
           open={flowMode !== null}
-          mode={flowMode ?? "in"}
+          mode={flowMode === "out" ? "out" : "in"}
           officeGeofence={data.officeGeofence}
           onClose={() => setFlowMode(null)}
           onSuccess={handleSuccess}

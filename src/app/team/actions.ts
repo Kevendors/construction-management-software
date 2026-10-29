@@ -293,11 +293,61 @@ export async function setMemberOfficeAction(userId: string, isOffice: boolean): 
     .eq("org_id", ctx.orgId)
     .eq("user_id", userId);
   if (error) return { error: error.message };
+  if (isOffice) {
+    // "Can work from office" is for Site members only (0050). Its own update
+    // so a missing column (0050 not applied) just gets ignored.
+    await admin
+      .from("memberships")
+      .update({ can_work_from_office: false })
+      .eq("org_id", ctx.orgId)
+      .eq("user_id", userId);
+  }
   await logActivity({
     action: "updated",
     entityType: "member",
     entityId: userId,
     summary: `Set attendance category to ${isOffice ? "Office" : "Site"}`,
+  });
+  return { id: userId };
+}
+
+/**
+ * Super_admin only (0050 addendum): let a SITE member use "Office" as a site
+ * — offered first in their check-in and Switch Site pickers, judged against
+ * the org office fence. Pay / weekly-off / leave still follow Office/Site.
+ */
+export async function setMemberWorkFromOfficeAction(userId: string, canWorkFromOffice: boolean): Promise<ActionResult> {
+  const ctx = await getAuthContext();
+  if (!ctx || ctx.role !== "super_admin") return { error: "Only Super Admin can change this." };
+  if (!ctx.orgId) return { error: "No organization found." };
+  const admin = createAdminClient();
+  if (canWorkFromOffice) {
+    const { data: mem } = await admin
+      .from("memberships")
+      .select("is_office")
+      .eq("org_id", ctx.orgId)
+      .eq("user_id", userId)
+      .maybeSingle();
+    if ((mem?.is_office as boolean | null | undefined) ?? true) {
+      return { error: "Only Site members can work from the office — set this member to Site first." };
+    }
+  }
+  const { error } = await admin
+    .from("memberships")
+    .update({ can_work_from_office: canWorkFromOffice })
+    .eq("org_id", ctx.orgId)
+    .eq("user_id", userId);
+  if (error) {
+    if (error.code === "42703" || error.code === "PGRST204") {
+      return { error: "Work-from-office setting pending: run 0050_attendance_site_visits.sql in Supabase SQL Editor." };
+    }
+    return { error: error.message };
+  }
+  await logActivity({
+    action: "updated",
+    entityType: "member",
+    entityId: userId,
+    summary: canWorkFromOffice ? "Allowed to work from the office (Office as a site)" : "No longer allowed to work from the office",
   });
   return { id: userId };
 }

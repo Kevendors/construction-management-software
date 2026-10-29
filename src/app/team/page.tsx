@@ -89,6 +89,20 @@ export default async function TeamPage() {
         )
   );
 
+  // "Can work from office" (0050) — its own query: a missing column = false
+  // for everyone and the tick is disabled.
+  const { data: wfoRows, error: wfoErr } = await admin
+    .from("memberships")
+    .select("user_id, can_work_from_office")
+    .eq("org_id", ctx.orgId);
+  const wfoIds = new Set(
+    wfoErr
+      ? []
+      : ((wfoRows ?? []) as { user_id: string; can_work_from_office: boolean | null }[])
+          .filter((r) => r.can_work_from_office === true)
+          .map((r) => r.user_id)
+  );
+
   const { data: profiles } = await admin
     .from("profiles")
     .select("id, name")
@@ -113,6 +127,7 @@ export default async function TeamPage() {
       canViewPurchaseOrders: m.can_view_purchase_orders ?? false,
       employeeId: m.employee_id ?? "",
       isOffice: m.is_office ?? true,
+      canWorkFromOffice: wfoIds.has(m.user_id),
       weeklyOffDow: dowById.get(m.user_id) ?? 0,
       weeklyOffKind: toWeekOffKind(kindById.get(m.user_id)?.weekly_off_kind),
       weeklyOffAnchor: kindById.get(m.user_id)?.weekly_off_anchor ?? "",
@@ -128,6 +143,8 @@ export default async function TeamPage() {
       migrationPending={migrationPending}
       weekOffPending={Boolean(dowErr)}
       weekOffKindsPending={Boolean(kindErr)}
+      workFromOfficePending={Boolean(wfoErr)}
+      canEditWorkFromOffice={ctx.role === "super_admin"}
     />
   );
 }

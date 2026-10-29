@@ -34,6 +34,7 @@ import {
 } from "@/lib/attendance/compute";
 import type { EmployeeAttendance, Project } from "@/lib/types";
 import { getSpotCheckSummaryAction } from "@/app/attendance/spot-check-actions";
+import { getSiteVisitCountsAction } from "@/app/attendance/actions";
 import { deleteWeekOffSwapAction } from "@/app/attendance/week-off-actions";
 import { useRole } from "@/components/layout/role-provider";
 import { RecordDetailDialog } from "./record-detail-dialog";
@@ -185,7 +186,13 @@ export function AdminAttendanceTab({
     Record<string, { total: number; ok: number; missed: number }>
   >({});
   const siteRecordIds = React.useMemo(
-    () => employeeRecords.filter((r) => r.status === "present" && r.projectId).map((r) => r.id),
+    // Office-day rows included: a "Can work from office" member's office
+    // check-in (no project) can still switch to projects (0050).
+    // Half-day self rows with a real punch (late-arrival Half-Day) count too.
+    () =>
+      employeeRecords
+        .filter((r) => (r.status === "present" || (r.status === "half_day" && Boolean(r.checkInAt))) && r.source === "self")
+        .map((r) => r.id),
     [employeeRecords]
   );
   const siteRecordKey = siteRecordIds.join(",");
@@ -194,6 +201,18 @@ export function AdminAttendanceTab({
     let ignore = false;
     getSpotCheckSummaryAction(siteRecordKey.split(",")).then((s) => {
       if (!ignore) setCheckSummary(s);
+    });
+    return () => {
+      ignore = true;
+    };
+  }, [siteRecordKey]);
+  // Switch Site (0050): site switches per day, for the "N sites" badge.
+  const [siteVisitCounts, setSiteVisitCounts] = React.useState<Record<string, number>>({});
+  React.useEffect(() => {
+    if (!siteRecordKey) return;
+    let ignore = false;
+    getSiteVisitCountsAction(siteRecordKey.split(",")).then((c) => {
+      if (!ignore) setSiteVisitCounts(c);
     });
     return () => {
       ignore = true;
@@ -924,6 +943,15 @@ export function AdminAttendanceTab({
                         </TableCell>
                         <TableCell className="text-muted-foreground">
                           {isDeclarative ? "—" : record.projectId ? projectById.get(record.projectId)?.name ?? "—" : "Office"}
+                          {(siteVisitCounts[record.id] ?? 0) > 0 && (
+                            <Badge
+                              variant="outline"
+                              className="ml-1"
+                              title={`Switched site ${siteVisitCounts[record.id]} time(s) — open the day for the timeline`}
+                            >
+                              {siteVisitCounts[record.id] + 1} sites
+                            </Badge>
+                          )}
                         </TableCell>
                         <TableCell className="tabular-nums">{isDeclarative ? "—" : formatTime(record.checkInAt)}</TableCell>
                         <TableCell className="tabular-nums">{isDeclarative ? "—" : formatTime(record.checkOutAt)}</TableCell>

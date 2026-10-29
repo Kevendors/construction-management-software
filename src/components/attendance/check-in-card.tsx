@@ -1,23 +1,30 @@
 "use client";
 
 import * as React from "react";
-import { Building2, CheckCircle2, Fingerprint, LogOut } from "lucide-react";
+import { ArrowRightLeft, Building2, CheckCircle2, Fingerprint, LogOut, MapPin } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { formatDuration, formatTime, minutesBetween } from "@/lib/attendance/compute";
 import type { EmployeeAttendance } from "@/lib/types";
+import type { FlowMode } from "./check-in-flow";
 
 /** Big mobile-first status card: punch in → live session → day done. */
 export function CheckInCard({
   today,
   usesSiteFlow,
+  currentSite = null,
+  canSwitchSite = false,
   onStart,
 }: {
   today: EmployeeAttendance | null;
   /** True = site flow (project + GPS + selfie). False = office flow (one-tap GPS only). */
   usesSiteFlow: boolean;
-  onStart: (mode: "in" | "out") => void;
+  /** Open site shift: where the employee is now (latest Switch Site, else the check-in project). */
+  currentSite?: { name: string; since: string } | null;
+  /** Show the "Switch Site" button (open self site shift, Site staff only). */
+  canSwitchSite?: boolean;
+  onStart: (mode: FlowMode) => void;
 }) {
   const isOpen = Boolean(today && !today.checkOutAt);
   // Tick every 30s so the elapsed time stays live while checked in.
@@ -66,9 +73,31 @@ export function CheckInCard({
               </div>
               <Badge variant="success">Present</Badge>
             </div>
-            <Button variant="accent" className="h-14 w-full text-base" onClick={() => onStart("out")}>
-              <LogOut className="!size-5" /> {usesSiteFlow ? "Check Out" : "Punch Out"}
-            </Button>
+            {currentSite && (
+              <p className="flex items-center gap-1.5 text-sm">
+                <MapPin className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <span>
+                  Current site: <span className="font-medium">{currentSite.name}</span>{" "}
+                  <span className="text-muted-foreground">
+                    since <span className="tabular-nums">{formatTime(currentSite.since)}</span>
+                  </span>
+                </span>
+              </p>
+            )}
+            {canSwitchSite ? (
+              <div className="grid grid-cols-2 gap-2">
+                <Button variant="outline" className="h-14 text-base" onClick={() => onStart("switch")}>
+                  <ArrowRightLeft className="!size-5" /> Switch Site
+                </Button>
+                <Button variant="accent" className="h-14 text-base" onClick={() => onStart("out")}>
+                  <LogOut className="!size-5" /> Check Out
+                </Button>
+              </div>
+            ) : (
+              <Button variant="accent" className="h-14 w-full text-base" onClick={() => onStart("out")}>
+                <LogOut className="!size-5" /> {usesSiteFlow ? "Check Out" : "Punch Out"}
+              </Button>
+            )}
           </>
         )}
 

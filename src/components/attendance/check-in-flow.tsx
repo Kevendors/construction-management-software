@@ -1,12 +1,13 @@
 "use client";
 
 import * as React from "react";
-import { AlertTriangle, CheckCircle2, LocateFixed, MapPin } from "lucide-react";
+import { AlertTriangle, Building2, CheckCircle2, LocateFixed, MapPin } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { haversineMeters, formatTime } from "@/lib/attendance/compute";
+import { OFFICE_SITE, OFFICE_SITE_NAME } from "@/lib/attendance/site-visits";
 import type { Project } from "@/lib/types";
-import { checkInAction, checkOutAction } from "@/app/attendance/actions";
+import { checkInAction, checkOutAction, switchSiteAction } from "@/app/attendance/actions";
 import { CameraCapture } from "./camera-capture";
 import { useGeolocation, type GeoResult } from "./use-geolocation";
 
@@ -15,7 +16,11 @@ export interface FlowSuccess {
   projectId: string;
   lat: number;
   lng: number;
+  /** Id returned by the action ("mock" in sample-data mode). */
+  id?: string;
 }
+
+export type FlowMode = "in" | "out" | "switch";
 
 type Step =
   | "project"
@@ -31,6 +36,8 @@ type Step =
  * Guided check-in / check-out: pick project → GPS fix → (outside the site
  * fence: pick a reason) → live selfie → confirm → submit. Check-out skips the
  * project step (it closes the shift already open under `activeProjectId`).
+ * Switch Site ("switch") runs the same steps during an open site shift,
+ * offering every project except the current one (`activeProjectId`).
  * Site staff are never blocked by the fence — an outside punch just needs a
  * reason, which the server re-checks and flags for Admin/HR.
  */
@@ -39,18 +46,50 @@ export function CheckInFlow({
   mode,
   projects,
   activeProjectId,
+  canWorkFromOffice = false,
+  officeGeofence,
   onClose,
   onSuccess,
 }: {
   open: boolean;
-  mode: "in" | "out";
+  mode: FlowMode;
   /** Projects the user may check in to (used for the picker + fence pre-check). */
   projects: Project[];
-  /** For check-out: the project of today's open record. */
+  /**
+   * Check-out / switch: the current site of today's open record (excluded
+   * from the switch picker) — a project id, or OFFICE_SITE.
+   */
   activeProjectId?: string;
+  /** 0050 addendum: offer "Office" first in the picker (value OFFICE_SITE). */
+  canWorkFromOffice?: boolean;
+  /** Org office fence — the pre-check when the site is the Office. */
+  officeGeofence?: { lat: number | null; lng: number | null; radiusM: number | null };
   onClose: () => void;
   onSuccess: (result: FlowSuccess) => void;
 }) {
+  // Every site this flow can be judged against; the Office is always there
+  // for the fence pre-check but only offered in the picker when allowed.
+  const sites = React.useMemo<SiteOption[]>(
+    () => [
+      {
+        id: OFFICE_SITE,
+        name: OFFICE_SITE_NAME,
+        detail: "Work from the office",
+        fenceLat: officeGeofence?.lat ?? null,
+        fenceLng: officeGeofence?.lng ?? null,
+        radiusM: officeGeofence?.radiusM ?? null,
+      },
+      ...projects.map((p) => ({
+        id: p.id,
+        name: p.name,
+        detail: `${p.code}${p.location ? ` · ${p.location}` : ""}`,
+        fenceLat: p.geofenceLat,
+        fenceLng: p.geofenceLng,
+        radiusM: p.geofenceRadiusM,
+      })),
+    ],
+    [projects, officeGeofence?.lat, officeGeofence?.lng, officeGeofence?.radiusM]
+  );
   const [step, setStep] = React.useState<Step>("locate");
   const [projectId, setProjectId] = React.useState("");
   const [selfie, setSelfie] = React.useState("");
@@ -94,11 +133,11 @@ export function CheckInFlow({
   // Advance once we have a position — via the reason step when outside the site.
   React.useEffect(() => {
     if (!open || step !== "locate" || geo.status !== "success" || !geo.position) return;
-    const project = projects.find((p) => p.id === projectId);
-    const distance = outsideSiteDistance(project, geo.position);
+    const site = sites.find((p) => p.id === projectId);
+    const distance = outsideSiteDistance(site, geo.position);
     setOutsideM(distance);
     setStep(distance != null ? "reason" : "camera");
-  }, [open, step, geo.status, geo.position, projects, projectId]);
+  }, [open, step, geo.status, geo.position, sites, projectId]);
 
   const outsideReason = reasonChoice === OTHER_REASON ? reasonOther.trim() : reasonChoice;
 
@@ -110,7 +149,9 @@ export function CheckInFlow({
     const res =
       mode === "in"
         ? await checkInAction({ projectId, lat, lng, accuracy, selfieDataUrl: selfie, outsideReason: reason })
-        : await checkOutAction({ lat, lng, accuracy, selfieDataUrl: selfie, outsideReason: reason });
+        : mode === "switch"
+          ? await switchSiteAction({ projectId, lat, lng, accuracy, selfieDataUrl: selfie, outsideReason: reason })
+          : await checkOutAction({ lat, lng, accuracy, selfieDataUrl: selfie, outsideReason: reason });
     if (res.error) {
       // The server found us outside the fence (e.g. a project the picker
       // didn't have fence data for) — ask for a reason, keep the selfie.
@@ -126,18 +167,29 @@ export function CheckInFlow({
     const at = new Date().toISOString();
     setDoneAt(at);
     setStep("success");
-    onSuccess({ at, projectId, lat, lng });
+    onSuccess({ at, projectId, lat, lng, id: res.id });
   }
 
-  const title = mode === "in" ? "Mark Attendance" : "Check Out";
-  const project = projects.find((p) => p.id === projectId);
+  const title = mode === "in" ? "Mark Attendance" : mode === "switch" ? "Switch Site" : "Check Out";
+  const actionWord = mode === "in" ? "check in" : mode === "switch" ? "switch site" : "check out";
+  const project = sites.find((p) => p.id === projectId);
+  const pickable = sites.filter(
+    (p) => (p.id !== OFFICE_SITE || canWorkFromOffice) && (mode !== "switch" || p.id !== activeProjectId)
+  );
 
   return (
     <Dialog open={open} onClose={onClose} title={title} className="max-w-md">
       {step === "project" && (
         <div className="space-y-2">
-          <p className="text-sm text-muted-foreground">Which project are you working on today?</p>
-          {projects.map((p) => (
+          <p className="text-sm text-muted-foreground">
+            {mode === "switch" ? "Which site are you moving to?" : "Which project are you working on today?"}
+          </p>
+          {mode === "switch" && pickable.length === 0 && (
+            <p className="rounded-lg border border-border bg-secondary/40 p-3 text-sm text-muted-foreground">
+              There are no other sites to switch to.
+            </p>
+          )}
+          {pickable.map((p) => (
             <button
               key={p.id}
               type="button"
@@ -148,13 +200,16 @@ export function CheckInFlow({
               className="flex w-full items-center justify-between rounded-lg border border-border bg-card px-4 py-3.5 text-left transition-colors hover:bg-secondary"
             >
               <span>
-                <span className="block text-sm font-medium">{p.name}</span>
-                <span className="block text-xs text-muted-foreground">
-                  {p.code}
-                  {p.location ? ` · ${p.location}` : ""}
+                <span className="block text-sm font-medium">
+                  {p.id === OFFICE_SITE ? `🏢 ${p.name}` : p.name}
                 </span>
+                <span className="block text-xs text-muted-foreground">{p.detail}</span>
               </span>
-              <MapPin className="h-4 w-4 shrink-0 text-muted-foreground" />
+              {p.id === OFFICE_SITE ? (
+                <Building2 className="h-4 w-4 shrink-0 text-muted-foreground" />
+              ) : (
+                <MapPin className="h-4 w-4 shrink-0 text-muted-foreground" />
+              )}
             </button>
           ))}
         </div>
@@ -184,7 +239,7 @@ export function CheckInFlow({
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
             <p>
               You are about <span className="font-semibold">{formatMeters(outsideM ?? 0)}</span> from{" "}
-              {project?.name ?? "the site"}. You can still {mode === "in" ? "check in" : "check out"}{" "}— tell us why
+              {project?.id === OFFICE_SITE ? "the Office" : project?.name ?? "the site"}. You can still {actionWord}{" "}— tell us why
               you&apos;re away from site. Admin/HR will see this with your location.
             </p>
           </div>
@@ -241,7 +296,7 @@ export function CheckInFlow({
           <div className="text-center">
             <p className="text-sm font-semibold text-foreground">Selfie Captured</p>
             <p className="text-xs text-muted-foreground">
-              Review your photo and confirm {mode === "in" ? "check in" : "check out"}
+              Review your photo and confirm {mode === "switch" ? "the site switch" : actionWord}
             </p>
           </div>
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -255,7 +310,7 @@ export function CheckInFlow({
               Retake
             </Button>
             <Button className="h-12" onClick={submit}>
-              {mode === "in" ? "Confirm Check In" : "Confirm Check Out"}
+              {mode === "in" ? "Confirm Check In" : mode === "switch" ? "Confirm Switch" : "Confirm Check Out"}
             </Button>
           </div>
         </div>
@@ -272,13 +327,22 @@ export function CheckInFlow({
       {step === "success" && (
         <div className="flex flex-col items-center gap-3 py-6 text-center">
           <CheckCircle2 className="h-12 w-12 text-success" />
-          <p className="text-lg font-semibold">
-            {mode === "in" ? "Checked in successfully" : "Checked out successfully"}
-          </p>
-          <p className="text-sm font-medium tabular-nums text-foreground">
-            at {formatTime(doneAt)}
-          </p>
-          {project && <p className="text-xs text-muted-foreground">{project.name}</p>}
+          {mode === "switch" ? (
+            <p className="text-lg font-semibold">
+              Switched to {project?.name ?? "the new site"} at{" "}
+              <span className="tabular-nums">{formatTime(doneAt)}</span>
+            </p>
+          ) : (
+            <>
+              <p className="text-lg font-semibold">
+                {mode === "in" ? "Checked in successfully" : "Checked out successfully"}
+              </p>
+              <p className="text-sm font-medium tabular-nums text-foreground">
+                at {formatTime(doneAt)}
+              </p>
+              {project && <p className="text-xs text-muted-foreground">{project.name}</p>}
+            </>
+          )}
 
           <Button className="mt-4 h-12 w-full" onClick={onClose}>
             Done
@@ -316,11 +380,21 @@ function formatMeters(m: number): string {
   return m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${m} m`;
 }
 
+/** A picker entry: a project, or the Office (id OFFICE_SITE). */
+interface SiteOption {
+  id: string;
+  name: string;
+  detail: string;
+  fenceLat: number | null;
+  fenceLng: number | null;
+  radiusM: number | null;
+}
+
 /** Distance from the site centre when outside its fence (server uses the same rule), else null. */
-function outsideSiteDistance(project: Project | undefined, pos: GeoResult): number | null {
-  if (!project || project.geofenceLat == null || project.geofenceLng == null || !project.geofenceRadiusM) {
+function outsideSiteDistance(site: SiteOption | undefined, pos: GeoResult): number | null {
+  if (!site || site.fenceLat == null || site.fenceLng == null || !site.radiusM) {
     return null;
   }
-  const distance = haversineMeters(pos.lat, pos.lng, project.geofenceLat, project.geofenceLng);
-  return distance - pos.accuracy <= project.geofenceRadiusM ? null : distance;
+  const distance = haversineMeters(pos.lat, pos.lng, site.fenceLat, site.fenceLng);
+  return distance - pos.accuracy <= site.radiusM ? null : distance;
 }

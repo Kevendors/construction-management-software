@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { AlertTriangle, ExternalLink, History, MapPin } from "lucide-react";
+import { AlertTriangle, ArrowRightLeft, ExternalLink, History, MapPin } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Dialog } from "@/components/ui/dialog";
 import {
@@ -13,11 +13,14 @@ import {
 import {
   getAttendanceEditHistoryAction,
   getAttendanceSelfieUrls,
+  getAttendanceSiteVisitsAction,
   type AttendanceEditHistoryEntry,
+  type SiteVisitDetail,
 } from "@/app/attendance/actions";
 import { getPunchFenceAction, reverseGeocodeAction, type PunchFence } from "@/app/attendance/geocode-actions";
 import { SpotChecksSection } from "./spot-checks-section";
 import { LocationMiniMap } from "./location-mini-map";
+import { MAX_SITE_VISITS_PER_DAY } from "@/lib/attendance/site-visits";
 import type { EmployeeAttendance } from "@/lib/types";
 
 function mapsLink(lat: number | null, lng: number | null): string | null {
@@ -25,7 +28,18 @@ function mapsLink(lat: number | null, lng: number | null): string | null {
   return `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
 }
 
-const PIN_COLOR = { in: "#16a34a", out: "#dc2626" } as const;
+/** reverseGeocodeAction looks up at most 10 points per call — chunk, one call after another. */
+async function geocodeAll(points: { lat: number; lng: number }[]): Promise<(string | null)[]> {
+  const out: (string | null)[] = [];
+  for (let i = 0; i < points.length; i += 10) {
+    const chunk = points.slice(i, i + 10);
+    const res = await reverseGeocodeAction(chunk).catch(() => chunk.map(() => null));
+    out.push(...res);
+  }
+  return out;
+}
+
+const PIN_COLOR = { in: "#16a34a", out: "#dc2626", visit: "#2563eb" } as const;
 
 function formatDistance(m: number): string {
   return m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${m} m`;
@@ -59,7 +73,11 @@ export function RecordDetailDialog({
     forId: string;
     in: string | null;
     out: string | null;
+    /** Same order as `visits`; null = unknown or past the 10-point lookup cap. */
+    visits: (string | null)[];
   } | null>(null);
+  // Switch Site (0050) visits, oldest first — keyed by record like addresses.
+  const [visits, setVisits] = React.useState<{ forId: string; list: SiteVisitDetail[] } | null>(null);
   const [fence, setFence] = React.useState<{ forId: string; fence: PunchFence | null } | null>(null);
 
   React.useEffect(() => {
@@ -72,17 +90,31 @@ export function RecordDetailDialog({
       getPunchFenceAction(record.projectId || null).then((f) => setFence({ forId: record.id, fence: f }));
       const inPt = record.checkInLat != null && record.checkInLng != null ? { lat: record.checkInLat, lng: record.checkInLng } : null;
       const outPt = record.checkOutLat != null && record.checkOutLng != null ? { lat: record.checkOutLat, lng: record.checkOutLng } : null;
-      const points = [inPt, outPt].filter((p): p is { lat: number; lng: number } => p !== null);
-      if (points.length) {
-        reverseGeocodeAction(points).then((list) => {
+      const punchPoints = [inPt, outPt].filter((p): p is { lat: number; lng: number } => p !== null);
+      // Visits first (also for an office check-in: a "Can work from office"
+      // member may switch to a project later), then geocode in/out + every
+      // visit (up to 20). A failed visits fetch still geocodes in/out.
+      getAttendanceSiteVisitsAction(record.id)
+        .catch((): SiteVisitDetail[] => [])
+        .then((visitList) => {
+        setVisits({ forId: record.id, list: visitList });
+        const points = [
+          ...punchPoints,
+          ...visitList.slice(0, MAX_SITE_VISITS_PER_DAY).map((v) => ({ lat: v.lat, lng: v.lng })),
+        ];
+        if (!points.length) return;
+        geocodeAll(points).then((list) => {
           let i = 0;
+          const inAddr = inPt ? list[i++] ?? null : null;
+          const outAddr = outPt ? list[i++] ?? null : null;
           setAddresses({
             forId: record.id,
-            in: inPt ? list[i++] ?? null : null,
-            out: outPt ? list[i++] ?? null : null,
+            in: inAddr,
+            out: outAddr,
+            visits: visitList.map((_, k) => list[i + k] ?? null),
           });
         });
-      }
+      });
     }
   }, [record]);
 
@@ -99,7 +131,25 @@ export function RecordDetailDialog({
   });
 
   const punchFence = fence?.forId === record.id ? fence.fence : null;
-  const fenceWord = punchFence?.kind === "office" ? "office" : "site";
+  const visitList = visits?.forId === record.id ? visits.list : [];
+  const visitAddresses = addresses?.forId === record.id ? addresses.visits : null;
+  // After a Switch Site, check-out was judged against the current site at
+  // check-out: the LAST visit to a project or the Office (a null-project
+  // visit by anyone else was a since-deleted project — skipped, as on the server).
+  const knownVisits = visitList.filter((v) => v.projectId || v.isOffice);
+  const lastVisit = knownVisits.length ? knownVisits[knownVisits.length - 1] : null;
+  const outFence: PunchFence | null = lastVisit
+    ? lastVisit.fence
+      ? {
+          kind: lastVisit.isOffice ? "office" : "site",
+          name: lastVisit.projectName ?? "Site",
+          ...lastVisit.fence,
+        }
+      : null
+    : punchFence;
+  const fenceFor = (key: "in" | "out") => (key === "out" ? outFence : punchFence);
+  // Per side: IN = the check-in site, OUT = the site at check-out.
+  const fenceWordFor = (key: "in" | "out") => (fenceFor(key)?.kind === "office" ? "office" : "site");
 
   const sides: {
     key: "in" | "out";
@@ -235,16 +285,18 @@ export function RecordDetailDialog({
                           ? addresses[s.key] ?? "Address not found"
                           : "Finding address…"}
                       </p>
-                      {punchFence && hasFence(punchFence) && s.lat != null && s.lng != null && (() => {
-                        const d = haversineMeters(s.lat, s.lng, punchFence.lat, punchFence.lng);
-                        return d <= punchFence.radiusM ? (
+                      {(() => {
+                        const sideFence = fenceFor(s.key);
+                        if (!sideFence || !hasFence(sideFence) || s.lat == null || s.lng == null) return null;
+                        const d = haversineMeters(s.lat, s.lng, sideFence.lat, sideFence.lng);
+                        return d <= sideFence.radiusM ? (
                           <p className="text-xs font-medium text-success">
-                            Within {fenceWord} · {formatDistance(d)} from centre
+                            Within {fenceWordFor(s.key)} · {formatDistance(d)} from centre
                           </p>
                         ) : (
                           <p className="flex items-center gap-1 text-xs font-medium text-destructive">
                             <AlertTriangle className="h-3 w-3 shrink-0" />
-                            {formatDistance(d)} from {fenceWord} (allowed {formatDistance(punchFence.radiusM)})
+                            {formatDistance(d)} from {fenceWordFor(s.key)} (allowed {formatDistance(sideFence.radiusM)})
                           </p>
                         );
                       })()}
@@ -264,21 +316,106 @@ export function RecordDetailDialog({
           </div>
         )}
 
+        {!isDeclarative && visitList.length > 0 && (
+          <div className="space-y-2">
+            <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+              <ArrowRightLeft className="h-3.5 w-3.5" /> Sites visited
+            </p>
+            <ol className="space-y-3 rounded-lg border border-border p-3">
+              <li className="flex items-start gap-2 text-sm">
+                <span
+                  className="mt-0.5 flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full px-1 text-[9px] font-bold text-white"
+                  style={{ background: PIN_COLOR.in }}
+                >
+                  IN
+                </span>
+                <div className="min-w-0">
+                  <p>
+                    <span className="font-medium tabular-nums">{formatTime(record.checkInAt)}</span>
+                    {" · "}
+                    {punchFence?.kind === "site" ? punchFence.name : punchFence?.kind === "office" ? "Office" : "Check-in site"}
+                  </p>
+                  <p className="text-xs text-muted-foreground">Checked in</p>
+                </div>
+              </li>
+              {visitList.map((v, idx) => {
+                const link = mapsLink(v.lat, v.lng);
+                return (
+                  <li key={v.id} className="flex items-start gap-2 text-sm">
+                    <span
+                      className="mt-0.5 flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full px-1 text-[10px] font-bold text-white"
+                      style={{ background: PIN_COLOR.visit }}
+                    >
+                      {idx + 1}
+                    </span>
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <p>
+                        <span className="font-medium tabular-nums">{formatTime(v.arrivedAt)}</span>
+                        {" · "}
+                        {v.projectName ?? "Removed project"}
+                      </p>
+                      <p className="text-xs leading-snug text-muted-foreground">
+                        {visitAddresses ? visitAddresses[idx] ?? "Address not found" : "Finding address…"}
+                      </p>
+                      {v.outsideM != null && (
+                        <p className="flex items-start gap-1 text-xs font-medium text-destructive">
+                          <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+                          Outside site ({formatDistance(v.outsideM)} away){v.outsideReason ? `: ${v.outsideReason}` : ""}
+                        </p>
+                      )}
+                      {link && (
+                        <a
+                          href={link}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                        >
+                          <ExternalLink className="h-3 w-3" /> Open in Google Maps
+                        </a>
+                      )}
+                    </div>
+                    {v.selfieUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={v.selfieUrl}
+                        alt={`Selfie at ${v.projectName ?? "site"}`}
+                        className="h-16 w-16 shrink-0 rounded-md object-cover"
+                      />
+                    ) : (
+                      <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-md bg-muted text-center text-[10px] text-muted-foreground">
+                        No selfie
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
+            </ol>
+          </div>
+        )}
+
         {!isDeclarative && (
           <LocationMiniMap
             key={`map-${record.id}`}
-            pins={sides
-              .filter((s) => s.lat != null && s.lng != null)
-              .map((s) => ({
-                lat: s.lat as number,
-                lng: s.lng as number,
-                label: s.key === "in" ? "IN" : "OUT",
-                color: PIN_COLOR[s.key],
-              }))}
+            pins={[
+              ...sides
+                .filter((s) => s.lat != null && s.lng != null)
+                .map((s) => ({
+                  lat: s.lat as number,
+                  lng: s.lng as number,
+                  label: s.key === "in" ? "IN" : "OUT",
+                  color: PIN_COLOR[s.key],
+                })),
+              ...visitList.map((v, idx) => ({
+                lat: v.lat,
+                lng: v.lng,
+                label: String(idx + 1),
+                color: PIN_COLOR.visit,
+              })),
+            ]}
           />
         )}
 
-        {!isOffice && !isDeclarative && <SpotChecksSection key={record.id} attendanceId={record.id} canExcuse={canExcuse} />}
+        {(!isOffice || visitList.length > 0) && !isDeclarative && <SpotChecksSection key={record.id} attendanceId={record.id} canExcuse={canExcuse} />}
         {history.length > 0 && (
           <div className="space-y-2">
             <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">

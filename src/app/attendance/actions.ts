@@ -6,7 +6,18 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { logActivity } from "@/lib/activity/log";
 import { dispatchNotification } from "@/lib/notifications/dispatch";
-import { cancelSpotChecks, scheduleSpotChecks } from "@/lib/attendance/spot-check-store";
+import { cancelSpotChecks, scheduleSpotChecks, scheduleSpotChecksFrom } from "@/lib/attendance/spot-check-store";
+import { currentSiteFor, currentSitesFor, workFromOfficeUserIds } from "@/lib/attendance/site-visit-store";
+import {
+  currentProjectIdFrom,
+  isMissingTableError,
+  isSiteFlowShift,
+  MAX_SITE_VISITS_PER_DAY,
+  OFFICE_SITE,
+  OFFICE_SITE_NAME,
+  SITE_VISITS_PENDING_MSG,
+} from "@/lib/attendance/site-visits";
+import type { AuthContext } from "@/lib/auth/context";
 import {
   formatDuration,
   formatTime,
@@ -131,7 +142,7 @@ async function uploadSelfie(
   orgId: string,
   userId: string,
   date: string,
-  suffix: "in" | "out",
+  suffix: "in" | "out" | `visit-${string}`,
   selfieDataUrl: string
 ): Promise<string | null> {
   const decoded = decodeDataUrl(selfieDataUrl);
@@ -211,6 +222,140 @@ async function evaluateLateArrival(
   return { status: "present", note: null, isLate: true, lateArrivalsUsedThisMonth };
 }
 
+/**
+ * Who may punch at which project (check-in and Switch Site): supervisors,
+ * engineers, PMs, and super_admins can use any site. Other roles must be
+ * assigned to it — or, if they have no assignments yet, may use any.
+ * Returns an error message, or null when allowed.
+ */
+async function projectRosterError(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  ctx: AuthContext,
+  projectId: string
+): Promise<string | null> {
+  if (
+    ctx.role !== "super_admin" &&
+    ctx.role !== "pm" &&
+    ctx.role !== "supervisor" &&
+    ctx.role !== "engineer"
+  ) {
+    const { data: assignment } = await supabase
+      .from("project_members")
+      .select("id")
+      .eq("project_id", projectId)
+      .eq("user_id", ctx.userId)
+      .maybeSingle();
+
+    if (!assignment) {
+      const { data: anyAssign } = await supabase
+        .from("project_members")
+        .select("id")
+        .eq("user_id", ctx.userId)
+        .limit(1);
+      if (anyAssign && anyAssign.length > 0) {
+        return "You are not assigned to this project.";
+      }
+    }
+  }
+  return null;
+}
+
+/** The org's shared office geofence, in the project-fence shape (null = none). */
+async function orgOfficeFence(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  orgId: string
+): Promise<GeofenceRow | null> {
+  const { data: org } = await supabase
+    .from("orgs")
+    .select("office_lat, office_lng, office_radius_m")
+    .eq("id", orgId)
+    .maybeSingle();
+  return org
+    ? {
+        geofence_lat: org.office_lat as number | null,
+        geofence_lng: org.office_lng as number | null,
+        geofence_radius_m: org.office_radius_m as number | null,
+      }
+    : null;
+}
+
+/**
+ * 0050 addendum: may this (Site) member use "Office" as a site? Ticked per
+ * member on the Team page. Missing column (0050 not applied) = false.
+ */
+async function canWorkFromOffice(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  ctx: AuthContext
+): Promise<boolean> {
+  const flags = await memberSiteFlags(supabase, ctx);
+  return flags.canWorkFromOffice;
+}
+
+/**
+ * The caller's explicit Office/Site setting (null = unknown, e.g. 0039 not
+ * applied) and "Can work from office" (0050; Site members only). Separate
+ * queries so a missing 0050 column never hides is_office.
+ */
+async function memberSiteFlags(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  ctx: AuthContext
+): Promise<{ isOffice: boolean | null; canWorkFromOffice: boolean }> {
+  const scoped = (cols: string) => {
+    let query = supabase.from("memberships").select(cols).eq("user_id", ctx.userId);
+    if (ctx.orgId) query = query.eq("org_id", ctx.orgId);
+    return query.limit(1).maybeSingle();
+  };
+  const [officeRes, wfoRes] = await Promise.all([scoped("is_office"), scoped("can_work_from_office")]);
+  const isOffice = officeRes.error
+    ? null
+    : ((officeRes.data as { is_office?: boolean | null } | null)?.is_office ?? null);
+  const wfo = !wfoRes.error && (wfoRes.data as { can_work_from_office?: boolean | null } | null)?.can_work_from_office === true;
+  return { isOffice, canWorkFromOffice: wfo && isOffice !== true };
+}
+
+interface ResolvedSite {
+  /** null = the Office (OFFICE_SITE). */
+  projectId: string | null;
+  name: string;
+  fence: GeofenceRow | null;
+}
+
+/**
+ * Resolve a site-flow picker value (a project id, or OFFICE_SITE) for
+ * check-in / Switch Site. Projects are looked up org-scoped with the service
+ * role (an unassigned Site employee can't read projects through RLS, yet may
+ * use any open project) and gated by the role/roster rule; the Office needs
+ * the member's "Can work from office" flag and uses the org office fence.
+ */
+async function resolveSite(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  ctx: AuthContext & { orgId: string },
+  siteId: string
+): Promise<{ site?: ResolvedSite; error?: string }> {
+  if (siteId === OFFICE_SITE) {
+    if (!(await canWorkFromOffice(supabase, ctx))) {
+      return { error: "You can't use the Office as a site — ask Super Admin to allow it on the Team page." };
+    }
+    return { site: { projectId: null, name: OFFICE_SITE_NAME, fence: await orgOfficeFence(supabase, ctx.orgId) } };
+  }
+  const { data: project } = await createAdminClient()
+    .from("projects")
+    .select("name, geofence_lat, geofence_lng, geofence_radius_m")
+    .eq("id", siteId)
+    .eq("org_id", ctx.orgId)
+    .maybeSingle();
+  if (!project) return { error: "Project not found." };
+  const rosterMsg = await projectRosterError(supabase, ctx, siteId);
+  if (rosterMsg) return { error: rosterMsg };
+  return { site: { projectId: siteId, name: project.name as string, fence: project as GeofenceRow } };
+}
+
+/** "Office" or "the site" — for user-facing distance messages. */
+const siteWord = (site: { projectId: string | null }) => (site.projectId ? "the site" : "the office");
+/** Note fragment — keeps "outside site" (the admin table's badge keys on it) and names the Office. */
+const outsideLabel = (site: { projectId: string | null }, m: number) =>
+  site.projectId ? `outside site (${formatMeters(m)} away)` : `outside site (Office, ${formatMeters(m)} away)`;
+
 export async function checkInAction(input: CheckInInput): Promise<ActionResult> {
   // Mock mode: the UI keeps its own optimistic state (lost on reload — demo only).
   if (!isSupabaseConfigured()) return { id: "mock" };
@@ -224,55 +369,22 @@ export async function checkInAction(input: CheckInInput): Promise<ActionResult> 
 
   const supabase = await createClient();
 
-  // Look the project up org-scoped with the service role: an unassigned Site
-  // employee can't read projects through RLS (list_org_projects only returns
-  // their roster), yet may check in to any open project. Who may use which
-  // project is decided by the role/roster check below, not by RLS.
-  const { data: project } = await createAdminClient()
-    .from("projects")
-    .select("name, geofence_lat, geofence_lng, geofence_radius_m")
-    .eq("id", input.projectId)
-    .eq("org_id", ctx.orgId)
-    .maybeSingle();
-  if (!project) return { error: "Project not found." };
+  // A project (org-scoped service-role lookup + roster rule) or, for Site
+  // members allowed to, the Office (0050 addendum: project_id null).
+  const resolved = await resolveSite(supabase, { ...ctx, orgId: ctx.orgId }, input.projectId);
+  if (!resolved.site) return { error: resolved.error ?? "Project not found." };
+  const site = resolved.site;
+  const project = { name: site.name };
 
-  // Project must be valid; supervisors, engineers, PMs, and super_admins can check in to any site.
-  // For other roles, ensure they are assigned, or if they have no assignments yet, allow them.
-  if (
-    ctx.role !== "super_admin" &&
-    ctx.role !== "pm" &&
-    ctx.role !== "supervisor" &&
-    ctx.role !== "engineer"
-  ) {
-    const { data: assignment } = await supabase
-      .from("project_members")
-      .select("id")
-      .eq("project_id", input.projectId)
-      .eq("user_id", ctx.userId)
-      .maybeSingle();
-
-    if (!assignment) {
-      const { data: anyAssign } = await supabase
-        .from("project_members")
-        .select("id")
-        .eq("user_id", ctx.userId)
-        .limit(1);
-      if (anyAssign && anyAssign.length > 0) {
-        return { error: "You are not assigned to this project." };
-      }
-    }
-  }
-
-  const outsideM = outsideSiteDistance(project as GeofenceRow, input.lat, input.lng, input.accuracy);
+  const outsideM = outsideSiteDistance(site.fence, input.lat, input.lng, input.accuracy);
   const outsideReason = (input.outsideReason ?? "").trim().slice(0, MAX_OUTSIDE_REASON);
   if (outsideM != null && !outsideReason) {
     return {
-      error: `You are ~${formatMeters(outsideM)} from the site. Choose a reason to check in from here.`,
+      error: `You are ~${formatMeters(outsideM)} from ${siteWord(site)}. Choose a reason to check in from here.`,
       outsideDistanceM: outsideM,
     };
   }
-  const outsideNote =
-    outsideM != null ? `Checked in outside site (${formatMeters(outsideM)} away): ${outsideReason}` : null;
+  const outsideNote = outsideM != null ? `Checked in ${outsideLabel(site, outsideM)}: ${outsideReason}` : null;
 
   const date = orgToday();
   const { data: existing } = await supabase
@@ -291,7 +403,7 @@ export async function checkInAction(input: CheckInInput): Promise<ActionResult> 
     .insert({
       org_id: ctx.orgId,
       user_id: ctx.userId,
-      project_id: input.projectId,
+      project_id: site.projectId,
       date,
       check_in_at: nowIso,
       check_in_lat: input.lat,
@@ -316,14 +428,17 @@ export async function checkInAction(input: CheckInInput): Promise<ActionResult> 
   }
   await supabase.from("employee_attendance").update({ check_in_selfie_path: selfiePath }).eq("id", row.id);
 
-  // Site shift → random location spot-checks (0045). Office punch-in never gets these.
-  await scheduleSpotChecks({
-    orgId: ctx.orgId,
-    userId: ctx.userId,
-    attendanceId: row.id,
-    projectId: input.projectId,
-    checkInAt: nowIso,
-  });
+  // Site shift → random location spot-checks (0045). Office punch-in — and a
+  // site-flow check-in at the Office (0050 addendum) — never gets these.
+  if (site.projectId) {
+    await scheduleSpotChecks({
+      orgId: ctx.orgId,
+      userId: ctx.userId,
+      attendanceId: row.id,
+      projectId: site.projectId,
+      checkInAt: nowIso,
+    });
+  }
 
   await logActivity({
     action: "created",
@@ -333,7 +448,7 @@ export async function checkInAction(input: CheckInInput): Promise<ActionResult> 
       lateEval.status === "half_day"
         ? `${ctx.name} checked in late — ${(project as { name: string }).name} — auto-marked Half-Day (late-arrival limit used)`
         : `${ctx.name} checked in — ${(project as { name: string }).name}`,
-    meta: { projectId: input.projectId, lat: input.lat, lng: input.lng, outsideM, outsideReason: outsideReason || null },
+    meta: { projectId: site.projectId, office: !site.projectId, lat: input.lat, lng: input.lng, outsideM, outsideReason: outsideReason || null },
   });
 
   if (outsideM != null) {
@@ -403,26 +518,41 @@ export async function checkOutAction(input: CheckOutInput): Promise<ActionResult
   let outsideM: number | null = null;
   let projectName = "";
   const outsideReason = (input.outsideReason ?? "").trim().slice(0, MAX_OUTSIDE_REASON);
-  if (row.project_id) {
+  // After a Switch Site (0050) the fence is the CURRENT site's, not the
+  // first. At the Office (a "Can work from office" member's office check-in
+  // or Office visit) → the org office fence, same soft rule. No known site
+  // (no project, not such a member) → no fence, as before.
+  const current = await currentSiteFor(ctx.orgId, {
+    id: row.id as string,
+    projectId: (row.project_id as string | null) ?? null,
+    userId: ctx.userId,
+  });
+  const currentProjectId = current.projectId;
+  let fence: GeofenceRow | null = null;
+  if (currentProjectId) {
     // Service role, org-scoped: same reason as in checkInAction (unassigned
     // Site staff can't read the project through RLS).
     const { data: project } = await createAdminClient()
       .from("projects")
       .select("name, geofence_lat, geofence_lng, geofence_radius_m")
-      .eq("id", row.project_id)
+      .eq("id", currentProjectId)
       .eq("org_id", ctx.orgId)
       .maybeSingle();
     projectName = (project?.name as string | undefined) ?? "";
-    outsideM = outsideSiteDistance(project as GeofenceRow | null, input.lat, input.lng, input.accuracy);
-    if (outsideM != null && !outsideReason) {
-      return {
-        error: `You are ~${formatMeters(outsideM)} from the site. Choose a reason to check out from here.`,
-        outsideDistanceM: outsideM,
-      };
-    }
+    fence = project as GeofenceRow | null;
+  } else if (current.atOffice) {
+    projectName = OFFICE_SITE_NAME;
+    fence = await orgOfficeFence(supabase, ctx.orgId);
   }
-  const outsideNote =
-    outsideM != null ? `Checked out outside site (${formatMeters(outsideM)} away): ${outsideReason}` : null;
+  const currentSite = { projectId: currentProjectId };
+  outsideM = outsideSiteDistance(fence, input.lat, input.lng, input.accuracy);
+  if (outsideM != null && !outsideReason) {
+    return {
+      error: `You are ~${formatMeters(outsideM)} from ${siteWord(currentSite)}. Choose a reason to check out from here.`,
+      outsideDistanceM: outsideM,
+    };
+  }
+  const outsideNote = outsideM != null ? `Checked out ${outsideLabel(currentSite, outsideM)}: ${outsideReason}` : null;
 
   // Deterministic path → upload first; the row is untouched on failure.
   const selfiePath = await uploadSelfie(ctx.orgId, ctx.userId, date, "out", input.selfieDataUrl);
@@ -479,6 +609,312 @@ export async function checkOutAction(input: CheckOutInput): Promise<ActionResult
   });
 
   return { id: row.id as string };
+}
+
+export interface SwitchSiteInput {
+  projectId: string;
+  lat: number;
+  lng: number;
+  accuracy: number;
+  selfieDataUrl: string;
+  /** Required when arriving outside the chosen project's geofence. */
+  outsideReason?: string;
+}
+
+/**
+ * Switch Site (0050): during an open self site shift, record arriving at
+ * another project (GPS + live selfie). The attendance row is untouched — one
+ * check-in, one check-out, project_id stays the first project. Same
+ * roster rule and outside-fence handling as check-in (never blocked; an
+ * outside switch needs a reason and alerts Super Admin + HR).
+ */
+export async function switchSiteAction(input: SwitchSiteInput): Promise<ActionResult> {
+  if (!isSupabaseConfigured()) return { id: "mock" };
+
+  const ctx = await getAuthContext();
+  if (!ctx?.orgId) return { error: "You must be signed in." };
+  if (!input.projectId) return { error: "Choose a project first." };
+  if (!validCoords(input.lat, input.lng, input.accuracy)) {
+    return { error: "Could not read a valid GPS location. Enable location access and retry." };
+  }
+
+  const supabase = await createClient();
+  const flags = await memberSiteFlags(supabase, ctx);
+  if (flags.isOffice === true) return { error: "Switch Site is for site staff." };
+
+  const date = orgToday();
+  const { data: row } = await supabase
+    .from("employee_attendance")
+    .select("id, project_id, check_out_at, source, check_in_selfie_path")
+    .eq("user_id", ctx.userId)
+    .eq("date", date)
+    .maybeSingle();
+  if (!row || row.check_out_at || row.source !== "self") {
+    return { error: "Check in at a site first." };
+  }
+
+  // A project (org-scoped service-role lookup + roster rule) or the Office.
+  const resolved = await resolveSite(supabase, { ...ctx, orgId: ctx.orgId }, input.projectId);
+  if (!resolved.site) return { error: resolved.error ?? "Project not found." };
+  const site = resolved.site;
+  const projectName = site.name;
+
+  const admin = createAdminClient();
+  const { data: visitData, error: visitsErr } = await admin
+    .from("attendance_site_visits")
+    .select("project_id, arrived_at")
+    .eq("attendance_id", row.id);
+  if (visitsErr) {
+    return { error: isMissingTableError(visitsErr) ? SITE_VISITS_PENDING_MSG : visitsErr.message };
+  }
+  const visits = ((visitData ?? []) as { project_id: string | null; arrived_at: string }[]).map((v) => ({
+    projectId: v.project_id,
+    arrivedAt: v.arrived_at,
+  }));
+  // An open self SITE shift — decided from the row (project, check-in
+  // selfie or visits), so an Office check-in keeps working even if "Can
+  // work from office" is unticked mid-shift. Office punches never qualify.
+  if (
+    !isSiteFlowShift(
+      { projectId: (row.project_id as string | null) ?? null, checkInSelfiePath: (row.check_in_selfie_path as string | null) ?? null },
+      visits.length,
+      false
+    )
+  ) {
+    return { error: "Check in at a site first." };
+  }
+  // null on both sides = already at the Office (only reachable for members
+  // allowed to use it — resolveSite gates the Office).
+  const currentProjectId = currentProjectIdFrom(
+    visits,
+    (row.project_id as string | null) ?? null,
+    flags.canWorkFromOffice
+  );
+  if (currentProjectId === site.projectId) {
+    return { error: site.projectId ? "You're already at this site." : "You're already at the Office." };
+  }
+  if (visits.length >= MAX_SITE_VISITS_PER_DAY) {
+    return { error: `You can switch site at most ${MAX_SITE_VISITS_PER_DAY} times a day.` };
+  }
+
+  const outsideM = outsideSiteDistance(site.fence, input.lat, input.lng, input.accuracy);
+  const outsideReason = (input.outsideReason ?? "").trim().slice(0, MAX_OUTSIDE_REASON);
+  if (outsideM != null && !outsideReason) {
+    return {
+      error: `You are ~${formatMeters(outsideM)} from ${siteWord(site)}. Choose a reason to switch here from this location.`,
+      outsideDistanceM: outsideM,
+    };
+  }
+
+  // Selfie is mandatory — upload first; nothing is inserted on failure. A
+  // unique name per visit, so concurrent switches never share (or, on the
+  // failed-insert cleanup below, delete) each other's file.
+  const selfiePath = await uploadSelfie(
+    ctx.orgId,
+    ctx.userId,
+    date,
+    `visit-${crypto.randomUUID()}`,
+    input.selfieDataUrl
+  );
+  if (!selfiePath) return { error: "Selfie upload failed — please try again." };
+
+  const nowIso = new Date().toISOString();
+  const { data: visit, error } = await admin
+    .from("attendance_site_visits")
+    .insert({
+      org_id: ctx.orgId,
+      attendance_id: row.id,
+      user_id: ctx.userId,
+      project_id: site.projectId, // null = the Office
+      arrived_at: nowIso,
+      lat: input.lat,
+      lng: input.lng,
+      accuracy: input.accuracy,
+      selfie_path: selfiePath,
+      outside_m: outsideM,
+      outside_reason: outsideM != null ? outsideReason : null,
+    })
+    .select("id")
+    .single();
+  if (error) {
+    await admin.storage.from(BUCKET).remove([selfiePath]).catch(() => undefined);
+    return { error: isMissingTableError(error) ? SITE_VISITS_PENDING_MSG : error.message };
+  }
+
+  // Spot-checks only apply while at a project: going to the Office drops
+  // the remaining ones; leaving the Office for a project plans the rest of
+  // the shift from now (project → project keeps the existing plan).
+  if (!site.projectId) {
+    await cancelSpotChecks(row.id as string);
+  } else if (!currentProjectId) {
+    await scheduleSpotChecksFrom({
+      orgId: ctx.orgId,
+      userId: ctx.userId,
+      attendanceId: row.id as string,
+      projectId: site.projectId,
+      startAt: nowIso,
+    });
+  }
+
+  await logActivity({
+    action: "updated",
+    entityType: "attendance",
+    entityId: row.id as string,
+    summary:
+      outsideM != null
+        ? `${ctx.name} switched site — ${projectName} (outside site, ${formatMeters(outsideM)} away: ${outsideReason})`
+        : `${ctx.name} switched site — ${projectName}`,
+    meta: {
+      visitId: visit.id,
+      projectId: site.projectId,
+      office: !site.projectId,
+      lat: input.lat,
+      lng: input.lng,
+      outsideM,
+      outsideReason: outsideReason || null,
+    },
+  });
+
+  if (outsideM != null) {
+    await dispatchNotification({
+      orgId: ctx.orgId,
+      roles: ["super_admin", "hr"],
+      excludeUserId: ctx.userId,
+      kind: "delay",
+      title: `${ctx.name} switched site outside site`,
+      body: `${ctx.name} switched to ${projectName} outside site — ${formatMeters(outsideM)} — ${outsideReason}`,
+      href: "/payroll",
+    });
+  }
+
+  return { id: visit.id as string };
+}
+
+export interface SiteVisitDetail {
+  id: string;
+  projectId: string | null;
+  projectName: string | null;
+  arrivedAt: string;
+  lat: number;
+  lng: number;
+  accuracy: number | null;
+  outsideM: number | null;
+  outsideReason: string | null;
+  selfieUrl: string | null;
+  /** A null-project visit by a "Can work from office" member = the Office (else a since-deleted project). */
+  isOffice: boolean;
+  /** The visited project's (or, for an Office visit, the org office's) geofence; null fields = no fence set. */
+  fence: { lat: number | null; lng: number | null; radiusM: number | null } | null;
+}
+
+/**
+ * Site visits (Switch Site, 0050) of one attendance day, oldest first, with
+ * signed selfie URLs. RLS scopes the read (self or super_admin/hr); the admin
+ * client only signs paths read from those rows and names org projects.
+ * Missing table (0050 not applied) = no visits.
+ */
+export async function getAttendanceSiteVisitsAction(attendanceId: string): Promise<SiteVisitDetail[]> {
+  if (!isSupabaseConfigured() || !attendanceId) return [];
+  const ctx = await getAuthContext();
+  if (!ctx?.orgId) return [];
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("attendance_site_visits")
+    .select("id, user_id, project_id, arrived_at, lat, lng, accuracy, selfie_path, outside_m, outside_reason")
+    .eq("attendance_id", attendanceId)
+    .order("arrived_at", { ascending: true })
+    .limit(MAX_SITE_VISITS_PER_DAY * 2);
+  if (error || !data?.length) return [];
+  type Row = {
+    id: string;
+    user_id: string;
+    project_id: string | null;
+    arrived_at: string;
+    lat: number;
+    lng: number;
+    accuracy: number | null;
+    selfie_path: string | null;
+    outside_m: number | null;
+    outside_reason: string | null;
+  };
+  const rows = data as Row[];
+
+  const admin = createAdminClient();
+  const projectIds = Array.from(new Set(rows.map((r) => r.project_id).filter((p): p is string => Boolean(p))));
+  const paths = rows.map((r) => r.selfie_path).filter((p): p is string => Boolean(p));
+  // A null-project visit = the Office only for a "Can work from office"
+  // member (0050 addendum); otherwise it was a since-deleted project.
+  const hasNullVisit = rows.some((r) => !r.project_id);
+  const officeAllowed = hasNullVisit
+    ? (await workFromOfficeUserIds(ctx.orgId, [rows[0].user_id])).has(rows[0].user_id)
+    : false;
+  const hasOfficeVisit = hasNullVisit && officeAllowed;
+  const [projRes, signedRes, officeFenceRow] = await Promise.all([
+    projectIds.length
+      ? admin
+          .from("projects")
+          .select("id, name, geofence_lat, geofence_lng, geofence_radius_m")
+          .eq("org_id", ctx.orgId)
+          .in("id", projectIds)
+      : Promise.resolve({ data: [] as Record<string, unknown>[] }),
+    paths.length
+      ? admin.storage.from(BUCKET).createSignedUrls(paths, SIGNED_TTL)
+      : Promise.resolve({ data: [] as { path: string | null; signedUrl: string; error: string | null }[] }),
+    hasOfficeVisit ? orgOfficeFence(supabase, ctx.orgId) : Promise.resolve(null),
+  ]);
+  const officeFence = officeFenceRow
+    ? { lat: officeFenceRow.geofence_lat, lng: officeFenceRow.geofence_lng, radiusM: officeFenceRow.geofence_radius_m }
+    : null;
+  type ProjRow = { id: string; name: string; geofence_lat: number | null; geofence_lng: number | null; geofence_radius_m: number | null };
+  const projectById = new Map(((projRes.data ?? []) as ProjRow[]).map((p) => [p.id, p]));
+  const urlByPath = new Map<string, string>();
+  (signedRes.data ?? []).forEach((s, idx) => {
+    if (s.signedUrl && !s.error) urlByPath.set(paths[idx], s.signedUrl);
+  });
+
+  return rows.map((r) => {
+    const p = r.project_id ? projectById.get(r.project_id) : undefined;
+    const isOffice = !r.project_id && officeAllowed;
+    return {
+      id: r.id,
+      projectId: r.project_id,
+      projectName: r.project_id ? p?.name ?? null : isOffice ? OFFICE_SITE_NAME : null,
+      isOffice,
+      arrivedAt: r.arrived_at,
+      lat: r.lat,
+      lng: r.lng,
+      accuracy: r.accuracy,
+      outsideM: r.outside_m,
+      outsideReason: r.outside_reason,
+      selfieUrl: r.selfie_path ? urlByPath.get(r.selfie_path) ?? null : null,
+      fence: p
+        ? { lat: p.geofence_lat, lng: p.geofence_lng, radiusM: p.geofence_radius_m }
+        : isOffice
+          ? officeFence
+          : null,
+    };
+  });
+}
+
+/** Super_admin/hr: number of site switches per attendance day, for the admin table's "N sites" badge. */
+export async function getSiteVisitCountsAction(attendanceIds: string[]): Promise<Record<string, number>> {
+  const out: Record<string, number> = {};
+  if (!isSupabaseConfigured() || attendanceIds.length === 0) return out;
+  const ctx = await getAuthContext();
+  if (ctx?.role !== "super_admin" && ctx?.role !== "hr") return out;
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("attendance_site_visits")
+    .select("attendance_id")
+    .in("attendance_id", attendanceIds.slice(0, 500));
+  if (error) return out;
+  for (const r of data ?? []) {
+    const k = r.attendance_id as string;
+    out[k] = (out[k] ?? 0) + 1;
+  }
+  return out;
 }
 
 /** The org's shared office location (office flow's geofence). Readable by any signed-in member. */
@@ -1130,8 +1566,14 @@ export async function recordLocationPingAction(
   if (!openRow || openRow.check_out_at || openRow.source !== "self") {
     return { ok: false, error: "No active check-in to track." };
   }
-  // Office check-ins (no project) are never tracked — site staff only.
-  if (!openRow.project_id) return { ok: false, error: "Office check-ins aren't tracked." };
+  // Office check-ins (no project) are never tracked — site staff only. The
+  // same while a Switch Site member is currently at the Office (0050).
+  const { projectId: currentProjectId } = await currentSiteFor(ctx.orgId, {
+    id: openRow.id as string,
+    projectId: (openRow.project_id as string | null) ?? null,
+    userId: ctx.userId,
+  });
+  if (!currentProjectId) return { ok: false, error: "Office check-ins aren't tracked." };
 
   const { error } = await supabase.from("attendance_location_pings").insert({
     org_id: ctx.orgId,
@@ -1178,17 +1620,27 @@ export async function getLiveLocationsAction(): Promise<LiveLocation[]> {
     .eq("org_id", ctx.orgId)
     .eq("date", today)
     .is("check_out_at", null)
-    .eq("source", "self")
-    // Site shifts only — office check-ins are never tracked, so they'd only
-    // ever show "No ping yet" here.
-    .not("project_id", "is", null);
+    .eq("source", "self");
   if (openErr) return [];
-  const rows = (openData ?? []) as { id: string; user_id: string; project_id: string | null; check_in_at: string }[];
+  type OpenRow = { id: string; user_id: string; project_id: string | null; check_in_at: string };
+  const openRows = (openData ?? []) as OpenRow[];
+  if (!openRows.length) return [];
+
+  // Current site after any Switch Site (0050), else the check-in project.
+  // Site shifts currently at a PROJECT only — office check-ins, and Switch
+  // Site members currently at the Office, are never tracked, so they'd only
+  // ever show "No ping yet" here.
+  const currentByAttendance = await currentSitesFor(
+    ctx.orgId,
+    openRows.map((r) => ({ id: r.id, projectId: r.project_id, userId: r.user_id }))
+  );
+  const currentOf = (r: OpenRow) => currentByAttendance.get(r.id)?.projectId ?? null;
+  const rows = openRows.filter((r) => currentOf(r) != null);
   if (!rows.length) return [];
 
   const attendanceIds = rows.map((r) => r.id);
   const userIds = Array.from(new Set(rows.map((r) => r.user_id)));
-  const projectIds = Array.from(new Set(rows.map((r) => r.project_id).filter((p): p is string => Boolean(p))));
+  const projectIds = Array.from(new Set(rows.map(currentOf).filter((p): p is string => Boolean(p))));
 
   const [pingsRes, profilesRes, memRes, projRes] = await Promise.all([
     admin
@@ -1220,7 +1672,8 @@ export async function getLiveLocationsAction(): Promise<LiveLocation[]> {
   const projectById = new Map(((projRes.data ?? []) as ProjRow[]).map((p) => [p.id, p]));
 
   return rows.map((r) => {
-    const project = r.project_id ? projectById.get(r.project_id) : undefined;
+    const currentProjectId = currentOf(r);
+    const project = currentProjectId ? projectById.get(currentProjectId) : undefined;
     const lastPing = latestPingByAttendance.get(r.id) ?? null;
     let distanceFromSiteM: number | null = null;
     if (lastPing && project?.geofence_lat != null && project?.geofence_lng != null) {
@@ -1231,7 +1684,7 @@ export async function getLiveLocationsAction(): Promise<LiveLocation[]> {
       userId: r.user_id,
       userName: nameById.get(r.user_id) ?? "Unknown",
       employeeId: empIdByUser.get(r.user_id) ?? "",
-      projectId: r.project_id,
+      projectId: currentProjectId,
       projectName: project?.name ?? null,
       checkInAt: r.check_in_at,
       lastPing,

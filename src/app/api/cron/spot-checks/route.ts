@@ -3,6 +3,7 @@ import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { dispatchNotification } from "@/lib/notifications/dispatch";
 import { formatTime } from "@/lib/attendance/compute";
 import { SPOT_CHECK_WINDOW_MIN } from "@/lib/attendance/spot-checks";
+import { currentSitesFor } from "@/lib/attendance/site-visit-store";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -115,7 +116,21 @@ export async function POST(request: Request) {
   let missed = 0;
   if (expired.length) {
     const userIds = Array.from(new Set(expired.map((r) => r.user_id)));
-    const projectIds = Array.from(new Set(expired.map((r) => r.project_id).filter(Boolean))) as string[];
+    // Name the CURRENT site (after any Switch Site, 0050), not the check-in one.
+    // Per org (the "Can work from office" lookup is org-scoped).
+    const currentByAttendance = new Map<string, { projectId: string | null; atOffice: boolean }>();
+    for (const orgId of Array.from(new Set(expired.map((r) => r.org_id)))) {
+      const sites = await currentSitesFor(
+        orgId,
+        expired
+          .filter((r) => r.org_id === orgId)
+          .map((r) => ({ id: r.attendance_id, projectId: r.project_id, userId: r.user_id }))
+      );
+      sites.forEach((v, k) => currentByAttendance.set(k, v));
+    }
+    const siteIdOf = (r: ActiveRow) => currentByAttendance.get(r.attendance_id)?.projectId ?? r.project_id;
+    const atOfficeOf = (r: ActiveRow) => currentByAttendance.get(r.attendance_id)?.atOffice === true;
+    const projectIds = Array.from(new Set(expired.map(siteIdOf).filter(Boolean))) as string[];
     const [{ data: people }, { data: projects }] = await Promise.all([
       admin.from("profiles").select("id, name").in("id", userIds),
       projectIds.length
@@ -134,7 +149,8 @@ export async function POST(request: Request) {
         .select("id");
       if (!u?.length) continue;
       missed += 1;
-      const site = r.project_id ? projectOf.get(r.project_id) ?? "site" : "site";
+      const siteId = siteIdOf(r);
+      const site = atOfficeOf(r) ? "the Office" : siteId ? projectOf.get(siteId) ?? "site" : "site";
       await dispatchNotification({
         orgId: r.org_id,
         roles: ["super_admin", "hr"],

@@ -10,6 +10,13 @@ export interface MyAttendanceData {
   unclosedPreviousShift?: EmployeeAttendance | null;
   /** A fired, still-open random location check (0045) — null if none. */
   pendingSpotCheck: SpotCheck | null;
+  /**
+   * Switch Site (0050): today's site visits, oldest first. Empty when there
+   * are none or the migration isn't applied yet.
+   */
+  todayVisits: { id: string; projectId: string | null; projectName: string; arrivedAt: string }[];
+  /** Name of today's check-in project (the first site), "" when none. */
+  todayProjectName: string;
   /** All of the caller's records in `month`. */
   records: EmployeeAttendance[];
   /**
@@ -30,6 +37,12 @@ export interface MyAttendanceData {
    * Office/Site badge. Explicitly set per member on the Team page.
    */
   isOffice: boolean;
+  /**
+   * 0050 addendum: a Site member allowed to use "Office" as a site (Team page
+   * tick) — offered first in the check-in and Switch Site pickers. False for
+   * Office staff and until the migration is applied.
+   */
+  canWorkFromOffice: boolean;
   /** Org's shared office location for the office punch flow (all null = fence disabled). */
   officeGeofence: { lat: number | null; lng: number | null; radiusM: number | null };
   /** Declared company holidays — excluded from the office 1-paid-Leave-per-month count. */
@@ -50,6 +63,8 @@ export interface AttendanceMember {
   role: Role;
   /** True when this member has no project_members roster entry — the office (not site) flow applies to them. */
   isOffice: boolean;
+  /** 0050 addendum: Site member allowed to use "Office" as a site. Absent = false. */
+  canWorkFromOffice?: boolean;
   /** Default weekly off day + recorded swaps (0047) — SUNDAY_OFF until the migration is applied. */
   weekOff: WeekOffRule;
   /** Membership created_at as an org-local date — office auto-leave never counts days before it. Absent = no floor. */

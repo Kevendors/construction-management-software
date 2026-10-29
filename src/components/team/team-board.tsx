@@ -24,6 +24,7 @@ import {
   resetMemberPasswordAction,
   setMemberActiveAction,
   setMemberOfficeAction,
+  setMemberWorkFromOfficeAction,
   setMemberPoAccessAction,
   setMemberRoleAction,
   setWeeklyOffPatternAction,
@@ -45,6 +46,8 @@ export interface TeamMember {
   canViewPurchaseOrders: boolean;
   /** Explicit Office/Site setting (attendance leave/holiday policy + badge) — independent of project assignment. */
   isOffice: boolean;
+  /** Site members only (0050): may use "Office" as a site at check-in / Switch Site. */
+  canWorkFromOffice: boolean;
   /** Default weekly off day, 0 = Sunday … 6 = Saturday (0047; Sunday until applied). */
   weeklyOffDow: number;
   /** Weekly-off type (0049; "fixed" until applied). */
@@ -362,6 +365,8 @@ export function TeamBoard({
   migrationPending,
   weekOffPending,
   weekOffKindsPending,
+  workFromOfficePending,
+  canEditWorkFromOffice,
 }: {
   members: TeamMember[];
   currentUserId: string;
@@ -370,6 +375,10 @@ export function TeamBoard({
   weekOffPending?: boolean;
   /** weekly_off_kind column missing (0049 not applied) — Alternate / Flexible are disabled. */
   weekOffKindsPending?: boolean;
+  /** can_work_from_office column missing (0050 not applied) — the tick is disabled. */
+  workFromOfficePending?: boolean;
+  /** Only super_admin may change "Can work from office". */
+  canEditWorkFromOffice?: boolean;
 }) {
   const router = useRouter();
   const [members, setMembers] = React.useState(initialMembers);
@@ -418,13 +427,33 @@ export function TeamBoard({
     // Optimistic: flip it instantly instead of waiting on a full page
     // refresh (which also re-lists every auth user and felt slow for a
     // same-row dropdown change). Revert only if the save actually fails.
-    setMembers((prev) => prev.map((m) => (m.userId === userId ? { ...m, isOffice: next } : m)));
+    // Going Office also clears "Can work from office" (Site-only) server-side.
+    const prevWfo = members.find((m) => m.userId === userId)?.canWorkFromOffice ?? false;
+    setMembers((prev) =>
+      prev.map((m) =>
+        m.userId === userId ? { ...m, isOffice: next, canWorkFromOffice: next ? false : m.canWorkFromOffice } : m
+      )
+    );
     setBusy(userId);
     const res = await setMemberOfficeAction(userId, next);
     setBusy(null);
     if (res.error) {
       window.alert(res.error);
-      setMembers((prev) => prev.map((m) => (m.userId === userId ? { ...m, isOffice: !next } : m)));
+      setMembers((prev) =>
+        prev.map((m) => (m.userId === userId ? { ...m, isOffice: !next, canWorkFromOffice: prevWfo } : m))
+      );
+    }
+  }
+
+  async function toggleWorkFromOffice(userId: string, next: boolean) {
+    // Optimistic, same as toggleOffice — revert only if the save fails.
+    setMembers((prev) => prev.map((m) => (m.userId === userId ? { ...m, canWorkFromOffice: next } : m)));
+    setBusy(userId);
+    const res = await setMemberWorkFromOfficeAction(userId, next);
+    setBusy(null);
+    if (res.error) {
+      window.alert(res.error);
+      setMembers((prev) => prev.map((m) => (m.userId === userId ? { ...m, canWorkFromOffice: !next } : m)));
     }
   }
 
@@ -568,6 +597,27 @@ export function TeamBoard({
                         <option value="office">Office</option>
                         <option value="site">Site</option>
                       </Select>
+                      {!m.isOffice && (
+                        <label
+                          className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground"
+                          title={
+                            workFromOfficePending
+                              ? "Run 0050_attendance_site_visits.sql in Supabase first"
+                              : !canEditWorkFromOffice
+                                ? "Only Super Admin can change this"
+                                : "Adds \"Office\" to their check-in and Switch Site choices"
+                          }
+                        >
+                          <input
+                            type="checkbox"
+                            className="h-3.5 w-3.5"
+                            checked={m.canWorkFromOffice}
+                            disabled={busy === m.userId || workFromOfficePending || !canEditWorkFromOffice}
+                            onChange={(e) => toggleWorkFromOffice(m.userId, e.target.checked)}
+                          />
+                          Can work from office
+                        </label>
+                      )}
                     </TableCell>
                     <TableCell>
                       {weekOffUiEnabled(m.isOffice) ? (
