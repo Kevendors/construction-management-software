@@ -8,6 +8,7 @@ import { isEmployeeRole } from "@/lib/auth/roles";
 import { logActivity } from "@/lib/activity/log";
 import { assignEmployeeIdIfMissing } from "@/lib/team/employee-id";
 import { formatINR } from "@/lib/utils";
+import { SALARY_BASIS_DAYS } from "@/lib/payroll/compute";
 import type {
   AdvanceParty,
   Department,
@@ -305,10 +306,9 @@ export async function generateSlipAction(
   if (empErr) return { error: empErr.message };
   if (!emp) return { error: "Employee not found." };
 
-  // Calendar-days method: per-day pay = monthly salary ÷ days in this month
-  // (28–31), so pay = salary − per-day × unpaid days.
-  const [slipYear, slipMonth] = month.split("-").map(Number);
-  const monthDays = new Date(slipYear, slipMonth, 0).getDate() || 30;
+  // Fixed Day Basis: every month is 30 salary days, so per-day pay =
+  // salary ÷ 30 and pay = salary − per-day × unpaid days.
+  const monthDays = SALARY_BASIS_DAYS;
   // `paidDays` is a required number, including a legitimate 0 (zero attendance
   // that month) -- never substitute a default for it here (a `|| monthDays`
   // would silently turn a real 0 into a full month's pay).

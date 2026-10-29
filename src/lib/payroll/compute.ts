@@ -7,6 +7,13 @@ import type {
   SalarySlip,
 } from "@/lib/types";
 
+/**
+ * Fixed Day Basis: every month counts as 30 days for salary, whatever its
+ * real length. Per-day pay = monthly salary ÷ 30; pay = salary − per-day ×
+ * unpaid days, so a full month is always the full salary.
+ */
+export const SALARY_BASIS_DAYS = 30;
+
 export interface PayrollBoard {
   employees: Employee[];
   contractors: LabourContractor[];

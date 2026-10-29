@@ -93,7 +93,7 @@ export function SlipDocument({ slip, employee }: { slip: SalarySlip; employee: E
     slip.month < today.slice(0, 7)
       ? slip.monthDays
       : slip.month === today.slice(0, 7)
-      ? Math.min(slip.monthDays, Number(today.slice(8, 10)))
+      ? Math.min(slip.monthDays, Number(today.slice(8, 10))) // 30-day basis: day 31 doesn't add a day
       : 0;
   const notYetDue = slip.monthDays - elapsed;
   const lopDays = Math.max(0, elapsed - slip.paidDays);

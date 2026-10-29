@@ -22,8 +22,8 @@ import { PayrollBreakdownChart } from "@/components/charts/payroll-chart";
 import { SetSalaryDialog } from "./set-salary-dialog";
 import { DepartmentOptions, DesignationSuggestions } from "./department-fields";
 import type { PayrollBoard } from "@/lib/payroll/compute";
-import { daysOfMonth, monthlySummary, orgToday, type AttendanceAdminBoard } from "@/lib/attendance/compute";
-import { payrollByDepartment, slipTotals } from "@/lib/payroll/compute";
+import { monthlySummary, orgToday, type AttendanceAdminBoard } from "@/lib/attendance/compute";
+import { payrollByDepartment, SALARY_BASIS_DAYS, slipTotals } from "@/lib/payroll/compute";
 import { addEmployeeAction, generateSlipAction } from "@/app/payroll/actions";
 import { salarySlipStatusMeta, roleLabel } from "@/lib/labels";
 import { useRole } from "@/components/layout/role-provider";
@@ -72,17 +72,17 @@ export function EmployeesTab({
     return m ? m.isOffice : null;
   };
 
-  // Exact per-day pay for the selected month: salary ÷ days in that month.
+  // Fixed Day Basis: per-day pay = salary ÷ 30, whatever the month's length.
   const perDayFor = (ctc: number) =>
-    (ctc / daysOfMonth(month).length).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    (ctc / SALARY_BASIS_DAYS).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-  // Days of `month` that have happened so far (today counts): the whole month
-  // once it's over, today's day-of-month while it's in progress, 0 for a
-  // future month.
+  // Salary days of `month` earned so far (Fixed Day Basis, max 30): the full
+  // 30 once the month is over, today's day-of-month (capped at 30) while it's
+  // in progress, 0 for a future month.
   const daysElapsedIn = (m: string): number => {
     const today = orgToday();
-    if (m < today.slice(0, 7)) return daysOfMonth(m).length;
-    if (m === today.slice(0, 7)) return Number(today.slice(8, 10));
+    if (m < today.slice(0, 7)) return SALARY_BASIS_DAYS;
+    if (m === today.slice(0, 7)) return Math.min(SALARY_BASIS_DAYS, Number(today.slice(8, 10)));
     return 0;
   };
 
@@ -134,7 +134,7 @@ export function EmployeesTab({
     // NOT silently become a full paid month. Only pay the full month when
     // there's no attendance tracking for them at all (e.g. a manually-paid
     // employee with no login/roster entry), where there's nothing to compute from.
-    const daysToPay = tracked ? stats?.paidDays ?? 0 : daysOfMonth(month).length;
+    const daysToPay = tracked ? stats?.paidDays ?? 0 : SALARY_BASIS_DAYS;
     const res = await generateSlipAction(empId, month, daysToPay);
     setBusyId(null);
     if (!res.error) router.refresh();
@@ -208,7 +208,7 @@ export function EmployeesTab({
                             {stats !== null && (
                               <span
                                 className="inline-flex items-center gap-1 rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-800 dark:text-emerald-400"
-                                title={`${daysElapsedIn(month)} day(s) so far of ${daysOfMonth(month).length} − ${stats.unpaidDays} unpaid (Absent = 1, Half-Day = 0.5). Weekly offs and holidays are paid. Salary = monthly ÷ ${daysOfMonth(month).length} × paid days.`}
+                                title={`${daysElapsedIn(month)} of ${SALARY_BASIS_DAYS} days − ${stats.unpaidDays} unpaid (Absent = 1, Half-Day = 0.5). Weekly offs and holidays are paid. Fixed Day Basis: salary ÷ 30 × paid days.`}
                               >
                                 {stats.paidDays}d paid
                                 {stats.halfDays > 0 && (
@@ -243,7 +243,7 @@ export function EmployeesTab({
                                 <span className="text-foreground">{formatINR(emp.monthlyCtc)}</span>
                                 <Pencil className="h-3 w-3 text-muted-foreground opacity-30 transition-opacity group-hover:opacity-100" />
                               </span>
-                              <span className="text-[10px] tabular-nums text-muted-foreground" title={`${formatINR(emp.monthlyCtc)} ÷ ${daysOfMonth(month).length} days`}>
+                              <span className="text-[10px] tabular-nums text-muted-foreground" title={`${formatINR(emp.monthlyCtc)} ÷ ${SALARY_BASIS_DAYS} days (Fixed Day Basis)`}>
                                 ₹{perDayFor(emp.monthlyCtc)}/day
                               </span>
                               <span className={cn(
@@ -390,8 +390,7 @@ function AddEmployeeDialog({
   // Live breakdown calculations
   const numCtc = Math.max(0, Number(monthlyCtc) || 0);
   // Per-day pay this month (salary ÷ days in the current month), to the paisa.
-  const thisMonthDays = daysOfMonth(orgToday().slice(0, 7)).length;
-  const perDay = (numCtc / thisMonthDays).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const perDay = (numCtc / SALARY_BASIS_DAYS).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const basic = numCtc;
   const pf = deductPf ? Math.round(basic * 0.12) : 0;
   const esi = deductEsi ? Math.round(numCtc * 0.0075) : 0;
@@ -559,7 +558,7 @@ function AddEmployeeDialog({
               <span className="flex items-center gap-1.5 text-foreground">
                 <Calculator className="h-3 w-3 text-primary" /> Salary Breakdown
               </span>
-              <span className="font-medium text-foreground">₹{perDay}/day ({thisMonthDays}-day month)</span>
+              <span className="font-medium text-foreground">₹{perDay}/day (30-day basis)</span>
             </div>
             <div className="grid grid-cols-4 gap-2 text-xs pt-1.5 border-t border-border/60">
               <div>
