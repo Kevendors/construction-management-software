@@ -45,6 +45,12 @@ export function MonthlySummary({
         ))}
       </div>
 
+      {summary.notJoined > 0 && startDate && (
+        <p className="text-[11px] text-muted-foreground">
+          Joined {startDate} — the {summary.notJoined} day{summary.notJoined === 1 ? "" : "s"} before that show blank, not Absent.
+        </p>
+      )}
+
       <div className="flex items-start gap-1.5 rounded-md border border-border/70 bg-muted/30 px-3 py-2 text-[11px] text-muted-foreground">
         <Info className="h-3.5 w-3.5 shrink-0 mt-0.5 text-primary" />
         <div>

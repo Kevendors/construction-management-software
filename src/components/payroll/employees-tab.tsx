@@ -113,7 +113,9 @@ export function EmployeesTab({
       member?.weekOff,
       member?.startDate
     );
-    const unpaidDays = summary.absent + summary.halfDay * 0.5;
+    // Days before joining aren't Absent any more, but stay unpaid exactly as
+    // before (notJoinedUnpaid = the ones that used to count as Absent).
+    const unpaidDays = summary.absent + summary.halfDay * 0.5 + summary.notJoinedUnpaid;
     return {
       rawDays: matching.length,
       unpaidDays,
@@ -208,7 +210,7 @@ export function EmployeesTab({
                             {stats !== null && (
                               <span
                                 className="inline-flex items-center gap-1 rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-800 dark:text-emerald-400"
-                                title={`${daysElapsedIn(month)} of ${SALARY_BASIS_DAYS} days − ${stats.unpaidDays} unpaid (Absent = 1, Half-Day = 0.5). Weekly offs and holidays are paid. Fixed Day Basis: salary ÷ 30 × paid days.`}
+                                title={`${daysElapsedIn(month)} of ${SALARY_BASIS_DAYS} days − ${stats.unpaidDays} unpaid (Absent = 1, Half-Day = 0.5, working day before joining = 1). Weekly offs and holidays are paid. Fixed Day Basis: salary ÷ 30 × paid days.`}
                               >
                                 {stats.paidDays}d paid
                                 {stats.halfDays > 0 && (

@@ -200,7 +200,22 @@ export function formatTime(iso: string): string {
   }).format(new Date(iso));
 }
 
-export type DayStatus = "present" | "absent" | "holiday" | "future";
+/** "not_joined": a no-record day before the member's start date — never Absent, Week Off or Holiday. */
+export type DayStatus = "present" | "absent" | "holiday" | "future" | "not_joined";
+
+/**
+ * True when `date` is before the member joined (`startDate`, IST "YYYY-MM-DD").
+ * Such a day isn't Absent, a weekly off or a holiday — the member wasn't
+ * employed yet. No `startDate` = never.
+ */
+export function isBeforeJoining(date: string, startDate?: string): boolean {
+  return Boolean(startDate) && date < startDate!;
+}
+
+/** Tooltip for a day before the member joined. */
+export function beforeJoiningLabel(startDate: string): string {
+  return `Before joining (${startDate})`;
+}
 
 /** A company holiday declared by an admin — see org_holidays (migration 0037). */
 export interface OrgHoliday {
@@ -434,7 +449,8 @@ export function validateWeekOffSwap(
  * isHolidayFor). A past working day without a record is absent; today/future
  * without a record is not counted either way. Pass `weekOffDates` (the
  * month's weekOffDatesForMonth / evaluation.weekOffDates) so flexible offs
- * count; without it only isWeeklyOff decides.
+ * count; without it only isWeeklyOff decides. A no-record day before
+ * `startDate` (when given) is "not_joined".
  */
 export function dayStatus(
   date: string,
@@ -442,9 +458,11 @@ export function dayStatus(
   today: string = orgToday(),
   isExtraHoliday: boolean = false,
   rule: WeekOffRule = SUNDAY_OFF,
-  weekOffDates?: ReadonlySet<string>
+  weekOffDates?: ReadonlySet<string>,
+  startDate?: string
 ): DayStatus {
   if (hasRecord) return "present";
+  if (isBeforeJoining(date, startDate)) return "not_joined";
   if ((weekOffDates ? weekOffDates.has(date) : isWeeklyOff(date, rule)) || isExtraHoliday) return "holiday";
   return date < today ? "absent" : "future";
 }
@@ -749,6 +767,14 @@ export interface MonthlySummary {
   absent: number;            // No-record working days (except an office member's paid auto-leave day) + explicit Absent days + unpaid Leave
   holiday: number;           // Declared company holidays only
   weekOff: number;           // Weekly off days (default day or swapped-in off day) not worked
+  /** No-record days before the member's `startDate` — in no other bucket (not Absent / Holiday / Week Off). */
+  notJoined: number;
+  /**
+   * The `notJoined` days that were counted as Absent before "not joined"
+   * existed (past working days — not a weekly off or declared holiday).
+   * Payroll adds these to the unpaid days so pay is exactly what it was.
+   */
+  notJoinedUnpaid: number;
 }
 
 /** List every day of a "YYYY-MM" month as "YYYY-MM-DD" strings. */
@@ -786,6 +812,8 @@ export function monthlySummary(
   let absent = 0;
   let holiday = 0;
   let weekOff = 0;
+  let notJoined = 0;
+  let notJoinedUnpaid = 0;
 
   for (const date of daysOfMonth(month)) {
     if (explicitAbsentDates.has(date)) {
@@ -798,8 +826,12 @@ export function monthlySummary(
     }
     if (evalResult.autoLeavePaid && autoLeaveDates.has(date)) continue; // office's only missed day: paid Leave (counted above)
     const isDeclared = isHolidayFor(date, holidays, isOffice);
-    const status = dayStatus(date, recorded.has(date), today, isDeclared, rule, evalResult.weekOffDates);
-    if (status === "absent") absent += 1;
+    const status = dayStatus(date, recorded.has(date), today, isDeclared, rule, evalResult.weekOffDates, startDate);
+    if (status === "not_joined") {
+      notJoined += 1;
+      // What the day was before "not joined" existed — keeps pay unchanged.
+      if (dayStatus(date, false, today, isDeclared, rule, evalResult.weekOffDates) === "absent") notJoinedUnpaid += 1;
+    } else if (status === "absent") absent += 1;
     // A declared holiday that also lands on a weekly off counts once, as Holiday.
     else if (status === "holiday") {
       if (isDeclared) holiday += 1;
@@ -817,5 +849,7 @@ export function monthlySummary(
     absent: absent + evalResult.unpaidLeave,
     holiday,
     weekOff,
+    notJoined,
+    notJoinedUnpaid,
   };
 }

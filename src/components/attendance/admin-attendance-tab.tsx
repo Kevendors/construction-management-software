@@ -18,11 +18,13 @@ import {
 } from "@/components/ui/table";
 import {
   autoLeaveLabel,
+  beforeJoiningLabel,
   dayStatus,
   daysOfMonth,
   evaluateEmployeeMonthAttendance,
   formatDuration,
   formatTime,
+  isBeforeJoining,
   isHolidayFor,
   missedAbsentReason,
   monthlySummary,
@@ -142,9 +144,11 @@ export function AdminAttendanceTab({
     .filter((r) => !projectId || r.record?.projectId === projectId);
   /**
    * A no-record day in the daily view: paid auto-leave, Absent (an office
-   * member's missed day once they have 2+ days off), Week Off / Holiday, or Missed.
+   * member's missed day once they have 2+ days off), Week Off / Holiday,
+   * Not joined (before the member's start date), or Missed.
    */
   const noRecordLabel = (m: AttendanceMember, evaluation: (typeof dailyRows)[number]["evaluation"]) => {
+    if (isBeforeJoining(date, m.startDate)) return "Not joined";
     const autoLeave = autoLeaveLabel(evaluation, date);
     if (autoLeave) return autoLeave.label;
     if (missedAbsentReason(evaluation, date)) return "Absent";
@@ -304,7 +308,7 @@ export function AdminAttendanceTab({
     } else {
       downloadCsv(
         `attendance-${month}.csv`,
-        ["Employee", "Employee ID", "Present", "Leave", "Half-Day", "Absent", "Holiday", "Week Off", "Overtime"],
+        ["Employee", "Employee ID", "Present", "Leave", "Half-Day", "Absent", "Holiday", "Week Off", "Not Joined", "Overtime"],
         monthlyRows.map(({ member, records, summary }) => [
           member.name,
           member.employeeId || "—",
@@ -314,6 +318,7 @@ export function AdminAttendanceTab({
           summary.absent,
           summary.holiday,
           summary.weekOff,
+          summary.notJoined,
           formatDuration(records.reduce((s, r) => s + r.overtimeMinutes, 0)),
         ])
       );
@@ -578,6 +583,10 @@ export function AdminAttendanceTab({
                           >
                             {autoLeave.label}
                           </Badge>
+                        ) : noRecord === "Not joined" ? (
+                          <Badge variant="muted" title={member.startDate ? beforeJoiningLabel(member.startDate) : undefined}>
+                            {noRecord}
+                          </Badge>
                         ) : noRecord === "Week Off" || noRecord === "Holiday" ? (
                           <Badge variant="muted">{noRecord}</Badge>
                         ) : (
@@ -618,7 +627,7 @@ export function AdminAttendanceTab({
                               <Pencil />
                             </Button>
                           ) : (
-                            noRecord !== "Week Off" && noRecord !== "Holiday" && (
+                            noRecord !== "Week Off" && noRecord !== "Holiday" && noRecord !== "Not joined" && (
                               <Button
                                 size="sm"
                                 variant="ghost"
@@ -732,8 +741,18 @@ export function AdminAttendanceTab({
                               </td>
                             );
                           }
-                          const isDeclaredHoliday = isHolidayFor(d, board.holidays, member.isOffice);
-                          const rawStatus = dayStatus(d, Boolean(record), orgToday(), isDeclaredHoliday, member.weekOff, evaluation.weekOffDates);
+                          const rawStatus = dayStatus(
+                            d,
+                            Boolean(record),
+                            orgToday(),
+                            isHolidayFor(d, board.holidays, member.isOffice),
+                            member.weekOff,
+                            evaluation.weekOffDates,
+                            member.startDate
+                          );
+                          // Before the member joined: blank and muted, like a future day — never "A" / "H".
+                          const notJoined = rawStatus === "not_joined";
+                          const isDeclaredHoliday = !notJoined && isHolidayFor(d, board.holidays, member.isOffice);
                           // explicit_absent/declared_holiday have a real row, so dayStatus()
                           // (which only knows "does a row exist") would otherwise call them present.
                           const status =
@@ -760,6 +779,7 @@ export function AdminAttendanceTab({
                           const isHalf = ev?.creditType === "explicit_half_day";
                           const holidayLabel = board.holidays.find((h) => h.date === d)?.label;
                           const tooltip =
+                            (notJoined && member.startDate ? beforeJoiningLabel(member.startDate) : undefined) ||
                             ev?.reason ||
                             (record?.source === "admin" ? `Manually marked — ${record.note}` : undefined) ||
                             autoLeave?.reason ||
@@ -808,6 +828,9 @@ export function AdminAttendanceTab({
                             {summary.leave > 0 && <span className="text-blue-600 dark:text-blue-400">{summary.leave}LV</span>}
                             {summary.halfDay > 0 && <span className="text-orange-600 dark:text-orange-400">{summary.halfDay}HD</span>}
                             <span className="text-destructive">{summary.absent}A</span>
+                            {summary.notJoined > 0 && (
+                              <span title={member.startDate ? `Joined ${member.startDate}` : undefined}>{summary.notJoined}NJ</span>
+                            )}
                           </div>
                         </td>
                         <td className="px-3 py-1.5 text-right align-middle tabular-nums">

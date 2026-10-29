@@ -3,6 +3,7 @@
 import * as React from "react";
 import {
   autoLeaveLabel,
+  beforeJoiningLabel,
   daysOfMonth,
   dayStatus,
   evaluateEmployeeMonthAttendance,
@@ -72,7 +73,7 @@ export function HistoryCalendar({
               ? "absent"
               : ev?.creditType === "declared_holiday"
               ? "holiday"
-              : dayStatus(date, Boolean(record), orgToday(), isDeclared, weekOff, evalResult.weekOffDates);
+              : dayStatus(date, Boolean(record), orgToday(), isDeclared, weekOff, evalResult.weekOffDates, startDate);
           // A declared holiday on a weekly off reads as Holiday, not Week Off.
           const isWeekOff = status === "holiday" && !isDeclared && evalResult.weekOffDates.has(date);
           const dayNum = Number(date.slice(-2));
@@ -89,7 +90,7 @@ export function HistoryCalendar({
               type="button"
               disabled={!record}
               onClick={() => record && setSelected(record)}
-              title={ev?.reason || autoLeave?.reason || absentReason || (isWeekOff ? "Week Off" : undefined)}
+              title={(status === "not_joined" && startDate ? beforeJoiningLabel(startDate) : undefined) || ev?.reason || autoLeave?.reason || absentReason || (isWeekOff ? "Week Off" : undefined)}
               className={cn(
                 "relative flex aspect-square flex-col items-center justify-center gap-0.5 rounded-lg text-sm tabular-nums transition-colors",
                 status === "present" && !isHalfDay && !isUnpaidLeave && "bg-success/15 font-medium text-success hover:bg-success/25",
@@ -98,7 +99,7 @@ export function HistoryCalendar({
                 status === "absent" && !autoLeave && "bg-destructive/10 text-destructive",
                 autoLeave && "bg-blue-500/20 font-medium text-blue-700 dark:text-blue-300",
                 status === "holiday" && "bg-muted text-muted-foreground",
-                status === "future" && "text-muted-foreground/50"
+                (status === "future" || status === "not_joined") && "text-muted-foreground/50"
               )}
             >
               <span>{dayNum}</span>
