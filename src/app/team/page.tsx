@@ -149,7 +149,12 @@ export default async function TeamPage() {
     };
   });
 
-  members.sort((a, b) => a.name.localeCompare(b.name));
+  // By Employee ID (KV001, KV002, …); members without an ID go last, by name.
+  const idNum = (id: string) => {
+    const x = /^KV(\d+)$/.exec(id);
+    return x ? Number(x[1]) : Number.POSITIVE_INFINITY;
+  };
+  members.sort((a, b) => idNum(a.employeeId) - idNum(b.employeeId) || a.name.localeCompare(b.name));
 
   return (
     <TeamBoard
