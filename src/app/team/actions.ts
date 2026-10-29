@@ -5,6 +5,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { isAdminRole } from "@/lib/auth/permissions";
 import { isExternalRole } from "@/lib/auth/roles";
 import { logActivity } from "@/lib/activity/log";
+import { computeNextEmployeeId } from "@/lib/team/employee-id";
 import { roleLabel } from "@/lib/labels";
 import { isSunday, orgToday, toWeekOffKind, WEEK_OFF_KINDS, type WeekOffKind } from "@/lib/attendance/compute";
 import type { Role } from "@/lib/types";
@@ -25,32 +26,6 @@ function initialsOf(name: string) {
 function phoneAlias(phone: string) {
   const digits = phone.replace(/\D/g, "");
   return { digits, email: `${digits}@sitehub.phone` };
-}
-
-/** Next sequential Employee ID (KV001, KV002, …) after the highest existing one. */
-function nextEmployeeId(existing: (string | null)[]): string {
-  const max = existing.reduce((m, id) => {
-    const x = /^KV(\d+)$/.exec(id ?? "");
-    return x ? Math.max(m, Number(x[1])) : m;
-  }, 0);
-  return `KV${String(max + 1).padStart(3, "0")}`;
-}
-
-/**
- * Fetch the org's employee IDs and compute the next one. Returns null when the
- * employee_id column doesn't exist yet (migration 0015 not applied) so member
- * creation keeps working pre-migration.
- */
-async function computeNextEmployeeId(
-  admin: ReturnType<typeof createAdminClient>,
-  orgId: string
-): Promise<string | null> {
-  const { data, error } = await admin
-    .from("memberships")
-    .select("employee_id")
-    .eq("org_id", orgId);
-  if (error) return null;
-  return nextEmployeeId((data ?? []).map((r) => (r as { employee_id: string | null }).employee_id));
 }
 
 export interface NewMemberInput {

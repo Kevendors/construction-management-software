@@ -6,6 +6,7 @@ import { getAuthContext } from "@/lib/auth/context";
 import { isAdminRole } from "@/lib/auth/permissions";
 import { isEmployeeRole } from "@/lib/auth/roles";
 import { logActivity } from "@/lib/activity/log";
+import { assignEmployeeIdIfMissing } from "@/lib/team/employee-id";
 import { formatINR } from "@/lib/utils";
 import type {
   AdvanceParty,
@@ -122,6 +123,8 @@ export async function addEmployeeAction(input: AddEmployeeInput): Promise<Action
         { onConflict: "org_id,user_id" }
       );
     if (mErr) return { error: mErr.message };
+    // Same as Team & Roles: every employee login gets the next KV number.
+    await assignEmployeeIdIfMissing(admin, orgId, profileId);
   }
 
   const insertPayload: Record<string, unknown> = {
