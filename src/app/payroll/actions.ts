@@ -58,11 +58,35 @@ export interface AddEmployeeInput {
 
 const phoneDigits = (phone: string) => phone.replace(/\D/g, "");
 
+/** Departments that existed before 0051 (enum from 0001). */
+const LEGACY_DEPARTMENTS: Department[] = ["engineering", "design", "site", "accounts", "admin"];
+const DEPARTMENT_MIGRATION_MSG =
+  "New departments need 0051_departments_client_visits.sql run in Supabase first.";
+
+/** Before 0051 a new department value fails with a Postgres enum error — make it readable. */
+const friendlyDepartmentError = (message: string) =>
+  /invalid input value for enum/i.test(message) && /department/i.test(message)
+    ? DEPARTMENT_MIGRATION_MSG
+    : message;
+
 export async function addEmployeeAction(input: AddEmployeeInput): Promise<ActionResult> {
   const supabase = await createClient();
   const orgId = await currentOrgId(supabase);
   if (!orgId) return { error: "You must be signed in." };
   if (!input.name.trim()) return { error: "Name is required." };
+
+  // A new (0051) department on a DB without 0051 would fail the insert below — check first
+  // (a read filter on the enum fails the same way) so no login account is left orphaned.
+  if (!LEGACY_DEPARTMENTS.includes(input.department)) {
+    const { error: deptErr } = await supabase
+      .from("employees")
+      .select("id")
+      .eq("department", input.department)
+      .limit(1);
+    if (deptErr && /invalid input value for enum/i.test(deptErr.message)) {
+      return { error: DEPARTMENT_MIGRATION_MSG };
+    }
+  }
 
   // Optionally provision a login account and link it to the employee row.
   let profileId: string | null = null;
@@ -125,7 +149,7 @@ export async function addEmployeeAction(input: AddEmployeeInput): Promise<Action
     data = retry.data;
     error = retry.error;
   }
-  if (error) return { error: error.message };
+  if (error) return { error: friendlyDepartmentError(error.message) };
   if (!data) return { error: "Could not create employee record." };
   await logActivity({
     action: "created",
@@ -417,7 +441,7 @@ export async function updateEmployeeSalaryAction(
     error = retry.error;
   }
 
-  if (error) return { error: error.message };
+  if (error) return { error: friendlyDepartmentError(error.message) };
   if (!data) return { error: "Employee record not found." };
 
   await logActivity({

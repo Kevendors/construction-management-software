@@ -135,6 +135,19 @@ async function myIsOffice(
   return (data?.is_office as boolean | null | undefined) ?? null;
 }
 
+/** 0051: the caller's "Client visits allowed" tick. Missing column = false. */
+async function myClientVisitsAllowed(
+  supabase: Awaited<ReturnType<typeof createSupabase>>,
+  userId: string,
+  orgId: string | null
+): Promise<boolean> {
+  let query = supabase.from("memberships").select("client_visits_allowed").eq("user_id", userId);
+  if (orgId) query = query.eq("org_id", orgId);
+  const { data, error } = await query.limit(1).maybeSingle();
+  if (error) return false;
+  return (data as { client_visits_allowed?: boolean | null } | null)?.client_visits_allowed === true;
+}
+
 /** 0050 addendum: the caller's "Can work from office" tick. Missing column = false. */
 async function myCanWorkFromOffice(
   supabase: Awaited<ReturnType<typeof createSupabase>>,
@@ -277,6 +290,7 @@ export async function getMyAttendancePage(month?: string): Promise<MyAttendanceD
       isOffice: !mockIsSite,
       // Sample data demos the "Office as a site" option for the Site user.
       canWorkFromOffice: mockIsSite,
+      clientVisitsAllowed: false,
       officeGeofence: { lat: null, lng: null, radiusM: null },
       holidays: [],
       weekOff: SUNDAY_OFF,
@@ -299,6 +313,7 @@ export async function getMyAttendancePage(month?: string): Promise<MyAttendanceD
       usesSiteFlow: false,
       isOffice: false,
       canWorkFromOffice: false,
+      clientVisitsAllowed: false,
       officeGeofence: { lat: null, lng: null, radiusM: null },
       holidays: [],
       weekOff: SUNDAY_OFF,
@@ -313,7 +328,7 @@ export async function getMyAttendancePage(month?: string): Promise<MyAttendanceD
   // Explicit user_id filter: super_admin's RLS read is org-wide, but this
   // page is always "my own attendance". The month query is one user's one
   // month (at most ~31 rows), so it needs no pagination past the 1000-row cap.
-  const [monthRes, todayRes, unclosedRes, pmRes, projRes, employeeId, isOfficeRaw, orgRes, holidaysRes, pendingSpotRes, weekOff, startDate, canWorkFromOfficeRaw] = await Promise.all([
+  const [monthRes, todayRes, unclosedRes, pmRes, projRes, employeeId, isOfficeRaw, orgRes, holidaysRes, pendingSpotRes, weekOff, startDate, canWorkFromOfficeRaw, clientVisitsAllowedRaw] = await Promise.all([
     supabase
       .from("employee_attendance")
       .select("*")
@@ -358,6 +373,7 @@ export async function getMyAttendancePage(month?: string): Promise<MyAttendanceD
     myWeekOff(supabase, ctx.userId),
     myStartDate(supabase, ctx.userId, ctx.orgId),
     myCanWorkFromOffice(supabase, ctx.userId, ctx.orgId),
+    myClientVisitsAllowed(supabase, ctx.userId, ctx.orgId),
   ]);
   if (monthRes.error) throw monthRes.error;
 
@@ -431,6 +447,8 @@ export async function getMyAttendancePage(month?: string): Promise<MyAttendanceD
     isOffice,
     // Only Site members can use the Office as a site.
     canWorkFromOffice: !isOffice && canWorkFromOfficeRaw,
+    // Only Office members punch away from the office (client visits).
+    clientVisitsAllowed: isOffice && clientVisitsAllowedRaw,
     officeGeofence: {
       lat: officeRow?.office_lat ?? null,
       lng: officeRow?.office_lng ?? null,

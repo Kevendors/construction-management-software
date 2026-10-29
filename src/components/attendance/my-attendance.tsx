@@ -251,6 +251,7 @@ export function MyAttendance({ data }: { data: MyAttendanceData }) {
           open={flowMode !== null}
           mode={flowMode === "out" ? "out" : "in"}
           officeGeofence={data.officeGeofence}
+          clientVisitsAllowed={data.clientVisitsAllowed}
           onClose={() => setFlowMode(null)}
           onSuccess={handleSuccess}
         />

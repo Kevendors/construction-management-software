@@ -23,6 +23,7 @@ import {
   renameMemberAction,
   resetMemberPasswordAction,
   setMemberActiveAction,
+  setMemberClientVisitsAction,
   setMemberOfficeAction,
   setMemberWorkFromOfficeAction,
   setMemberPoAccessAction,
@@ -48,6 +49,8 @@ export interface TeamMember {
   isOffice: boolean;
   /** Site members only (0050): may use "Office" as a site at check-in / Switch Site. */
   canWorkFromOffice: boolean;
+  /** Office members only (0051): may punch away from the office with a reason (client visits). */
+  clientVisitsAllowed: boolean;
   /** Default weekly off day, 0 = Sunday … 6 = Saturday (0047; Sunday until applied). */
   weeklyOffDow: number;
   /** Weekly-off type (0049; "fixed" until applied). */
@@ -367,6 +370,7 @@ export function TeamBoard({
   weekOffKindsPending,
   workFromOfficePending,
   canEditWorkFromOffice,
+  clientVisitsPending,
 }: {
   members: TeamMember[];
   currentUserId: string;
@@ -377,8 +381,10 @@ export function TeamBoard({
   weekOffKindsPending?: boolean;
   /** can_work_from_office column missing (0050 not applied) — the tick is disabled. */
   workFromOfficePending?: boolean;
-  /** Only super_admin may change "Can work from office". */
+  /** Only super_admin may change "Can work from office" (and "Client visits allowed"). */
   canEditWorkFromOffice?: boolean;
+  /** client_visits_allowed column missing (0051 not applied) — the tick is disabled. */
+  clientVisitsPending?: boolean;
 }) {
   const router = useRouter();
   const [members, setMembers] = React.useState(initialMembers);
@@ -427,11 +433,21 @@ export function TeamBoard({
     // Optimistic: flip it instantly instead of waiting on a full page
     // refresh (which also re-lists every auth user and felt slow for a
     // same-row dropdown change). Revert only if the save actually fails.
-    // Going Office also clears "Can work from office" (Site-only) server-side.
-    const prevWfo = members.find((m) => m.userId === userId)?.canWorkFromOffice ?? false;
+    // Going Office also clears "Can work from office" (Site-only) server-side;
+    // going Site clears "Client visits allowed" (Office-only).
+    const before = members.find((m) => m.userId === userId);
+    const prevWfo = before?.canWorkFromOffice ?? false;
+    const prevVisits = before?.clientVisitsAllowed ?? false;
     setMembers((prev) =>
       prev.map((m) =>
-        m.userId === userId ? { ...m, isOffice: next, canWorkFromOffice: next ? false : m.canWorkFromOffice } : m
+        m.userId === userId
+          ? {
+              ...m,
+              isOffice: next,
+              canWorkFromOffice: next ? false : m.canWorkFromOffice,
+              clientVisitsAllowed: next ? m.clientVisitsAllowed : false,
+            }
+          : m
       )
     );
     setBusy(userId);
@@ -440,8 +456,24 @@ export function TeamBoard({
     if (res.error) {
       window.alert(res.error);
       setMembers((prev) =>
-        prev.map((m) => (m.userId === userId ? { ...m, isOffice: !next, canWorkFromOffice: prevWfo } : m))
+        prev.map((m) =>
+          m.userId === userId
+            ? { ...m, isOffice: !next, canWorkFromOffice: prevWfo, clientVisitsAllowed: prevVisits }
+            : m
+        )
       );
+    }
+  }
+
+  async function toggleClientVisits(userId: string, next: boolean) {
+    // Optimistic, same as toggleOffice — revert only if the save fails.
+    setMembers((prev) => prev.map((m) => (m.userId === userId ? { ...m, clientVisitsAllowed: next } : m)));
+    setBusy(userId);
+    const res = await setMemberClientVisitsAction(userId, next);
+    setBusy(null);
+    if (res.error) {
+      window.alert(res.error);
+      setMembers((prev) => prev.map((m) => (m.userId === userId ? { ...m, clientVisitsAllowed: !next } : m)));
     }
   }
 
@@ -616,6 +648,27 @@ export function TeamBoard({
                             onChange={(e) => toggleWorkFromOffice(m.userId, e.target.checked)}
                           />
                           Can work from office
+                        </label>
+                      )}
+                      {m.isOffice && (
+                        <label
+                          className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground"
+                          title={
+                            clientVisitsPending
+                              ? "Run 0051_departments_client_visits.sql in Supabase first"
+                              : !canEditWorkFromOffice
+                                ? "Only Super Admin can change this"
+                                : "Lets them punch in/out away from the office with a reason (e.g. client meeting)"
+                          }
+                        >
+                          <input
+                            type="checkbox"
+                            className="h-3.5 w-3.5"
+                            checked={m.clientVisitsAllowed}
+                            disabled={busy === m.userId || clientVisitsPending || !canEditWorkFromOffice}
+                            onChange={(e) => toggleClientVisits(m.userId, e.target.checked)}
+                          />
+                          Client visits allowed
                         </label>
                       )}
                     </TableCell>

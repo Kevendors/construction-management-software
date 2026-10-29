@@ -43,6 +43,12 @@ export interface MyAttendanceData {
    * Office staff and until the migration is applied.
    */
   canWorkFromOffice: boolean;
+  /**
+   * 0051: an Office member allowed to punch away from the office with a reason
+   * (Team page "Client visits allowed" tick). False for Site staff and until
+   * the migration is applied.
+   */
+  clientVisitsAllowed: boolean;
   /** Org's shared office location for the office punch flow (all null = fence disabled). */
   officeGeofence: { lat: number | null; lng: number | null; radiusM: number | null };
   /** Declared company holidays — excluded from the office 1-paid-Leave-per-month count. */

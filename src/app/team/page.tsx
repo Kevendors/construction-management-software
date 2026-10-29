@@ -103,6 +103,20 @@ export default async function TeamPage() {
           .map((r) => r.user_id)
   );
 
+  // "Client visits allowed" (0051) — its own query: a missing column = false
+  // for everyone and the tick is disabled.
+  const { data: visitRows, error: visitErr } = await admin
+    .from("memberships")
+    .select("user_id, client_visits_allowed")
+    .eq("org_id", ctx.orgId);
+  const visitIds = new Set(
+    visitErr
+      ? []
+      : ((visitRows ?? []) as { user_id: string; client_visits_allowed: boolean | null }[])
+          .filter((r) => r.client_visits_allowed === true)
+          .map((r) => r.user_id)
+  );
+
   const { data: profiles } = await admin
     .from("profiles")
     .select("id, name")
@@ -128,6 +142,7 @@ export default async function TeamPage() {
       employeeId: m.employee_id ?? "",
       isOffice: m.is_office ?? true,
       canWorkFromOffice: wfoIds.has(m.user_id),
+      clientVisitsAllowed: visitIds.has(m.user_id),
       weeklyOffDow: dowById.get(m.user_id) ?? 0,
       weeklyOffKind: toWeekOffKind(kindById.get(m.user_id)?.weekly_off_kind),
       weeklyOffAnchor: kindById.get(m.user_id)?.weekly_off_anchor ?? "",
@@ -145,6 +160,7 @@ export default async function TeamPage() {
       weekOffKindsPending={Boolean(kindErr)}
       workFromOfficePending={Boolean(wfoErr)}
       canEditWorkFromOffice={ctx.role === "super_admin"}
+      clientVisitsPending={Boolean(visitErr)}
     />
   );
 }

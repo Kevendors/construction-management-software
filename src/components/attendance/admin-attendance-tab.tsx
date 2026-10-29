@@ -988,6 +988,12 @@ export function AdminAttendanceTab({
                               Outside site
                             </Badge>
                           )}
+                          {/* 0051: Office "Client visits allowed" punch away from the office. */}
+                          {record.note.includes("away from office") && (
+                            <Badge variant="warning" className="ml-1" title={record.note}>
+                              Away from office
+                            </Badge>
+                          )}
                         </TableCell>
                         <TableCell>
                           {(() => {

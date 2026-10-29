@@ -301,6 +301,14 @@ export async function setMemberOfficeAction(userId: string, isOffice: boolean): 
       .update({ can_work_from_office: false })
       .eq("org_id", ctx.orgId)
       .eq("user_id", userId);
+  } else {
+    // "Client visits allowed" is for Office members only (0051). Its own
+    // update so a missing column (0051 not applied) just gets ignored.
+    await admin
+      .from("memberships")
+      .update({ client_visits_allowed: false })
+      .eq("org_id", ctx.orgId)
+      .eq("user_id", userId);
   }
   await logActivity({
     action: "updated",
@@ -351,6 +359,51 @@ export async function setMemberWorkFromOfficeAction(userId: string, canWorkFromO
   });
   return { id: userId };
 }
+
+/**
+ * Super_admin only (0051): let an OFFICE member punch in/out away from the
+ * office (client visits) — instead of being blocked by the office fence they
+ * give a reason, which Admin/HR see. They stay Office: no tracking, office
+ * leave and salary rules.
+ */
+export async function setMemberClientVisitsAction(userId: string, allowed: boolean): Promise<ActionResult> {
+  const ctx = await getAuthContext();
+  if (!ctx || ctx.role !== "super_admin") return { error: "Only Super Admin can change this." };
+  if (!ctx.orgId) return { error: "No organization found." };
+  const admin = createAdminClient();
+  if (allowed) {
+    const { data: mem } = await admin
+      .from("memberships")
+      .select("is_office")
+      .eq("org_id", ctx.orgId)
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (((mem?.is_office as boolean | null | undefined) ?? true) === false) {
+      return { error: "Client visits are for Office members — set this member to Office first." };
+    }
+  }
+  const { error } = await admin
+    .from("memberships")
+    .update({ client_visits_allowed: allowed })
+    .eq("org_id", ctx.orgId)
+    .eq("user_id", userId);
+  if (error) {
+    if (error.code === "42703" || error.code === "PGRST204") {
+      return { error: CLIENT_VISITS_PENDING };
+    }
+    return { error: error.message };
+  }
+  await logActivity({
+    action: "updated",
+    entityType: "member",
+    entityId: userId,
+    summary: allowed ? "Allowed client visits (punch away from office with a reason)" : "Client visits no longer allowed",
+  });
+  return { id: userId };
+}
+
+const CLIENT_VISITS_PENDING =
+  "Client visits setting pending: run 0051_departments_client_visits.sql in Supabase SQL Editor.";
 
 const WEEKDAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 

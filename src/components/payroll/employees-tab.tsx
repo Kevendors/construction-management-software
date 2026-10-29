@@ -20,17 +20,17 @@ import {
 } from "@/components/ui/table";
 import { PayrollBreakdownChart } from "@/components/charts/payroll-chart";
 import { SetSalaryDialog } from "./set-salary-dialog";
+import { DepartmentOptions, DesignationSuggestions } from "./department-fields";
 import type { PayrollBoard } from "@/lib/payroll/compute";
 import { daysOfMonth, monthlySummary, orgToday, type AttendanceAdminBoard } from "@/lib/attendance/compute";
 import { payrollByDepartment, slipTotals } from "@/lib/payroll/compute";
 import { addEmployeeAction, generateSlipAction } from "@/app/payroll/actions";
-import { departmentLabel, salarySlipStatusMeta, roleLabel } from "@/lib/labels";
+import { salarySlipStatusMeta, roleLabel } from "@/lib/labels";
 import { useRole } from "@/components/layout/role-provider";
 import { isAdminRole } from "@/lib/auth/permissions";
 import { cn, formatINR } from "@/lib/utils";
 import type { Department, Employee, Role } from "@/lib/types";
 
-const DEPARTMENTS: Department[] = ["engineering", "design", "site", "accounts", "admin"];
 const ACCOUNT_ROLES: Role[] = ["supervisor", "pm", "super_admin"];
 
 export function EmployeesTab({
@@ -58,7 +58,7 @@ export function EmployeesTab({
   const monthLabel = new Date(`${month}-01`).toLocaleDateString("en-IN", { month: "long", year: "numeric" });
 
   // Whether this employee has a project assigned (Site, in the attendance sense) or not (Office) --
-  // independent of the manually-set `department` field (engineering/design/site/accounts/admin),
+  // independent of the manually-set `department` field (Admin/Sales/Site/Projects/…),
   // which is a separate HR label and can legitimately disagree with this (e.g. an "Admin"
   // department employee who is also assigned to a project is still "Site" here).
   const memberFor = (emp: Employee) =>
@@ -479,12 +479,13 @@ function AddEmployeeDialog({
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="e-desig">Designation</Label>
-            <Input id="e-desig" value={designation} onChange={(e) => setDesignation(e.target.value)} placeholder="e.g. Site Engineer" />
+            <Input id="e-desig" list="e-desig-suggestions" value={designation} onChange={(e) => setDesignation(e.target.value)} placeholder="e.g. Site Engineer" />
+            <DesignationSuggestions id="e-desig-suggestions" />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="e-dept">Department</Label>
             <Select id="e-dept" value={department} onChange={(e) => setDepartment(e.target.value as Department)}>
-              {DEPARTMENTS.map((d) => <option key={d} value={d}>{departmentLabel[d]}</option>)}
+              <DepartmentOptions />
             </Select>
           </div>
           <div className="space-y-1.5">

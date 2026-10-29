@@ -10,9 +10,9 @@ import { Badge } from "@/components/ui/badge";
 import { cn, formatINR } from "@/lib/utils";
 import { departmentLabel } from "@/lib/labels";
 import { updateEmployeeSalaryAction, generateSlipAction } from "@/app/payroll/actions";
+import { DepartmentOptions, DesignationSuggestions } from "./department-fields";
 import type { Department, Employee, SalarySlip } from "@/lib/types";
 
-const DEPARTMENTS: Department[] = ["site", "engineering", "design", "accounts", "admin"];
 const SALARY_PRESETS = [20000, 25000, 30000, 35000, 45000, 60000];
 
 export interface SetSalaryDialogProps {
@@ -265,10 +265,12 @@ export function SetSalaryDialog({
             <Label htmlFor="s-desig">Designation</Label>
             <Input
               id="s-desig"
+              list="s-desig-suggestions"
               value={designation}
               onChange={(e) => setDesignation(e.target.value)}
               placeholder="e.g. Site Supervisor"
             />
+            <DesignationSuggestions id="s-desig-suggestions" />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="s-dept">Department</Label>
@@ -277,11 +279,7 @@ export function SetSalaryDialog({
               value={department}
               onChange={(e) => setDepartment(e.target.value as Department)}
             >
-              {DEPARTMENTS.map((d) => (
-                <option key={d} value={d}>
-                  {departmentLabel[d]}
-                </option>
-              ))}
+              <DepartmentOptions />
             </Select>
           </div>
         </div>

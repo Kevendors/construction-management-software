@@ -72,6 +72,11 @@ export interface OfficePunchInput {
   lat: number;
   lng: number;
   accuracy: number;
+  /**
+   * 0051: Office members with "Client visits allowed" aren't blocked outside
+   * the office fence — they give a reason instead (e.g. "Client meeting").
+   */
+  outsideReason?: string;
 }
 
 function decodeDataUrl(dataUrl: string): { buffer: Buffer; contentType: string } | null {
@@ -278,6 +283,66 @@ async function orgOfficeFence(
       }
     : null;
 }
+
+/**
+ * 0051: may this (Office) member punch in/out away from the office with a
+ * reason (client visits)? Ticked per member on the Team page. Missing column
+ * (0051 not applied) = false → the strict office fence applies as before.
+ */
+async function clientVisitsAllowedFor(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  ctx: AuthContext
+): Promise<boolean> {
+  // One query: if 0051 isn't applied the column error makes this false.
+  let query = supabase.from("memberships").select("is_office, client_visits_allowed").eq("user_id", ctx.userId);
+  if (ctx.orgId) query = query.eq("org_id", ctx.orgId);
+  const { data, error } = await query.limit(1).maybeSingle();
+  if (error) return false;
+  const row = data as { is_office?: boolean | null; client_visits_allowed?: boolean | null } | null;
+  // Office members only (is_office null = default Office, as elsewhere).
+  return row?.client_visits_allowed === true && row.is_office !== false;
+}
+
+/**
+ * Office punch fence. Strict (blocks) unless the member has "Client visits
+ * allowed" — then, outside the fence, they must give a reason and the punch is
+ * saved with a note. Returns an error result to send back, or the distance
+ * (null = inside / no fence) and reason to record.
+ */
+async function officePunchFence(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  ctx: AuthContext & { orgId: string },
+  input: OfficePunchInput,
+  verb: "in" | "out"
+): Promise<{ result?: ActionResult; outsideM: number | null; outsideReason: string }> {
+  const fence = await orgOfficeFence(supabase, ctx.orgId);
+  const fenceMsg = fenceError(fence, input.lat, input.lng, input.accuracy);
+  if (!fenceMsg) return { outsideM: null, outsideReason: "" };
+  if (!(await clientVisitsAllowedFor(supabase, ctx))) {
+    return {
+      result: { error: fenceMsg.replace("the site", "the office").replace("project area", "office premises") },
+      outsideM: null,
+      outsideReason: "",
+    };
+  }
+  const outsideM = outsideSiteDistance(fence, input.lat, input.lng, input.accuracy);
+  const outsideReason = (input.outsideReason ?? "").trim().slice(0, MAX_OUTSIDE_REASON);
+  if (outsideM != null && !outsideReason) {
+    return {
+      result: {
+        error: `You are ~${formatMeters(outsideM)} from the office. Choose a reason to punch ${verb} from here.`,
+        outsideDistanceM: outsideM,
+      },
+      outsideM,
+      outsideReason,
+    };
+  }
+  return { outsideM, outsideReason };
+}
+
+/** Note fragment for an away-from-office punch — the admin table's "Away from office" badge keys on it. */
+const awayFromOfficeNote = (verb: "in" | "out", m: number, reason: string) =>
+  `Punched ${verb} away from office (${formatMeters(m)}): ${reason}`;
 
 /**
  * 0050 addendum: may this (Site) member use "Office" as a site? Ticked per
@@ -1062,24 +1127,10 @@ export async function officeCheckInAction(input: OfficePunchInput): Promise<Acti
   }
 
   const supabase = await createClient();
-  const { data: org } = await supabase
-    .from("orgs")
-    .select("office_lat, office_lng, office_radius_m")
-    .eq("id", ctx.orgId)
-    .maybeSingle();
-  const fenceMsg = fenceError(
-    org
-      ? {
-          geofence_lat: org.office_lat as number | null,
-          geofence_lng: org.office_lng as number | null,
-          geofence_radius_m: org.office_radius_m as number | null,
-        }
-      : null,
-    input.lat,
-    input.lng,
-    input.accuracy
-  );
-  if (fenceMsg) return { error: fenceMsg.replace("the site", "the office").replace("project area", "office premises") };
+  const away = await officePunchFence(supabase, { ...ctx, orgId: ctx.orgId }, input, "in");
+  if (away.result) return away.result;
+  const { outsideM, outsideReason } = away;
+  const outsideNote = outsideM != null ? awayFromOfficeNote("in", outsideM, outsideReason) : null;
 
   const date = orgToday();
   const { data: existing } = await supabase
@@ -1105,7 +1156,7 @@ export async function officeCheckInAction(input: OfficePunchInput): Promise<Acti
       check_in_lng: input.lng,
       check_in_accuracy: input.accuracy,
       status: lateEval.status,
-      note: lateEval.note,
+      note: [lateEval.note, outsideNote].filter(Boolean).join(" · ") || null,
     })
     .select("id")
     .single();
@@ -1122,8 +1173,20 @@ export async function officeCheckInAction(input: OfficePunchInput): Promise<Acti
       lateEval.status === "half_day"
         ? `${ctx.name} punched in late (office) — auto-marked Half-Day (late-arrival limit used)`
         : `${ctx.name} punched in (office)`,
-    meta: { office: true, lat: input.lat, lng: input.lng },
+    meta: { office: true, lat: input.lat, lng: input.lng, outsideM, outsideReason: outsideReason || null },
   });
+
+  if (outsideM != null) {
+    await dispatchNotification({
+      orgId: ctx.orgId,
+      roles: ["super_admin", "hr"],
+      excludeUserId: ctx.userId,
+      kind: "delay",
+      title: `${ctx.name} punched in away from office`,
+      body: `${ctx.name} punched in away from office — ${formatMeters(outsideM)} — ${outsideReason}`,
+      href: "/attendance",
+    });
+  }
 
   await dispatchNotification({
     orgId: ctx.orgId,
@@ -1169,31 +1232,17 @@ export async function officeCheckOutAction(input: OfficePunchInput): Promise<Act
   const date = orgToday();
   const { data: row } = await supabase
     .from("employee_attendance")
-    .select("id, check_in_at, check_out_at")
+    .select("id, check_in_at, check_out_at, note")
     .eq("user_id", ctx.userId)
     .eq("date", date)
     .maybeSingle();
   if (!row) return { error: "Punch in first." };
   if (row.check_out_at) return { error: "Already punched out today." };
 
-  const { data: org } = await supabase
-    .from("orgs")
-    .select("office_lat, office_lng, office_radius_m")
-    .eq("id", ctx.orgId)
-    .maybeSingle();
-  const fenceMsg = fenceError(
-    org
-      ? {
-          geofence_lat: org.office_lat as number | null,
-          geofence_lng: org.office_lng as number | null,
-          geofence_radius_m: org.office_radius_m as number | null,
-        }
-      : null,
-    input.lat,
-    input.lng,
-    input.accuracy
-  );
-  if (fenceMsg) return { error: fenceMsg.replace("the site", "the office").replace("project area", "office premises") };
+  const away = await officePunchFence(supabase, { ...ctx, orgId: ctx.orgId }, input, "out");
+  if (away.result) return away.result;
+  const { outsideM, outsideReason } = away;
+  const outsideNote = outsideM != null ? awayFromOfficeNote("out", outsideM, outsideReason) : null;
 
   const nowIso = new Date().toISOString();
   const totalMinutes = minutesBetween(row.check_in_at as string, nowIso);
@@ -1206,6 +1255,7 @@ export async function officeCheckOutAction(input: OfficePunchInput): Promise<Act
       check_out_accuracy: input.accuracy,
       total_minutes: totalMinutes,
       overtime_minutes: overtimeOf(totalMinutes),
+      ...(outsideNote ? { note: [row.note as string | null, outsideNote].filter(Boolean).join(" · ") } : {}),
     })
     .eq("id", row.id);
   if (error) return { error: error.message };
@@ -1217,8 +1267,20 @@ export async function officeCheckOutAction(input: OfficePunchInput): Promise<Act
     entityType: "attendance",
     entityId: row.id as string,
     summary: `${ctx.name} punched out (office) — ${h}h ${m}m worked`,
-    meta: { office: true, lat: input.lat, lng: input.lng, totalMinutes },
+    meta: { office: true, lat: input.lat, lng: input.lng, totalMinutes, outsideM, outsideReason: outsideReason || null },
   });
+
+  if (outsideM != null) {
+    await dispatchNotification({
+      orgId: ctx.orgId,
+      roles: ["super_admin", "hr"],
+      excludeUserId: ctx.userId,
+      kind: "delay",
+      title: `${ctx.name} punched out away from office`,
+      body: `${ctx.name} punched out away from office — ${formatMeters(outsideM)} — ${outsideReason}`,
+      href: "/attendance",
+    });
+  }
 
   await dispatchNotification({
     orgId: ctx.orgId,

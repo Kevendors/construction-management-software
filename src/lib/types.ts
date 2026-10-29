@@ -480,7 +480,21 @@ export interface RaBill {
 /* Phase 3 — Payroll, Attendance, Expenses, Equipment                  */
 /* ------------------------------------------------------------------ */
 
-export type Department = "engineering" | "design" | "site" | "accounts" | "admin";
+export type Department =
+  | "engineering"
+  | "design"
+  | "site"
+  | "accounts"
+  | "admin"
+  // 0051 — HR labels only; never drive Office/Site (that is memberships.is_office).
+  | "sales"
+  | "digital_marketing"
+  | "business_development"
+  | "hr"
+  | "projects"
+  | "it"
+  | "purchase"
+  | "others";
 export type SalarySlipStatus = "draft" | "finalised" | "paid";
 export type Shift = "general" | "first" | "second";
 export type AdvanceParty = "employee" | "contractor";

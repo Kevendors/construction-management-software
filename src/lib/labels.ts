@@ -165,6 +165,14 @@ export const departmentLabel: Record<Department, string> = {
   site: "Site",
   accounts: "Accounts",
   admin: "Admin",
+  sales: "Sales",
+  digital_marketing: "Digital Marketing",
+  business_development: "Business Development",
+  hr: "HR",
+  projects: "Projects",
+  it: "IT",
+  purchase: "Purchase",
+  others: "Others",
 };
 
 export const shiftLabel: Record<Shift, string> = {
