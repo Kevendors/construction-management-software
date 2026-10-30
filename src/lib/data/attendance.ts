@@ -207,6 +207,13 @@ async function myWeekOff(
  * The caller's join date (membership created_at, org-local "YYYY-MM-DD") —
  * the floor for office auto-leave. Any error just means no floor.
  */
+/** The earlier of two optional "YYYY-MM-DD" dates. */
+function earliestDate(a?: string, b?: string): string | undefined {
+  if (!a) return b;
+  if (!b) return a;
+  return a < b ? a : b;
+}
+
 async function myStartDate(
   supabase: Awaited<ReturnType<typeof createSupabase>>,
   userId: string,
@@ -214,9 +221,15 @@ async function myStartDate(
 ): Promise<string | undefined> {
   let query = supabase.from("memberships").select("created_at").eq("user_id", userId);
   if (orgId) query = query.eq("org_id", orgId);
-  const { data, error } = await query.limit(1).maybeSingle();
+  const [{ data, error }, { data: first }] = await Promise.all([
+    query.limit(1).maybeSingle(),
+    // Their first attendance ever: anyone with attendance before the
+    // membership row was created was clearly already working.
+    supabase.from("employee_attendance").select("date").eq("user_id", userId).order("date").limit(1).maybeSingle(),
+  ]);
   if (error) return undefined;
-  return orgDateOf((data?.created_at as string | null | undefined) ?? "") || undefined;
+  const created = orgDateOf((data?.created_at as string | null | undefined) ?? "") || undefined;
+  return earliestDate(created, (first?.date as string | undefined) ?? undefined);
 }
 
 /**
@@ -599,12 +612,19 @@ export async function getAttendanceAdminBoard(): Promise<AttendanceAdminBoard> {
   );
   if (attRes.error) throw attRes.error;
 
+  // A member's start = the earlier of their membership creation and their
+  // first attendance record (records before the account prove they worked).
+  const firstRecordById = new Map<string, string>();
+  for (const r of (attRes.data ?? []) as { user_id: string; date: string }[]) {
+    const cur = firstRecordById.get(r.user_id);
+    if (!cur || r.date < cur) firstRecordById.set(r.user_id, r.date);
+  }
   const startById = new Map(
     startRes.error
       ? []
       : ((startRes.data ?? []) as { user_id: string; created_at: string | null }[]).map((r) => [
           r.user_id,
-          orgDateOf(r.created_at ?? "") || undefined,
+          earliestDate(orgDateOf(r.created_at ?? "") || undefined, firstRecordById.get(r.user_id)),
         ])
   );
 
