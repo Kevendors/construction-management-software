@@ -9,7 +9,6 @@ import {
   isDeclarativeRecord,
   ORG_TIMEZONE,
   orgToday,
-  SHIFT_START_TIME,
   SITE_UNPAID_LEAVE_FROM,
   type AttendanceMember,
 } from "@/lib/attendance/compute";
@@ -59,7 +58,9 @@ export function AdminMarkAttendanceDialog({
   const [date, setDate] = React.useState(defaultDate);
   const [projectId, setProjectId] = React.useState("");
   const [status, setStatus] = React.useState<"present" | "half_day" | "leave" | "absent">("present");
-  const [checkInTime, setCheckInTime] = React.useState(SHIFT_START_TIME);
+  // No default time: a pre-filled 9:30 AM looked like a real check-in and
+  // could be saved by accident. The admin must enter the actual time.
+  const [checkInTime, setCheckInTime] = React.useState("");
   const [checkOutTime, setCheckOutTime] = React.useState("");
   const [note, setNote] = React.useState("");
   const [saving, setSaving] = React.useState(false);
@@ -80,8 +81,7 @@ export function AdminMarkAttendanceDialog({
     setDate(existing?.date ?? defaultDate);
     setProjectId(existing?.projectId ?? "");
     setStatus(existing?.status ?? "present");
-    const inTime = existing ? isoToHHMM(existing.checkInAt) || SHIFT_START_TIME : SHIFT_START_TIME;
-    setCheckInTime(inTime);
+    setCheckInTime(existing ? isoToHHMM(existing.checkInAt) : "");
     // Never auto-fill a check-out time or canned reason: an admin opening
     // this dialog to fix the check-in time on an open shift (the only entry
     // point open shifts have — see "Close Shift" in admin-attendance-tab)
@@ -104,6 +104,9 @@ export function AdminMarkAttendanceDialog({
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!userId) return setError("Choose an employee.");
+    if (!isDeclarative && !punchReadOnly && !checkInTime) {
+      return setError("Enter the check-in time — this employee has no check-in recorded for that day.");
+    }
     setSaving(true);
     setError(null);
     const res = await adminMarkAttendanceAction({
@@ -197,8 +200,12 @@ export function AdminMarkAttendanceDialog({
                   type="time"
                   value={checkInTime}
                   disabled={punchReadOnly}
+                  required={!punchReadOnly}
                   onChange={(e) => setCheckInTime(e.target.value)}
                 />
+                {!checkInTime && (
+                  <p className="text-xs text-muted-foreground">Not checked in — enter the actual time.</p>
+                )}
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="am-out">Check-out time (optional)</Label>
