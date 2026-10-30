@@ -27,7 +27,6 @@ import {
   isBeforeJoining,
   isHolidayFor,
   missedAbsentReason,
-  monthlySummary,
   orgThisMonth,
   orgToday,
   weekOffUiEnabled,
@@ -35,6 +34,7 @@ import {
   type AttendanceMember,
 } from "@/lib/attendance/compute";
 import type { EmployeeAttendance, Project } from "@/lib/types";
+import { paidDaysFromRecords } from "@/lib/payroll/paid-days";
 import { getSpotCheckSummaryAction } from "@/app/attendance/spot-check-actions";
 import { getSiteVisitCountsAction } from "@/app/attendance/actions";
 import { deleteWeekOffSwapAction } from "@/app/attendance/week-off-actions";
@@ -166,10 +166,22 @@ export function AdminAttendanceTab({
       // detail dialog. The project filter only picks rows and hides cells.
       const allRecs = board.records.filter((r) => r.userId === m.userId && r.date.startsWith(month));
       const recs = allRecs.filter((r) => !projectId || r.projectId === projectId);
+      // Same function payroll pays from (src/lib/payroll/paid-days.ts), so the
+      // grid's "Nd" total always equals the salary paid days.
+      const pay = paidDaysFromRecords({
+        records: allRecs,
+        month,
+        today: orgToday(),
+        holidays: board.holidays,
+        isOffice: m.isOffice,
+        weekOff: m.weekOff,
+        startDate: m.startDate,
+      });
       return {
         member: m,
         records: recs,
-        summary: monthlySummary(allRecs, month, orgToday(), board.holidays, m.isOffice, m.weekOff, m.startDate),
+        summary: pay.summary,
+        pay,
         evaluation: evaluateEmployeeMonthAttendance(allRecs, month, m.isOffice, board.holidays, m.weekOff, undefined, m.startDate),
       };
     })
@@ -308,10 +320,11 @@ export function AdminAttendanceTab({
     } else {
       downloadCsv(
         `attendance-${month}.csv`,
-        ["Employee", "Employee ID", "Present", "Leave", "Half-Day", "Absent", "Holiday", "Week Off", "Not Joined", "Overtime"],
-        monthlyRows.map(({ member, records, summary }) => [
+        ["Employee", "Employee ID", "Paid Days (salary)", "Present", "Leave", "Half-Day", "Absent", "Holiday", "Week Off", "Not Joined", "Overtime"],
+        monthlyRows.map(({ member, records, summary, pay }) => [
           member.name,
           member.employeeId || "—",
+          pay.paidDays,
           summary.present,
           summary.leave,
           summary.halfDay,
@@ -704,7 +717,7 @@ export function AdminAttendanceTab({
                       </td>
                     </tr>
                   )}
-                  {monthlyRows.map(({ member, records, summary, evaluation }, rowIdx) => {
+                  {monthlyRows.map(({ member, records, summary, evaluation, pay }, rowIdx) => {
                     const rowBg = rowIdx % 2 === 1 ? "bg-muted" : "bg-card";
                     return (
                       <tr key={member.userId} className={rowBg}>
@@ -821,7 +834,16 @@ export function AdminAttendanceTab({
                         })}
                         <td className="border-l border-border px-3 py-1.5 text-right align-middle">
                           <div className="tabular-nums">
-                            <span className="font-semibold text-foreground">{summary.effectivePaidDays}d</span>
+                            <span
+                              className="font-semibold text-foreground"
+                              title={
+                                pay.noAttendance
+                                  ? "No attendance this month — 0 paid days"
+                                  : `Paid days (salary): ${pay.daysElapsed} days elapsed − ${pay.unpaidDays} unpaid (Absent, ½ Half-Day, Not Joined). Week offs, holidays and paid leave are paid.`
+                              }
+                            >
+                              {pay.paidDays}d
+                            </span>
                           </div>
                           <div className="mt-0.5 flex justify-end gap-1.5 whitespace-nowrap text-[10px] tabular-nums text-muted-foreground">
                             <span className="text-success">{summary.present}P</span>

@@ -1,7 +1,8 @@
 "use client";
 
 import { Info } from "lucide-react";
-import { monthlySummary, SITE_UNPAID_LEAVE_FROM, SUNDAY_OFF, type OrgHoliday, type WeekOffRule } from "@/lib/attendance/compute";
+import { orgToday, SITE_UNPAID_LEAVE_FROM, SUNDAY_OFF, type OrgHoliday, type WeekOffRule } from "@/lib/attendance/compute";
+import { paidDaysFromRecords } from "@/lib/payroll/paid-days";
 import type { EmployeeAttendance } from "@/lib/types";
 
 /** Present / Half Day / Leave / Absent / Holiday / Week Off counts for the viewed month. */
@@ -20,14 +21,22 @@ export function MonthlySummary({
   weekOff?: WeekOffRule;
   startDate?: string;
 }) {
-  const summary = monthlySummary(records, month, undefined, holidays, isOffice, weekOff, startDate);
+  // Same function payroll pays from (src/lib/payroll/paid-days.ts) — the
+  // "Paid Days (salary)" chip always equals the salary slip's paid days.
+  const pay = paidDaysFromRecords({ records, month, today: orgToday(), holidays, isOffice, weekOff, startDate });
+  const summary = pay.summary;
   // Site staff have no paid leave from SITE_UNPAID_LEAVE_FROM; earlier months keep the old wording.
   const siteNoPaidLeave = !isOffice && month >= SITE_UNPAID_LEAVE_FROM.slice(0, 7);
 
   const chips = [
     { label: "Full Present", value: String(summary.present), hint: "1.0 day credit", className: "bg-success/15 text-success" },
     { label: "Half Days", value: String(summary.halfDay), hint: "0.5 day credit", className: summary.halfDay > 0 ? "bg-amber-500/20 text-amber-700 dark:text-amber-400 font-semibold" : "bg-muted text-muted-foreground" },
-    { label: "Effective Paid", value: `${summary.effectivePaidDays}d`, hint: "salary credit", className: "bg-primary/10 text-primary font-semibold" },
+    {
+      label: "Paid Days (salary)",
+      value: `${pay.paidDays}d`,
+      hint: pay.noAttendance ? "no attendance yet" : "week offs & holidays paid",
+      className: "bg-primary/10 text-primary font-semibold",
+    },
     { label: "Absent", value: String(summary.absent), hint: "unexcused", className: summary.absent > 0 ? "bg-destructive/15 text-destructive" : "bg-muted text-muted-foreground" },
     { label: "Holiday", value: String(summary.holiday), hint: "declared, paid", className: "bg-muted text-muted-foreground" },
     { label: "Week Off", value: String(summary.weekOff), hint: "weekly off", className: "bg-muted text-muted-foreground" },

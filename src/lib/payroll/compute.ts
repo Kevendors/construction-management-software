@@ -1,4 +1,5 @@
 import type {
+  Department,
   Advance,
   Employee,
   LabourAttendance,
@@ -13,6 +14,24 @@ import type {
  * unpaid days, so a full month is always the full salary.
  */
 export const SALARY_BASIS_DAYS = 30;
+
+/**
+ * Department pickers' groups (Add Employee / Set Salary). HR labels only —
+ * Office vs Site is the explicit Team setting; the group is used solely as a
+ * fallback when an employee's linked login has no attendance member.
+ */
+export const DEPARTMENT_GROUPS: { label: string; departments: Department[] }[] = [
+  {
+    label: "Office",
+    departments: ["admin", "accounts", "hr", "sales", "digital_marketing", "business_development", "purchase", "it"],
+  },
+  { label: "Site / Projects", departments: ["site", "projects", "engineering", "design"] },
+  { label: "Others", departments: ["others"] },
+];
+
+/** Office unless the department is in the "Site / Projects" group. */
+export const isOfficeDepartment = (d: Department | undefined): boolean =>
+  !DEPARTMENT_GROUPS[1].departments.includes(d as Department);
 
 export interface PayrollBoard {
   employees: Employee[];

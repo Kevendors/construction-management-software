@@ -83,6 +83,8 @@ export interface AttendanceAdminBoard {
   holidays: OrgHoliday[];
   /** Every recorded weekly-off swap in the org (0047), for listing/deleting — already folded into each member's `weekOff`. */
   weekOffSwaps: WeekOffSwap[];
+  /** True when part of the board (holidays / profiles) failed to load — pay must not be computed from it. */
+  incomplete?: boolean;
 }
 
 /** One recorded weekly-off swap row (attendance_week_off_swaps, 0047). */
@@ -780,9 +782,14 @@ export interface MonthlySummary {
   /**
    * The `notJoined` days that were counted as Absent before "not joined"
    * existed (past working days — not a weekly off or declared holiday).
-   * Payroll adds these to the unpaid days so pay is exactly what it was.
+   * Informational only: payroll treats every `notJoined` day as unpaid
+   * (src/lib/payroll/paid-days.ts).
    */
   notJoinedUnpaid: number;
+  /** Days actually worked (a Present row — real or manual punch). `present` also includes paid Leave and paid holidays. */
+  worked: number;
+  /** No-record working days from today on — not decided yet (not Absent, not paid so far). */
+  upcoming: number;
 }
 
 /** List every day of a "YYYY-MM" month as "YYYY-MM-DD" strings. */
@@ -822,6 +829,7 @@ export function monthlySummary(
   let weekOff = 0;
   let notJoined = 0;
   let notJoinedUnpaid = 0;
+  let upcoming = 0;
 
   for (const date of daysOfMonth(month)) {
     if (explicitAbsentDates.has(date)) {
@@ -840,6 +848,7 @@ export function monthlySummary(
       // What the day was before "not joined" existed — keeps pay unchanged.
       if (dayStatus(date, false, today, isDeclared, rule, evalResult.weekOffDates) === "absent") notJoinedUnpaid += 1;
     } else if (status === "absent") absent += 1;
+    else if (status === "future") upcoming += 1;
     // A declared holiday that also lands on a weekly off counts once, as Holiday.
     else if (status === "holiday") {
       if (isDeclared) holiday += 1;
@@ -859,5 +868,7 @@ export function monthlySummary(
     weekOff,
     notJoined,
     notJoinedUnpaid,
+    worked: evalResult.evaluatedRecords.filter((e) => e.creditType === "on_time" || e.creditType === "manual_present").length,
+    upcoming,
   };
 }

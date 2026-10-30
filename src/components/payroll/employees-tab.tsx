@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Calculator, FileText, Pencil, Plus, Users } from "lucide-react";
+import { Calculator, ClipboardCheck, FileText, Pencil, Plus, Users } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
@@ -22,7 +22,9 @@ import { PayrollBreakdownChart } from "@/components/charts/payroll-chart";
 import { SetSalaryDialog } from "./set-salary-dialog";
 import { DepartmentOptions, DesignationSuggestions } from "./department-fields";
 import type { PayrollBoard } from "@/lib/payroll/compute";
-import { monthlySummary, orgToday, type AttendanceAdminBoard } from "@/lib/attendance/compute";
+import { orgToday, type AttendanceAdminBoard } from "@/lib/attendance/compute";
+import { attendanceBoardProblem, paidDaysFor, slipRefusal, type PaidDaysResult } from "@/lib/payroll/paid-days";
+import { PayrollAuditDialog } from "./payroll-audit-dialog";
 import { payrollByDepartment, SALARY_BASIS_DAYS, slipTotals } from "@/lib/payroll/compute";
 import { addEmployeeAction, generateSlipAction } from "@/app/payroll/actions";
 import { salarySlipStatusMeta, roleLabel } from "@/lib/labels";
@@ -51,95 +53,57 @@ export function EmployeesTab({
   const [addOpen, setAddOpen] = React.useState(false);
   const [salaryTarget, setSalaryTarget] = React.useState<Employee | null>(null);
   const [busyId, setBusyId] = React.useState<string | null>(null);
+  const [auditOpen, setAuditOpen] = React.useState(false);
+  const [genError, setGenError] = React.useState<string | null>(null);
 
   const breakdown = payrollByDepartment(slips, employees, month);
   const slipFor = (empId: string) => slips.find((s) => s.employeeId === empId && s.month === month) ?? null;
   const monthLabel = new Date(`${month}-01`).toLocaleDateString("en-IN", { month: "long", year: "numeric" });
 
-  // Whether this employee has a project assigned (Site, in the attendance sense) or not (Office) --
-  // independent of the manually-set `department` field (Admin/Sales/Site/Projects/…),
-  // which is a separate HR label and can legitimately disagree with this (e.g. an "Admin"
-  // department employee who is also assigned to a project is still "Site" here).
-  const memberFor = (emp: Employee) =>
-    attendanceBoard?.members.find(
-      (m) =>
-        (emp.profileId && m.userId === emp.profileId) ||
-        m.employeeId.toLowerCase() === emp.id.toLowerCase() ||
-        m.name.toLowerCase() === emp.name.toLowerCase()
-    );
-  const isOfficeFor = (emp: Employee): boolean | null => {
-    const m = memberFor(emp);
-    return m ? m.isOffice : null;
-  };
+  // Paid days, Office/Site and the attendance summary all come from the one
+  // shared implementation (src/lib/payroll/paid-days.ts) — the same one the
+  // Set Salary recalc and the Payroll Audit view use.
+  // Memoized per employee, keyed by board / month / today / employees.
+  const today = orgToday();
+  const payInfo = React.useMemo(() => {
+    const map = new Map<string, PaidDaysResult>();
+    for (const e of employees) map.set(e.id, paidDaysFor(e, attendanceBoard, month, today, employees));
+    return map;
+  }, [employees, attendanceBoard, month, today]);
+  const payInfoFor = (emp: Employee) =>
+    payInfo.get(emp.id) ?? paidDaysFor(emp, attendanceBoard, month, today, employees);
+  const isOfficeFor = (emp: Employee): boolean | null => payInfoFor(emp).isOffice;
 
   // Fixed Day Basis: per-day pay = salary ÷ 30, whatever the month's length.
   const perDayFor = (ctc: number) =>
     (ctc / SALARY_BASIS_DAYS).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-  // Salary days of `month` earned so far (Fixed Day Basis, max 30): the full
-  // 30 once the month is over, today's day-of-month (capped at 30) while it's
-  // in progress, 0 for a future month.
-  const daysElapsedIn = (m: string): number => {
-    const today = orgToday();
-    if (m < today.slice(0, 7)) return SALARY_BASIS_DAYS;
-    if (m === today.slice(0, 7)) return Math.min(SALARY_BASIS_DAYS, Number(today.slice(8, 10)));
-    return 0;
+  // The "Nd paid" chip — only for tracked employees with attendance this month.
+  const attendanceStatsFor = (emp: Employee) => {
+    const info = payInfoFor(emp);
+    if (!info.tracked || info.recordCount === 0 || !info.summary) return null;
+    return { unpaidDays: info.unpaidDays, halfDays: info.summary.halfDay, paidDays: info.paidDays, daysElapsed: info.daysElapsed };
   };
 
-  // Count GPS verified attendance days and half-day evaluation for this employee in the active month
-  const attendanceStatsFor = (emp: Employee) => {
-    if (!attendanceBoard?.records?.length) return null;
-    const matching = attendanceBoard.records.filter((r) => {
-      if (!r.date.startsWith(month)) return false;
-      if (emp.profileId && r.userId === emp.profileId) return true;
-      if (r.employeeId && r.employeeId.toLowerCase() === emp.id.toLowerCase()) return true;
-      if (r.userName && r.userName.toLowerCase() === emp.name.toLowerCase()) return true;
-      return false;
-    });
-    if (matching.length === 0) return null;
-    const isOffice = isOfficeFor(emp) ?? false;
-    const member = memberFor(emp);
-    // Calendar-days method: every day of the month is paid except unpaid ones
-    // (Absent incl. unpaid Leave = 1 day, Half-Day = 0.5). Weekly offs and
-    // declared holidays are paid. For the month in progress only days up to
-    // and including today are paid (a draft till the 28th pays 28 − absent);
-    // Recalc after the month ends pays the full month.
-    const summary = monthlySummary(
-      matching,
-      month,
-      orgToday(),
-      attendanceBoard.holidays,
-      isOffice,
-      member?.weekOff,
-      member?.startDate
-    );
-    // Salary counts only from the joining date: every day before it (incl.
-    // Sundays/holidays) is unpaid, as well as Absent and half of each Half-Day.
-    const unpaidDays = summary.absent + summary.halfDay * 0.5 + summary.notJoined;
-    return {
-      rawDays: matching.length,
-      unpaidDays,
-      halfDays: summary.halfDay,
-      paidDays: Math.max(0, daysElapsedIn(month) - unpaidDays),
-    };
-  };
+  // Attendance board missing / empty / incomplete: refuse to pay anyone
+  // (untracked would otherwise silently mean a full 30 days).
+  const boardProblem = attendanceBoardProblem(attendanceBoard, employees.length);
+  // Recomputed at click time (fresh orgToday), never from a render-time value.
+  const refusalFor = (emp: Employee) => slipRefusal(emp, attendanceBoard, month, orgToday(), employees);
 
   async function generate(empId: string) {
-    setBusyId(empId);
     const emp = employees.find((e) => e.id === empId);
-    const stats = emp ? attendanceStatsFor(emp) : null;
-    // Whether this employee has an attendance identity at all (a roster entry
-    // in the Attendance board) -- not whether they have records *this month*.
-    const tracked = emp ? isOfficeFor(emp) !== null : false;
-    // Trust the computed attendance days whenever this employee is tracked,
-    // including a genuine 0 (no attendance recorded this month) -- that must
-    // NOT silently become a full paid month. Only pay the full month when
-    // there's no attendance tracking for them at all (e.g. a manually-paid
-    // employee with no login/roster entry), where there's nothing to compute from.
-    const daysToPay = tracked ? stats?.paidDays ?? 0 : SALARY_BASIS_DAYS;
-    const res = await generateSlipAction(empId, month, daysToPay);
+    if (!emp) return;
+    const check = refusalFor(emp);
+    if ("error" in check) return setGenError(check.error);
+    setBusyId(empId);
+    setGenError(null);
+    // Untracked (no attendance identity) = full 30; tracked = computed from
+    // attendance, including a genuine 0 — see paidDaysFor.
+    const res = await generateSlipAction(empId, month, check.paidDays);
     setBusyId(null);
-    if (!res.error) router.refresh();
+    if (res.error) setGenError(res.error);
+    else router.refresh();
   }
 
   return (
@@ -150,11 +114,22 @@ export function EmployeesTab({
           <Input id="pay-month" type="month" value={month} onChange={(e) => onMonthChange(e.target.value)} className="h-8 w-40" />
         </div>
         {canManageSalary && (
-          <Button size="sm" onClick={() => setAddOpen(true)}>
-            <Plus /> Add Employee
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={() => setAuditOpen(true)} title="Check every slip against attendance">
+              <ClipboardCheck /> Audit
+            </Button>
+            <Button size="sm" onClick={() => setAddOpen(true)}>
+              <Plus /> Add Employee
+            </Button>
+          </div>
         )}
       </div>
+
+      {(genError || (boardProblem && canManageSalary)) && (
+        <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          {genError ?? `${boardProblem} Slips can't be generated until it does.`}
+        </p>
+      )}
 
       {breakdown.length > 0 && (
         <Card>
@@ -210,7 +185,7 @@ export function EmployeesTab({
                             {stats !== null && (
                               <span
                                 className="inline-flex items-center gap-1 rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-800 dark:text-emerald-400"
-                                title={`${daysElapsedIn(month)} of ${SALARY_BASIS_DAYS} days − ${stats.unpaidDays} unpaid (Absent = 1, Half-Day = 0.5, working day before joining = 1). Weekly offs and holidays are paid. Fixed Day Basis: salary ÷ 30 × paid days.`}
+                                title={`${stats.daysElapsed} of ${SALARY_BASIS_DAYS} days − ${stats.unpaidDays} unpaid (Absent = 1, Half-Day = 0.5, each day before joining = 1). Weekly offs and holidays are paid. Fixed Day Basis: salary ÷ 30 × paid days.`}
                               >
                                 {stats.paidDays}d paid
                                 {stats.halfDays > 0 && (
@@ -348,6 +323,19 @@ export function EmployeesTab({
         employee={salaryTarget}
         month={month}
         existingSlip={salaryTarget ? slipFor(salaryTarget.id) : null}
+        computeRecalc={() => (salaryTarget ? refusalFor(salaryTarget) : { error: "No employee selected." })}
+      />
+
+      {/* Read-only Payroll Audit for the selected month */}
+      <PayrollAuditDialog
+        open={auditOpen}
+        onClose={() => setAuditOpen(false)}
+        month={month}
+        monthLabel={monthLabel}
+        employees={employees}
+        slips={slips}
+        attendanceBoard={attendanceBoard}
+        boardProblem={boardProblem}
       />
 
       {/* Add New Employee Dialog */}

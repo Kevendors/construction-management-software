@@ -22,6 +22,12 @@ export interface SetSalaryDialogProps {
   employee: Employee | null;
   month: string;
   existingSlip: SalarySlip | null;
+  /**
+   * Paid days recomputed from CURRENT attendance at click time by the parent
+   * with the shared slipRefusal / paidDaysFor (src/lib/payroll/paid-days.ts) —
+   * never the slip's stored value — or why the slip can't be recalculated.
+   */
+  computeRecalc: () => { error: string } | { paidDays: number };
 }
 
 export function SetSalaryDialog({
@@ -30,6 +36,7 @@ export function SetSalaryDialog({
   employee,
   month,
   existingSlip,
+  computeRecalc,
 }: SetSalaryDialogProps) {
   const router = useRouter();
   const [monthlyCtc, setMonthlyCtc] = React.useState<string>("");
@@ -93,10 +100,19 @@ export function SetSalaryDialog({
 
     // If there is an existing draft slip and admin opted to recalculate
     if (existingSlip && existingSlip.status === "draft" && recalcDraft) {
-      // `?? 30`, not `|| 30`: a slip can legitimately have 0 paid days already
-      // (zero attendance that month) and that must survive a recalc, not get
-      // silently replaced with a full month.
-      await generateSlipAction(employee!.id, month, existingSlip.paidDays ?? 30);
+      // Recompute from current attendance (same as the Recalc button), not the
+      // slip's stored paid days — those go stale as attendance is corrected.
+      const check = computeRecalc();
+      if ("error" in check) {
+        setSaving(false);
+        router.refresh();
+        return setError(`Salary saved, but the draft slip was not recalculated: ${check.error}`);
+      }
+      const res2 = await generateSlipAction(employee!.id, month, check.paidDays);
+      if (res2.error) {
+        setSaving(false);
+        return setError(`Salary saved, but the draft slip could not be recalculated: ${res2.error}`);
+      }
     }
 
     setSaving(false);
@@ -298,7 +314,7 @@ export function SetSalaryDialog({
                   Recalculate {monthLabel} Draft Salary Slip
                 </span>
                 <p className="text-muted-foreground">
-                  Immediately updates this month&apos;s slip with the new salary structure.
+                  Immediately updates this month&apos;s slip with the new salary and current attendance.
                 </p>
               </div>
             </label>

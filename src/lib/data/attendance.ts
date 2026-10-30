@@ -124,14 +124,13 @@ async function myEmployeeId(
  */
 async function myIsOffice(
   supabase: Awaited<ReturnType<typeof createSupabase>>,
-  userId: string
+  userId: string,
+  orgId: string | null
 ): Promise<boolean | null> {
-  const { data, error } = await supabase
-    .from("memberships")
-    .select("is_office")
-    .eq("user_id", userId)
-    .limit(1)
-    .maybeSingle();
+  // Scoped to the current org, like the admin board payroll reads from.
+  let query = supabase.from("memberships").select("is_office").eq("user_id", userId);
+  if (orgId) query = query.eq("org_id", orgId);
+  const { data, error } = await query.limit(1).maybeSingle();
   if (error) return null;
   return (data?.is_office as boolean | null | undefined) ?? null;
 }
@@ -225,7 +224,14 @@ async function myStartDate(
     query.limit(1).maybeSingle(),
     // Their first attendance ever: anyone with attendance before the
     // membership row was created was clearly already working.
-    supabase.from("employee_attendance").select("date").eq("user_id", userId).order("date").limit(1).maybeSingle(),
+    // Same org only — matches the admin board (allOrgAttendance), which payroll uses.
+    (orgId
+      ? supabase.from("employee_attendance").select("date").eq("user_id", userId).eq("org_id", orgId)
+      : supabase.from("employee_attendance").select("date").eq("user_id", userId)
+    )
+      .order("date")
+      .limit(1)
+      .maybeSingle(),
   ]);
   if (error) return undefined;
   const created = orgDateOf((data?.created_at as string | null | undefined) ?? "") || undefined;
@@ -375,7 +381,7 @@ export async function getMyAttendancePage(month?: string): Promise<MyAttendanceD
     supabase.from("project_members").select("project_id").eq("user_id", ctx.userId),
     supabase.rpc("list_org_projects"),
     myEmployeeId(supabase, ctx.userId),
-    myIsOffice(supabase, ctx.userId),
+    myIsOffice(supabase, ctx.userId, ctx.orgId),
     supabase.from("orgs").select("office_lat, office_lng, office_radius_m").eq("id", ctx.orgId).maybeSingle(),
     supabase.from("org_holidays").select("date, label, applies_to").eq("org_id", ctx.orgId),
     supabase
@@ -708,5 +714,8 @@ export async function getAttendanceAdminBoard(): Promise<AttendanceAdminBoard> {
     members,
     holidays,
     weekOffSwaps,
+    // Holidays decide paid days and profiles decide name matching — if either
+    // query failed, payroll must refuse rather than pay from partial data.
+    ...(holidaysRes.error || profRes.error ? { incomplete: true } : {}),
   };
 }

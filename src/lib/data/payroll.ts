@@ -146,8 +146,9 @@ const mapSlip = (r: SlipRow): SalarySlip => ({
   id: r.id,
   employeeId: r.employee_id,
   month: r.month,
-  paidDays: r.paid_days,
-  monthDays: r.month_days,
+  // numeric since 0034 — PostgREST may send it as a string.
+  paidDays: Number(r.paid_days),
+  monthDays: Number(r.month_days),
   basic: Number(r.basic),
   hra: Number(r.hra),
   allowances: Number(r.allowances),

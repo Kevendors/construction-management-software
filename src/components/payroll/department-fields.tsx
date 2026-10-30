@@ -1,5 +1,5 @@
 import { departmentLabel } from "@/lib/labels";
-import type { Department } from "@/lib/types";
+import { DEPARTMENT_GROUPS } from "@/lib/payroll/compute";
 
 /**
  * Department + designation pickers shared by Add Employee and Set Salary.
@@ -7,14 +7,7 @@ import type { Department } from "@/lib/types";
  * (that is the explicit `is_office` Team setting).
  */
 
-export const DEPARTMENT_GROUPS: { label: string; departments: Department[] }[] = [
-  {
-    label: "Office",
-    departments: ["admin", "accounts", "hr", "sales", "digital_marketing", "business_development", "purchase", "it"],
-  },
-  { label: "Site / Projects", departments: ["site", "projects", "engineering", "design"] },
-  { label: "Others", departments: ["others"] },
-];
+export { DEPARTMENT_GROUPS };
 
 /** `<option>`s for a department `<Select>`, grouped with `<optgroup>`. */
 export function DepartmentOptions() {

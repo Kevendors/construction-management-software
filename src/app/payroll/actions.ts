@@ -9,6 +9,7 @@ import { logActivity } from "@/lib/activity/log";
 import { assignEmployeeIdIfMissing } from "@/lib/team/employee-id";
 import { formatINR } from "@/lib/utils";
 import { SALARY_BASIS_DAYS } from "@/lib/payroll/compute";
+import { expectedGross } from "@/lib/payroll/paid-days";
 import type {
   AdvanceParty,
   Department,
@@ -297,6 +298,12 @@ export async function generateSlipAction(
   const supabase = await createClient();
   const orgId = await currentOrgId(supabase);
   if (!orgId) return { error: "You must be signed in." };
+  // Same roles that can reach Payroll (ROLE_MODULES); RLS still applies on top.
+  const ctx = await getAuthContext();
+  if (!ctx || !(ctx.role === "super_admin" || ctx.role === "hr")) {
+    return { error: "Only administrators and HR can generate salary slips." };
+  }
+  if (!Number.isFinite(paidDays)) return { error: "Invalid paid days." };
 
   const { data: emp, error: empErr } = await supabase
     .from("employees")
@@ -313,8 +320,8 @@ export async function generateSlipAction(
   // that month) -- never substitute a default for it here (a `|| monthDays`
   // would silently turn a real 0 into a full month's pay).
   const days = Math.max(0, Math.min(paidDays, monthDays));
-  const ctc = Number(emp.monthly_ctc) || 0;
-  const gross = Math.round((ctc * days) / monthDays);
+  // Same formula the Payroll Audit view checks against.
+  const gross = expectedGross(Number(emp.monthly_ctc) || 0, days);
   // Full salary as basic pay (no HRA or allowances split)
   const basic = gross;
   const hra = 0;
@@ -332,7 +339,8 @@ export async function generateSlipAction(
     .eq("party_type", "employee")
     .eq("party_id", employeeId);
   const outstanding = (advs ?? []).reduce((s, a) => s + (Number(a.amount) - Number(a.recovered)), 0);
-  const advanceDeduction = Math.min(outstanding, Math.round(gross * 0.2));
+  // Never negative (an over-recovered advance must not add pay).
+  const advanceDeduction = Math.max(0, Math.min(outstanding, Math.round(gross * 0.2)));
 
   // Replace any existing slip for this employee+month.
   await supabase.from("salary_slips").delete().eq("org_id", orgId).eq("employee_id", employeeId).eq("month", month);
