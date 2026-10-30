@@ -504,6 +504,8 @@ export interface MonthlyAttendanceEvaluation {
   autoLeaveDates: string[];
   /** Whether the `autoLeaveDates` are paid Leave (1 day off in the month) or Absent (2+). Meaningless when there are none. */
   autoLeavePaid: boolean;
+  /** True when the member joined during this month (after the 1st): no automatic paid leave then. */
+  joiningMonth: boolean;
   /** Office staff: days off counted toward the 1-paid-Leave rule (explicit Leave + auto-leave + Absent marks). 0 for Site. */
   daysOffCount: number;
   /** Every weekly-off date of the month (weekOffDatesForMonth) — incl. flexible offs, which isWeeklyOff alone can't see. */
@@ -714,7 +716,10 @@ export function evaluateEmployeeMonthAttendance(
 
   // Auto-leave days have no row, so they're credited here: paid like an
   // explicit Leave when they're the month's only day off, else Absent (0).
-  const autoLeavePaid = !leavesAreUnpaid;
+  // No automatic paid leave in the month someone joins (user decision
+  // 2026-10-30) — a missed day then is simply Absent.
+  const joiningMonth = Boolean(startDate && startDate.slice(0, 7) === month && startDate > `${month}-01`);
+  const autoLeavePaid = !leavesAreUnpaid && !joiningMonth;
   if (autoLeavePaid) fullDays += autoLeaveDates.length;
 
   const effectivePaidDays = fullDays + halfDays * 0.5;
@@ -729,6 +734,7 @@ export function evaluateEmployeeMonthAttendance(
     effectivePaidDays,
     autoLeaveDates,
     autoLeavePaid,
+    joiningMonth,
     daysOffCount,
     weekOffDates,
   };
@@ -755,6 +761,7 @@ export function autoLeaveLabel(
 /** Office staff: why a missed working day is Absent (2+ days off this month) — null for any other day. */
 export function missedAbsentReason(evaluation: MonthlyAttendanceEvaluation, date: string): string | null {
   if (evaluation.autoLeavePaid || !evaluation.autoLeaveDates.includes(date)) return null;
+  if (evaluation.joiningMonth) return "No attendance recorded — Absent (no automatic paid leave in the month an employee joins).";
   return `No attendance recorded — Absent. Office staff get 1 paid Leave per month — ${evaluation.daysOffCount} days off this month (incl. missed days / Absent), so missed days are Absent and all Leave is unpaid.`;
 }
 
