@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/dialog";
 import {
+  isDeclarativeRecord,
   ORG_TIMEZONE,
   orgToday,
   SHIFT_START_TIME,
@@ -29,6 +30,11 @@ function isoToHHMM(iso: string): string {
  * Super_admin/hr only: manually mark or correct an attendance record — no
  * GPS/selfie required. Always requires a reason; the server tags the row
  * source="admin" so it stays visibly distinct from self-verified attendance.
+ *
+ * An existing SELF record (real GPS/selfie punch) changed to Present/Half-Day
+ * keeps its punch: times and project stay visible (read-only for Half-Day),
+ * the reason is appended to its notes and it stays a self record. Only
+ * Leave/Absent replaces it — with a warning.
  */
 export function AdminMarkAttendanceDialog({
   open,
@@ -62,7 +68,8 @@ export function AdminMarkAttendanceDialog({
   // An "open shift" (needs closing, not correcting from scratch) only ever
   // applies to a real present-status punch — a declarative Half-Day/Leave/
   // Absent record has no check-out to close in the first place.
-  const isOpenShift = Boolean(existing && existing.status === "present" && !existing.checkOutAt);
+  // A self Half-Day (late arrival / early check-out) is a real punch too.
+  const isOpenShift = Boolean(existing && !isDeclarativeRecord(existing) && !existing.checkOutAt);
   // Site staff have no paid leave (from SITE_UNPAID_LEAVE_FROM) — don't label the option "paid" for them.
   const selectedMember = members.find((m) => m.userId === userId);
   const leaveIsUnpaid = Boolean(selectedMember && !selectedMember.isOffice && date >= SITE_UNPAID_LEAVE_FROM);
@@ -81,11 +88,18 @@ export function AdminMarkAttendanceDialog({
     // must not have a check-out silently saved just because they didn't
     // notice the field. Blank check-out keeps the shift open, same as before.
     setCheckOutTime(existing ? isoToHHMM(existing.checkOutAt) : "");
-    setNote(existing?.note ?? "");
+    // Self record: the reason is appended to the employee's own notes, so start empty.
+    setNote(existing?.source === "self" ? "" : existing?.note ?? "");
     setError(null);
   }, [open, existing, defaultUserId, defaultDate]);
 
-  const isDeclarative = status !== "present";
+  const isSelfRecord = existing?.source === "self";
+  // Self record kept as a real punch: Present / Half-Day.
+  const keepsSelfPunch = isSelfRecord && (status === "present" || status === "half_day");
+  // Half-Day on a self record: the punch is shown but can't be edited here.
+  const punchReadOnly = isSelfRecord && status === "half_day";
+  const isDeclarative = status !== "present" && !keepsSelfPunch;
+  const replacesSelfPunch = isSelfRecord && (status === "leave" || status === "absent");
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -159,7 +173,12 @@ export function AdminMarkAttendanceDialog({
           {!isDeclarative && (
             <div className="space-y-1.5">
               <Label htmlFor="am-project">Project</Label>
-              <Select id="am-project" value={projectId} onChange={(e) => setProjectId(e.target.value)}>
+              <Select
+                id="am-project"
+                value={projectId}
+                disabled={punchReadOnly}
+                onChange={(e) => setProjectId(e.target.value)}
+              >
                 <option value="">—</option>
                 {projects.map((p) => (
                   <option key={p.id} value={p.id}>
@@ -173,16 +192,40 @@ export function AdminMarkAttendanceDialog({
             <>
               <div className="space-y-1.5">
                 <Label htmlFor="am-in">Check-in time</Label>
-                <Input id="am-in" type="time" value={checkInTime} onChange={(e) => setCheckInTime(e.target.value)} />
+                <Input
+                  id="am-in"
+                  type="time"
+                  value={checkInTime}
+                  disabled={punchReadOnly}
+                  onChange={(e) => setCheckInTime(e.target.value)}
+                />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="am-out">Check-out time (optional)</Label>
-                <Input id="am-out" type="time" value={checkOutTime} onChange={(e) => setCheckOutTime(e.target.value)} />
+                <Input
+                  id="am-out"
+                  type="time"
+                  value={checkOutTime}
+                  disabled={punchReadOnly}
+                  onChange={(e) => setCheckOutTime(e.target.value)}
+                />
               </div>
             </>
           )}
+          {keepsSelfPunch && (
+            <p className="col-span-2 rounded-md bg-secondary/60 px-3 py-2 text-xs text-muted-foreground">
+              {punchReadOnly
+                ? "The employee's own check-in (GPS + selfie) is kept — only the status changes and your reason is added to the notes."
+                : "The employee's own check-in (GPS + selfie) is kept when the times and project are unchanged — your reason is added to the notes."}
+            </p>
+          )}
+          {replacesSelfPunch && (
+            <p className="col-span-2 rounded-md bg-destructive/10 px-3 py-2 text-sm font-medium text-destructive">
+              This replaces the employee&apos;s real check-in record.
+            </p>
+          )}
           <div className="col-span-2 space-y-1.5">
-            <Label htmlFor="am-note">Reason (required)</Label>
+            <Label htmlFor="am-note">{keepsSelfPunch ? "Reason — added to the notes (required)" : "Reason (required)"}</Label>
             <Textarea
               id="am-note"
               value={note}

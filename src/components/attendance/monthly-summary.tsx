@@ -64,7 +64,7 @@ export function MonthlySummary({
         <Info className="h-3.5 w-3.5 shrink-0 mt-0.5 text-primary" />
         <div>
           <span className="font-medium text-foreground">Attendance Policy: </span>
-          Shift runs until <strong>6:00 PM</strong>. Checking in after <strong>10:30 AM</strong> counts as a late arrival — the first 3 in a calendar month still credit a full paid day; the 4th and later auto-marks that day Half-Day. A Super Admin can also mark a day Half-Day/Absent by hand for any other reason.
+          Shift runs until <strong>6:00 PM</strong>. Checking in after <strong>10:30 AM</strong> counts as a late arrival — the first 3 in a calendar month still credit a full paid day; the 4th and later auto-marks that day Half-Day. Checking out before <strong>6:00 PM</strong> marks the day Half-Day (reason required), except on your weekly off or a holiday. A Super Admin can also mark a day Half-Day/Absent by hand for any other reason.
           {isOffice && (
             <>
               {" "}Office staff get <strong>1 paid Leave per month</strong> — a missed working day counts as Leave automatically; taking a 2nd day off (missed, Leave or Absent) makes them all unpaid, shown as Absent.

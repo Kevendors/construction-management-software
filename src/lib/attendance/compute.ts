@@ -121,6 +121,34 @@ export function isLateCheckIn(checkInAtIso: string): boolean {
   return timeInOrgTimezone(checkInAtIso) > LATE_ARRIVAL_CUTOFF_TIME;
 }
 
+/**
+ * Early check-out rule (self check-out only, Office and Site alike): checking
+ * out strictly before SHIFT_END_TIME org-local needs a reason and turns the
+ * day into a Half-Day. False for an empty/unparseable timestamp.
+ */
+export function isEarlyCheckout(checkOutAtIso: string): boolean {
+  const t = timeInOrgTimezone(checkOutAtIso);
+  return t !== "" && t < SHIFT_END_TIME;
+}
+
+/** Preset reasons offered on the "Early check-out" step ("Other" = typed text). */
+export const EARLY_CHECKOUT_REASONS = [
+  "Personal work",
+  "Medical",
+  "Work completed / Site work done",
+  "Client meeting",
+];
+export const MAX_EARLY_REASON = 200;
+
+/**
+ * A declarative row: an admin-declared Leave / Half-Day / Absent with no real
+ * punch. A SELF half_day (4th+ late arrival, early check-out) is a real punch
+ * — never declarative — so views keep its project, times, selfies and map.
+ */
+export function isDeclarativeRecord(r: Pick<EmployeeAttendance, "status" | "source">): boolean {
+  return r.status !== "present" && r.source !== "self";
+}
+
 /** "HH:mm" in ORG_TIMEZONE (24-hour clock, zero-padded). */
 export function timeInOrgTimezone(iso: string): string {
   if (!iso) return "";
@@ -366,6 +394,23 @@ export function weekOffDatesForMonth(
 }
 
 /**
+ * True when the early check-out rule doesn't apply on `date` for this member:
+ * their weekly off (same weekOffDatesForMonth the month evaluation uses) or a
+ * declared holiday for them (isHolidayFor). Such a day never becomes Half-Day.
+ * `date` is the check-out day, which already has a row (checked in), so a
+ * flexible member's month-level offs never include it.
+ */
+export function isEarlyCheckoutExemptDay(
+  date: string,
+  rule: WeekOffRule,
+  holidays: OrgHoliday[],
+  isOffice: boolean
+): boolean {
+  if (isHolidayFor(date, holidays, isOffice)) return true;
+  return weekOffDatesForMonth(date.slice(0, 7), rule, [], holidays, isOffice, date).has(date);
+}
+
+/**
  * Sorts history rows (any order) into WeekOffRule["history"]. `kinds` are the
  * 0049 kind/anchor columns, read separately so a missing column only drops
  * them (every entry is then "fixed") instead of the whole history.
@@ -584,8 +629,10 @@ export function evaluateEmployeeMonthAttendance(
     .sort((a, b) => a.date.localeCompare(b.date) || a.checkInAt.localeCompare(b.checkInAt));
 
   const weekOffDates = weekOffDatesForMonth(month, rule, records, holidays, isOffice, today, startDate);
+  // Declarative marks only — a self half_day (real punch) on a holiday is
+  // handled by the half_day branch below (worked, paid in full).
   const isDeclaredHolidayRecord = (r: EmployeeAttendance) =>
-    r.status !== "present" && isHolidayFor(r.date, holidays, isOffice);
+    isDeclarativeRecord(r) && isHolidayFor(r.date, holidays, isOffice);
   // Which explicit marks count toward the 1-paid-Leave rule. Before
   // OFFICE_AUTO_LEAVE_FROM: Leave only (the old rule). From it: Leave and
   // Absent, but not on a weekly off. Never on a declared holiday.
@@ -664,6 +711,18 @@ export function evaluateEmployeeMonthAttendance(
         glyph = "LV";
         reason = r.note ? `Marked Leave — ${r.note}` : "Marked Leave.";
       }
+    } else if (
+      r.status === "half_day" &&
+      r.source === "self" &&
+      (weekOffDates.has(r.date) || isHolidayFor(r.date, holidays, isOffice))
+    ) {
+      // A real punch on the member's weekly off or a declared holiday never
+      // deducts (late-arrival or early-check-out Half-Day): worked, paid in full.
+      creditType = "on_time";
+      dayCredit = 1.0;
+      fullDays += 1;
+      badgeLabel = "Present";
+      reason = `Worked on a ${weekOffDates.has(r.date) ? "weekly off" : "holiday"} — Half-Day not applied.${r.note ? ` ${r.note}` : ""}`;
     } else if (r.status === "half_day") {
       creditType = "explicit_half_day";
       dayCredit = 0.5;

@@ -4,12 +4,13 @@ import * as React from "react";
 import { AlertTriangle, CheckCircle2, LocateFixed } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
-import { haversineMeters, formatTime } from "@/lib/attendance/compute";
+import { haversineMeters, formatTime, isEarlyCheckout } from "@/lib/attendance/compute";
 import { officeCheckInAction, officeCheckOutAction } from "@/app/attendance/actions";
 import { useGeolocation, type GeoResult } from "./use-geolocation";
 import type { FlowSuccess } from "./check-in-flow";
+import { EarlyCheckoutStep, earlyReasonOf } from "./early-checkout-step";
 
-type Step = "locate" | "reason" | "submitting" | "success" | "error";
+type Step = "locate" | "reason" | "early" | "submitting" | "success" | "error";
 
 /** Distance from the office centre when outside its fence (server uses the same rule), else null. */
 function outsideOfficeDistance(
@@ -40,12 +41,16 @@ function clientFenceError(
  * 0051: with "Client visits allowed" (Team page), a punch outside the office
  * fence isn't blocked — a reason step (mirrors CheckInFlow's) comes first. The
  * member stays Office: still no selfie, no tracking.
+ *
+ * Punch-out before 6:00 PM IST: an "Early check-out" reason step comes first
+ * (after the away reason, when both apply); the day becomes Half-Day.
  */
 export function OfficeCheckInFlow({
   open,
   mode,
   officeGeofence,
   clientVisitsAllowed = false,
+  earlyCheckoutExempt = false,
   onClose,
   onSuccess,
 }: {
@@ -54,6 +59,8 @@ export function OfficeCheckInFlow({
   officeGeofence: { lat: number | null; lng: number | null; radiusM: number | null };
   /** 0051: may punch away from the office with a reason (client visits). */
   clientVisitsAllowed?: boolean;
+  /** Today is the member's weekly off / a holiday — no early check-out step (server re-checks). */
+  earlyCheckoutExempt?: boolean;
   onClose: () => void;
   onSuccess: (result: FlowSuccess) => void;
 }) {
@@ -63,6 +70,10 @@ export function OfficeCheckInFlow({
   const [outsideM, setOutsideM] = React.useState<number | null>(null);
   const [reasonChoice, setReasonChoice] = React.useState("");
   const [reasonOther, setReasonOther] = React.useState("");
+  const [earlyNeeded, setEarlyNeeded] = React.useState(false);
+  const [earlyChoice, setEarlyChoice] = React.useState("");
+  const [earlyOther, setEarlyOther] = React.useState("");
+  const [markedHalfDay, setMarkedHalfDay] = React.useState(false);
   const geo = useGeolocation();
   const geoRequest = geo.request;
 
@@ -76,6 +87,10 @@ export function OfficeCheckInFlow({
       setOutsideM(null);
       setReasonChoice("");
       setReasonOther("");
+      setEarlyNeeded(false);
+      setEarlyChoice("");
+      setEarlyOther("");
+      setMarkedHalfDay(false);
       setStep("locate");
       submittedRef.current = false;
     }
@@ -86,7 +101,7 @@ export function OfficeCheckInFlow({
     if (open && step === "locate") geoRequest();
   }, [open, step, geoRequest]);
 
-  const submit = React.useCallback(async (outsideReason?: string) => {
+  const submit = React.useCallback(async (outsideReason?: string, earlyReason?: string) => {
     if (!geo.position || submittedRef.current) return;
     submittedRef.current = true;
     setStep("submitting");
@@ -94,14 +109,21 @@ export function OfficeCheckInFlow({
     const res =
       mode === "in"
         ? await officeCheckInAction({ lat, lng, accuracy, outsideReason })
-        : await officeCheckOutAction({ lat, lng, accuracy, outsideReason });
+        : await officeCheckOutAction({ lat, lng, accuracy, outsideReason, earlyReason });
     if (res.error) {
       submittedRef.current = false;
       // The server found us outside the office fence (e.g. stale fence data
       // here) and we may punch away — ask for a reason.
       if (res.outsideDistanceM != null && !outsideReason) {
         setOutsideM(res.outsideDistanceM);
+        if (res.earlyCheckoutRequired) setEarlyNeeded(true);
         setStep("reason");
+        return;
+      }
+      // The server's clock says this punch-out is early — ask for the reason.
+      if (res.earlyCheckoutRequired && !earlyReason) {
+        setEarlyNeeded(true);
+        setStep("early");
         return;
       }
       setErrorMsg(res.error);
@@ -109,16 +131,23 @@ export function OfficeCheckInFlow({
       return;
     }
     const at = new Date().toISOString();
+    setMarkedHalfDay(res.markedHalfDay === true);
     setDoneAt(at);
     setStep("success");
     onSuccess({ at, projectId: "", lat, lng });
   }, [geo.position, mode, onSuccess]);
+
+  /** Punch-out before 6:00 PM IST (by this clock, or as the server said) needs an early reason. */
+  const needsEarlyStep = () =>
+    mode === "out" && (earlyNeeded || (!earlyCheckoutExempt && isEarlyCheckout(new Date().toISOString())));
 
   // Fail fast on the client-side fence check (or, for client visits, ask for
   // a reason); otherwise submit immediately — true one-tap, no confirm screen
   // (there's no selfie to review).
   React.useEffect(() => {
     if (!open || step !== "locate" || geo.status !== "success" || !geo.position) return;
+    const early = mode === "out" && !earlyCheckoutExempt && isEarlyCheckout(new Date().toISOString());
+    if (early) setEarlyNeeded(true);
     if (clientVisitsAllowed) {
       const distance = outsideOfficeDistance(officeGeofence, geo.position);
       if (distance != null) {
@@ -134,11 +163,16 @@ export function OfficeCheckInFlow({
         return;
       }
     }
+    if (early) {
+      setStep("early");
+      return;
+    }
     submit();
-  }, [open, step, geo.status, geo.position, officeGeofence, clientVisitsAllowed, submit]);
+  }, [open, step, geo.status, geo.position, officeGeofence, clientVisitsAllowed, submit, mode, earlyCheckoutExempt]);
 
   const title = mode === "in" ? "Punch In" : "Punch Out";
   const outsideReason = reasonChoice === OTHER_REASON ? reasonOther.trim() : reasonChoice;
+  const earlyReason = earlyReasonOf(earlyChoice, earlyOther);
 
   return (
     <Dialog open={open} onClose={onClose} title={title} className="max-w-md">
@@ -202,11 +236,35 @@ export function OfficeCheckInFlow({
             <Button variant="outline" className="h-12" onClick={onClose}>
               Cancel
             </Button>
-            <Button className="h-12" disabled={!outsideReason} onClick={() => submit(outsideReason)}>
-              {mode === "in" ? "Punch In" : "Punch Out"}
+            <Button
+              className="h-12"
+              disabled={!outsideReason}
+              onClick={() => {
+                const early = needsEarlyStep();
+                if (early && !earlyReason) {
+                  setEarlyNeeded(true);
+                  setStep("early");
+                } else {
+                  submit(outsideReason, early ? earlyReason : undefined);
+                }
+              }}
+            >
+              {mode === "in" ? "Punch In" : earlyNeeded && !earlyReason ? "Continue" : "Punch Out"}
             </Button>
           </div>
         </div>
+      )}
+
+      {step === "early" && (
+        <EarlyCheckoutStep
+          choice={earlyChoice}
+          other={earlyOther}
+          onChoice={setEarlyChoice}
+          onOther={setEarlyOther}
+          onCancel={onClose}
+          onContinue={() => submit(outsideM != null ? outsideReason : undefined, earlyReason)}
+          continueLabel="Punch Out"
+        />
       )}
 
       {step === "success" && (
@@ -216,6 +274,11 @@ export function OfficeCheckInFlow({
             {mode === "in" ? "Punched in successfully" : "Punched out successfully"}
           </p>
           <p className="text-sm font-medium tabular-nums text-foreground">at {formatTime(doneAt)}</p>
+          {markedHalfDay && (
+            <p className="rounded-lg bg-warning/10 px-3 py-2 text-sm font-medium text-foreground">
+              Marked Half-Day (early check-out)
+            </p>
+          )}
           <Button className="mt-4 h-12 w-full" onClick={onClose}>
             Done
           </Button>

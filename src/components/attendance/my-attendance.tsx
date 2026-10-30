@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
+  isEarlyCheckoutExemptDay,
   minutesBetween,
   orgThisMonth,
   orgToday,
@@ -41,6 +42,8 @@ export function MyAttendance({ data }: { data: MyAttendanceData }) {
   const [localToday, setLocalToday] = React.useState<EmployeeAttendance | null>(null);
 
   const today = localToday ?? data.today;
+  // Early check-out rule is skipped on the member's weekly off / a holiday (the server re-checks).
+  const earlyCheckoutExempt = today ? isEarlyCheckoutExemptDay(today.date, data.weekOff, data.holidays, data.isOffice) : false;
   // 0050 addendum: a Site member allowed to use "Office" as a site — their
   // office check-in (project_id null) is still a site-flow shift.
   const worksFromOffice = data.canWorkFromOffice && !data.isOffice;
@@ -243,6 +246,7 @@ export function MyAttendance({ data }: { data: MyAttendanceData }) {
           activeProjectId={isOpenSiteShift ? currentProjectId ?? OFFICE_SITE : today?.projectId}
           canWorkFromOffice={worksFromOffice}
           officeGeofence={data.officeGeofence}
+          earlyCheckoutExempt={earlyCheckoutExempt}
           onClose={() => setFlowMode(null)}
           onSuccess={handleSuccess}
         />
@@ -252,6 +256,7 @@ export function MyAttendance({ data }: { data: MyAttendanceData }) {
           mode={flowMode === "out" ? "out" : "in"}
           officeGeofence={data.officeGeofence}
           clientVisitsAllowed={data.clientVisitsAllowed}
+          earlyCheckoutExempt={earlyCheckoutExempt}
           onClose={() => setFlowMode(null)}
           onSuccess={handleSuccess}
         />

@@ -17,6 +17,7 @@ import {
   missedAbsentReason,
   formatDuration,
   formatTime,
+  isDeclarativeRecord,
   SUNDAY_OFF,
   type EvaluatedAttendanceRecord,
   type OrgHoliday,
@@ -154,9 +155,8 @@ export function HistoryList({
                   })}
                 </TableCell>
                 <TableCell className="tabular-nums">
-                  {ev && ev.creditType !== "on_time" && ev.creditType !== "manual_present"
-                    ? "—"
-                    : formatTime(r.checkInAt)}
+                  {/* A self Half-Day (late arrival / early check-out) is a real punch — show it. */}
+                  {isDeclarativeRecord(r) ? "—" : formatTime(r.checkInAt)}
                 </TableCell>
                 <TableCell className="tabular-nums">{formatTime(r.checkOutAt)}</TableCell>
                 <TableCell className="text-right tabular-nums">

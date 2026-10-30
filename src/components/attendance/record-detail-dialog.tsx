@@ -8,6 +8,7 @@ import {
   formatDuration,
   formatTime,
   haversineMeters,
+  isDeclarativeRecord,
   type EvaluatedAttendanceRecord,
 } from "@/lib/attendance/compute";
 import {
@@ -86,7 +87,8 @@ export function RecordDetailDialog({
     setHistory([]);
     getAttendanceSelfieUrls([record.id]).then((urls) => setSelfies(urls[record.id] ?? {}));
     getAttendanceEditHistoryAction(record.id).then(setHistory);
-    if (record.status === "present") {
+    // Any real punch — incl. a self Half-Day (late arrival / early check-out).
+    if (!isDeclarativeRecord(record)) {
       getPunchFenceAction(record.projectId || null).then((f) => setFence({ forId: record.id, fence: f }));
       const inPt = record.checkInLat != null && record.checkInLng != null ? { lat: record.checkInLat, lng: record.checkInLng } : null;
       const outPt = record.checkOutLat != null && record.checkOutLng != null ? { lat: record.checkOutLat, lng: record.checkOutLng } : null;
@@ -121,7 +123,7 @@ export function RecordDetailDialog({
   if (!record) return null;
 
   const isOffice = !record.projectId;
-  const isDeclarative = record.status !== "present";
+  const isDeclarative = isDeclarativeRecord(record);
 
   const dateLabel = new Date(`${record.date}T00:00:00`).toLocaleDateString("en-IN", {
     weekday: "short",
@@ -211,12 +213,13 @@ export function RecordDetailDialog({
           </div>
         )}
 
-        {/* Self punches carry system notes: late-arrival Half-Day and
-            "Checked in/out outside site (X away): reason". */}
+        {/* Self punches carry system notes: late-arrival / early check-out
+            Half-Day, "Checked in/out outside site (X away): reason" and any
+            admin note added to the record. Index keys: lines may repeat. */}
         {record.source === "self" && record.note && (
           <div className="space-y-1 rounded-lg bg-warning/10 p-3 text-sm">
-            {record.note.split(" · ").map((line) => (
-              <p key={line}>{line}</p>
+            {record.note.split(" · ").map((line, i) => (
+              <p key={i}>{line}</p>
             ))}
           </div>
         )}

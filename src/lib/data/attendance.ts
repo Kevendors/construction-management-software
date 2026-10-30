@@ -7,6 +7,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getAuthContext } from "@/lib/auth/context";
 import { isExternalRole } from "@/lib/auth/roles";
 import {
+  isEarlyCheckoutExemptDay,
   orgDateOf,
   orgThisMonth,
   orgToday,
@@ -200,6 +201,34 @@ async function myWeekOff(
         ),
     swaps: swapsRes.error ? [] : ((swapsRes.data ?? []) as SwapRow[]).map(toSwap),
   };
+}
+
+/**
+ * Early check-out rule: true when `date` is the caller's weekly off or a
+ * declared holiday for them — then a check-out before 6:00 PM needs no reason
+ * and never makes the day Half-Day. Same inputs as getMyAttendance: myWeekOff,
+ * myIsOffice (unknown = Office when they have no project assignments) and the
+ * org's holidays; the decision itself is isEarlyCheckoutExemptDay.
+ */
+export async function earlyCheckoutExemptFor(
+  supabase: Awaited<ReturnType<typeof createSupabase>>,
+  userId: string,
+  orgId: string,
+  date: string
+): Promise<boolean> {
+  const [rule, isOfficeRaw, holidaysRes, pmRes] = await Promise.all([
+    myWeekOff(supabase, userId),
+    myIsOffice(supabase, userId, orgId),
+    supabase.from("org_holidays").select("date, label, applies_to").eq("org_id", orgId),
+    supabase.from("project_members").select("project_id").eq("user_id", userId).limit(1),
+  ]);
+  const isOffice = isOfficeRaw ?? (pmRes.data ?? []).length === 0;
+  const holidays: OrgHoliday[] = (holidaysRes.data ?? []).map((h) => ({
+    date: (h as { date: string }).date,
+    label: (h as { label: string | null }).label ?? "Holiday",
+    appliesTo: (h as { applies_to: "all" | "office" }).applies_to,
+  }));
+  return isEarlyCheckoutExemptDay(date, rule, holidays, isOffice);
 }
 
 /**

@@ -4,11 +4,12 @@ import * as React from "react";
 import { AlertTriangle, Building2, CheckCircle2, LocateFixed, MapPin } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
-import { haversineMeters, formatTime } from "@/lib/attendance/compute";
+import { haversineMeters, formatTime, isEarlyCheckout } from "@/lib/attendance/compute";
 import { OFFICE_SITE, OFFICE_SITE_NAME } from "@/lib/attendance/site-visits";
 import type { Project } from "@/lib/types";
 import { checkInAction, checkOutAction, switchSiteAction } from "@/app/attendance/actions";
 import { CameraCapture } from "./camera-capture";
+import { EarlyCheckoutStep, earlyReasonOf } from "./early-checkout-step";
 import { useGeolocation, type GeoResult } from "./use-geolocation";
 
 export interface FlowSuccess {
@@ -26,6 +27,7 @@ type Step =
   | "project"
   | "locate"
   | "reason"
+  | "early"
   | "camera"
   | "preview"
   | "submitting"
@@ -34,7 +36,9 @@ type Step =
 
 /**
  * Guided check-in / check-out: pick project → GPS fix → (outside the site
- * fence: pick a reason) → live selfie → confirm → submit. Check-out skips the
+ * fence: pick a reason) → (check-out before 6:00 PM IST: pick an early
+ * check-out reason; the day becomes Half-Day) → live selfie → confirm →
+ * submit. Check-out skips the
  * project step (it closes the shift already open under `activeProjectId`).
  * Switch Site ("switch") runs the same steps during an open site shift,
  * offering every project except the current one (`activeProjectId`).
@@ -48,6 +52,7 @@ export function CheckInFlow({
   activeProjectId,
   canWorkFromOffice = false,
   officeGeofence,
+  earlyCheckoutExempt = false,
   onClose,
   onSuccess,
 }: {
@@ -64,6 +69,8 @@ export function CheckInFlow({
   canWorkFromOffice?: boolean;
   /** Org office fence — the pre-check when the site is the Office. */
   officeGeofence?: { lat: number | null; lng: number | null; radiusM: number | null };
+  /** Today is the member's weekly off / a holiday — no early check-out step (server re-checks). */
+  earlyCheckoutExempt?: boolean;
   onClose: () => void;
   onSuccess: (result: FlowSuccess) => void;
 }) {
@@ -98,6 +105,11 @@ export function CheckInFlow({
   const [outsideM, setOutsideM] = React.useState<number | null>(null);
   const [reasonChoice, setReasonChoice] = React.useState("");
   const [reasonOther, setReasonOther] = React.useState("");
+  // Early check-out (mode "out" only): asked before 6:00 PM IST, or when the server says so.
+  const [earlyNeeded, setEarlyNeeded] = React.useState(false);
+  const [earlyChoice, setEarlyChoice] = React.useState("");
+  const [earlyOther, setEarlyOther] = React.useState("");
+  const [markedHalfDay, setMarkedHalfDay] = React.useState(false);
   const geo = useGeolocation();
   const geoRequest = geo.request;
 
@@ -114,6 +126,10 @@ export function CheckInFlow({
       setOutsideM(null);
       setReasonChoice("");
       setReasonOther("");
+      setEarlyNeeded(false);
+      setEarlyChoice("");
+      setEarlyOther("");
+      setMarkedHalfDay(false);
       if (mode === "out") {
         setProjectId(activeProjectId ?? "");
         setStep("locate");
@@ -130,14 +146,32 @@ export function CheckInFlow({
     if (open && step === "locate") geoRequest();
   }, [open, step, geoRequest]);
 
+  const earlyReason = earlyReasonOf(earlyChoice, earlyOther);
+
+  // After the outside-site reason (or straight from GPS): a check-out before
+  // 6:00 PM IST goes via the early check-out step, then camera / preview.
+  const afterOutsideReason = React.useCallback(() => {
+    if (
+      mode === "out" &&
+      !earlyReason &&
+      (earlyNeeded || (!earlyCheckoutExempt && isEarlyCheckout(new Date().toISOString())))
+    ) {
+      setEarlyNeeded(true);
+      setStep("early");
+      return;
+    }
+    setStep(selfie ? "preview" : "camera");
+  }, [mode, earlyReason, earlyNeeded, earlyCheckoutExempt, selfie]);
+
   // Advance once we have a position — via the reason step when outside the site.
   React.useEffect(() => {
     if (!open || step !== "locate" || geo.status !== "success" || !geo.position) return;
     const site = sites.find((p) => p.id === projectId);
     const distance = outsideSiteDistance(site, geo.position);
     setOutsideM(distance);
-    setStep(distance != null ? "reason" : "camera");
-  }, [open, step, geo.status, geo.position, sites, projectId]);
+    if (distance != null) setStep("reason");
+    else afterOutsideReason();
+  }, [open, step, geo.status, geo.position, sites, projectId, afterOutsideReason]);
 
   const outsideReason = reasonChoice === OTHER_REASON ? reasonOther.trim() : reasonChoice;
 
@@ -151,13 +185,28 @@ export function CheckInFlow({
         ? await checkInAction({ projectId, lat, lng, accuracy, selfieDataUrl: selfie, outsideReason: reason })
         : mode === "switch"
           ? await switchSiteAction({ projectId, lat, lng, accuracy, selfieDataUrl: selfie, outsideReason: reason })
-          : await checkOutAction({ lat, lng, accuracy, selfieDataUrl: selfie, outsideReason: reason });
+          : await checkOutAction({
+              lat,
+              lng,
+              accuracy,
+              selfieDataUrl: selfie,
+              outsideReason: reason,
+              earlyReason: earlyNeeded ? earlyReason : undefined,
+            });
     if (res.error) {
       // The server found us outside the fence (e.g. a project the picker
       // didn't have fence data for) — ask for a reason, keep the selfie.
       if (res.outsideDistanceM != null && !reason) {
         setOutsideM(res.outsideDistanceM);
+        if (res.earlyCheckoutRequired) setEarlyNeeded(true);
         setStep("reason");
+        return;
+      }
+      // The server's clock says this is an early check-out — ask for the
+      // reason and resubmit (the selfie is kept).
+      if (res.earlyCheckoutRequired && !(earlyNeeded && earlyReason)) {
+        setEarlyNeeded(true);
+        setStep("early");
         return;
       }
       setErrorMsg(res.error);
@@ -165,6 +214,7 @@ export function CheckInFlow({
       return;
     }
     const at = new Date().toISOString();
+    setMarkedHalfDay(res.markedHalfDay === true);
     setDoneAt(at);
     setStep("success");
     onSuccess({ at, projectId, lat, lng, id: res.id });
@@ -274,12 +324,23 @@ export function CheckInFlow({
             <Button
               className="h-12"
               disabled={!outsideReason}
-              onClick={() => setStep(selfie ? "preview" : "camera")}
+              onClick={afterOutsideReason}
             >
               Continue
             </Button>
           </div>
         </div>
+      )}
+
+      {step === "early" && (
+        <EarlyCheckoutStep
+          choice={earlyChoice}
+          other={earlyOther}
+          onChoice={setEarlyChoice}
+          onOther={setEarlyOther}
+          onCancel={onClose}
+          onContinue={() => setStep(selfie ? "preview" : "camera")}
+        />
       )}
 
       {step === "camera" && (
@@ -341,6 +402,11 @@ export function CheckInFlow({
                 at {formatTime(doneAt)}
               </p>
               {project && <p className="text-xs text-muted-foreground">{project.name}</p>}
+              {markedHalfDay && (
+                <p className="rounded-lg bg-warning/10 px-3 py-2 text-sm font-medium text-foreground">
+                  Marked Half-Day (early check-out)
+                </p>
+              )}
             </>
           )}
 

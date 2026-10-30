@@ -25,6 +25,7 @@ import {
   formatDuration,
   formatTime,
   isBeforeJoining,
+  isDeclarativeRecord,
   isHolidayFor,
   missedAbsentReason,
   orgThisMonth,
@@ -135,6 +136,12 @@ export function AdminAttendanceTab({
   const unpaidLeaveReasonFor = (userId: string, d: string, isOffice: boolean) =>
     evaluationFor(userId, d.slice(0, 7), isOffice).recordMap.get(d)?.reason || "Unpaid Leave";
   const isDeclaredHolidayFor = (userId: string, d: string, isOffice: boolean) => creditTypeFor(userId, d, isOffice) === "declared_holiday";
+  /**
+   * A SELF Half-Day punch (4th+ late arrival / early check-out) that still
+   * counts as Half-Day — not on a weekly off or holiday, where it's worked.
+   */
+  const isSelfHalfDayFor = (r: EmployeeAttendance, isOffice: boolean) =>
+    !isDeclarativeRecord(r) && r.status === "half_day" && creditTypeFor(r.userId, r.date, isOffice) === "explicit_half_day";
 
   /* ---- daily view rows: one per member, "Missed" when no record ---- */
   // The evaluation (once per row) says whether a no-record day is a weekly
@@ -274,7 +281,7 @@ export function AdminAttendanceTab({
 
   function exportCsv() {
     const projectLabel = (r: EmployeeAttendance) =>
-      r.status !== "present" ? "" : r.projectId ? projectById.get(r.projectId)?.name ?? "" : "Office";
+      isDeclarativeRecord(r) ? "" : r.projectId ? projectById.get(r.projectId)?.name ?? "" : "Office";
     const declarativeLabel = (r: EmployeeAttendance, isOffice: boolean) => {
       if (isDeclaredHolidayFor(r.userId, r.date, isOffice)) return "Holiday";
       if (r.status === "leave" && isLeaveUnpaidFor(r.userId, r.date, isOffice)) return "Absent";
@@ -290,11 +297,15 @@ export function AdminAttendanceTab({
           employee?.name ?? "",
           employee?.employeeId || "—",
           projectLabel(r),
-          r.status === "present" ? formatTime(r.checkInAt) : "",
-          r.status === "present" ? formatTime(r.checkOutAt) : "",
+          isDeclarativeRecord(r) ? "" : formatTime(r.checkInAt),
+          isDeclarativeRecord(r) ? "" : formatTime(r.checkOutAt),
           r.totalMinutes > 0 ? formatDuration(r.totalMinutes) : "",
           r.overtimeMinutes > 0 ? formatDuration(r.overtimeMinutes) : "",
-          r.status !== "present" ? declarativeLabel(r, employee?.isOffice ?? false) : r.source === "admin" ? "Manual" : "Self",
+          isDeclarativeRecord(r)
+            ? declarativeLabel(r, employee?.isOffice ?? false)
+            : isSelfHalfDayFor(r, employee?.isOffice ?? false)
+              ? "Half-Day (Self)"
+              : r.source === "admin" ? "Manual" : "Self",
         ])
       );
       return;
@@ -308,12 +319,14 @@ export function AdminAttendanceTab({
           member.name,
           member.employeeId || "—",
           record ? projectLabel(record) : "",
-          record && record.status === "present" ? formatTime(record.checkInAt) : "",
-          record && record.status === "present" ? formatTime(record.checkOutAt) : "",
+          record && !isDeclarativeRecord(record) ? formatTime(record.checkInAt) : "",
+          record && !isDeclarativeRecord(record) ? formatTime(record.checkOutAt) : "",
           record && record.totalMinutes > 0 ? formatDuration(record.totalMinutes) : "",
           record && record.overtimeMinutes > 0 ? formatDuration(record.overtimeMinutes) : "",
           record
-            ? record.status !== "present" ? declarativeLabel(record, member.isOffice) : "Present"
+            ? isDeclarativeRecord(record)
+              ? declarativeLabel(record, member.isOffice)
+              : isSelfHalfDayFor(record, member.isOffice) ? "Half-Day" : "Present"
             : noRecordLabel(member, evaluation),
         ])
       );
@@ -508,8 +521,9 @@ export function AdminAttendanceTab({
                     </TableRow>
                   )}
                   {dailyRows.map(({ member, record, evaluation }) => {
-                    const isDeclarative = Boolean(record && record.status !== "present");
-                    const isOpenShift = Boolean(record && record.status === "present" && !record.checkOutAt);
+                    const isDeclarative = Boolean(record && isDeclarativeRecord(record));
+                    const isOpenShift = Boolean(record && !isDeclarative && !record.checkOutAt);
+                    const isSelfHalfDay = Boolean(record && isSelfHalfDayFor(record, member.isOffice));
                     const isUnpaidLeave = Boolean(
                       record?.status === "leave" && isLeaveUnpaidFor(member.userId, date, member.isOffice)
                     );
@@ -581,8 +595,15 @@ export function AdminAttendanceTab({
                                   {record.status === "leave" && isUnpaidLeave ? "Absent" : STATUS_LABEL[record.status]}
                                 </Badge>
                               )
-                            ) : isOpenShift ? (
-                              <Badge variant="warning">Open Shift</Badge>
+                            ) : isSelfHalfDay || isOpenShift ? (
+                              <>
+                                {isSelfHalfDay && (
+                                  <Badge variant="warning" className="border-amber-400 bg-amber-500/15 text-amber-800 dark:text-amber-400 font-semibold" title={record.note || undefined}>
+                                    Half-Day
+                                  </Badge>
+                                )}
+                                {isOpenShift && <Badge variant="warning">Open Shift</Badge>}
+                              </>
                             ) : (
                               <Badge variant="success">Present</Badge>
                             )}
@@ -971,8 +992,9 @@ export function AdminAttendanceTab({
                       </TableRow>
                     )}
                     {employeeRecords.map((record) => {
-                      const isDeclarative = record.status !== "present";
-                      const isOpenShift = record.status === "present" && !record.checkOutAt;
+                      const isDeclarative = isDeclarativeRecord(record);
+                      const isOpenShift = !isDeclarative && !record.checkOutAt;
+                      const isSelfHalfDay = isSelfHalfDayFor(record, employee?.isOffice ?? false);
                       const isUnpaidLeave =
                         record.status === "leave" && isLeaveUnpaidFor(record.userId, record.date, employee?.isOffice ?? false);
                       const isDeclaredHoliday =
@@ -1021,8 +1043,15 @@ export function AdminAttendanceTab({
                                 {record.status === "leave" && isUnpaidLeave ? "Absent" : STATUS_LABEL[record.status]}
                               </Badge>
                             )
-                          ) : isOpenShift ? (
-                            <Badge variant="warning">Open Shift</Badge>
+                          ) : isSelfHalfDay || isOpenShift ? (
+                            <>
+                              {isSelfHalfDay && (
+                                <Badge variant="warning" className="border-amber-400 bg-amber-500/15 text-amber-800 dark:text-amber-400 font-semibold" title={record.note || undefined}>
+                                  Half-Day (Self)
+                                </Badge>
+                              )}
+                              {isOpenShift && <Badge variant="warning" className={isSelfHalfDay ? "ml-1" : undefined}>Open Shift</Badge>}
+                            </>
                           ) : record.source === "admin" ? (
                             <Badge variant="outline">Manual</Badge>
                           ) : (

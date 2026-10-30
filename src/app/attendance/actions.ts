@@ -6,6 +6,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { logActivity } from "@/lib/activity/log";
 import { dispatchNotification } from "@/lib/notifications/dispatch";
+import { earlyCheckoutExemptFor } from "@/lib/data/attendance";
 import { cancelSpotChecks, scheduleSpotChecks, scheduleSpotChecksFrom } from "@/lib/attendance/spot-check-store";
 import { currentSiteFor, currentSitesFor, workFromOfficeUserIds } from "@/lib/attendance/site-visit-store";
 import {
@@ -24,9 +25,12 @@ import {
   formatDuration,
   formatTime,
   haversineMeters,
+  isEarlyCheckout,
   isLateCheckIn,
   LATE_ARRIVAL_CUTOFF_TIME,
+  timeInOrgTimezone,
   LATE_ARRIVALS_ALLOWED_PER_MONTH,
+  MAX_EARLY_REASON,
   minutesBetween,
   orgThisMonth,
   orgToday,
@@ -49,6 +53,14 @@ export interface ActionResult {
    * resubmits. Value = distance from the site centre in meters.
    */
   outsideDistanceM?: number;
+  /**
+   * Self check-out only (site + office): set (with `error`) when checking out
+   * before SHIFT_END_TIME (6:00 PM IST) without `earlyReason` — the client
+   * asks for one and resubmits. May be set together with `outsideDistanceM`.
+   */
+  earlyCheckoutRequired?: boolean;
+  /** Self check-out succeeded early → the day was marked Half-Day. */
+  markedHalfDay?: boolean;
 }
 
 export interface CheckInInput {
@@ -68,6 +80,8 @@ export interface CheckOutInput {
   selfieDataUrl: string;
   /** Required when checking out outside the project geofence. */
   outsideReason?: string;
+  /** Required when checking out before 6:00 PM IST (the day becomes Half-Day). */
+  earlyReason?: string;
 }
 
 export interface OfficePunchInput {
@@ -79,6 +93,50 @@ export interface OfficePunchInput {
    * the office fence — they give a reason instead (e.g. "Client meeting").
    */
   outsideReason?: string;
+  /** Punch-out only: required before 6:00 PM IST (the day becomes Half-Day). */
+  earlyReason?: string;
+}
+
+/**
+ * Early check-out rule (self check-out only — not admin edits, not
+ * closePreviousShiftAction): before SHIFT_END_TIME IST a reason is required
+ * and the day becomes a single Half-Day (an existing half_day stays one).
+ */
+interface EarlyCheckout {
+  early: boolean;
+  reason: string;
+  /** Early and no reason given → don't check out; ask the client for one. */
+  missingReason: boolean;
+}
+
+/**
+ * `exempt` = today is the member's weekly off or a declared holiday for them
+ * (earlyCheckoutExemptFor) — the rule is skipped entirely: no reason, no
+ * Half-Day, no note.
+ */
+function evaluateEarlyCheckout(nowIso: string, earlyReason: string | undefined, exempt: boolean): EarlyCheckout {
+  const early = !exempt && isEarlyCheckout(nowIso);
+  const reason = (earlyReason ?? "").trim().slice(0, MAX_EARLY_REASON);
+  return { early, reason, missingReason: early && !reason };
+}
+
+const EARLY_CHECKOUT_REQUIRED_MSG =
+  "You're checking out before 6:00 PM. This day will be marked Half-Day — please give a reason.";
+
+function earlyCheckoutNote(nowIso: string, reason: string): string {
+  return `Early check-out at ${formatTime(nowIso)} (before 6:00 PM) — Half-Day: ${reason}`;
+}
+
+async function notifyEarlyCheckout(ctx: AuthContext & { orgId: string }, nowIso: string, reason: string, href: string) {
+  await dispatchNotification({
+    orgId: ctx.orgId,
+    roles: ["super_admin", "hr"],
+    excludeUserId: ctx.userId,
+    kind: "delay",
+    title: `${ctx.name} checked out early`,
+    body: `${formatTime(nowIso)} — Half-Day — ${reason}`,
+    href,
+  });
 }
 
 function decodeDataUrl(dataUrl: string): { buffer: Buffer; contentType: string } | null {
@@ -577,7 +635,7 @@ export async function checkOutAction(input: CheckOutInput): Promise<ActionResult
   const date = orgToday();
   const { data: row } = await supabase
     .from("employee_attendance")
-    .select("id, project_id, check_in_at, check_out_at, note")
+    .select("id, project_id, check_in_at, check_out_at, note, status")
     .eq("user_id", ctx.userId)
     .eq("date", date)
     .maybeSingle();
@@ -614,20 +672,30 @@ export async function checkOutAction(input: CheckOutInput): Promise<ActionResult
     fence = await orgOfficeFence(supabase, ctx.orgId);
   }
   const currentSite = { projectId: currentProjectId };
+  // One timestamp for the early-check-out decision and the saved check-out.
+  const nowIso = new Date().toISOString();
+  const earlyOut = evaluateEarlyCheckout(
+    nowIso,
+    input.earlyReason,
+    isEarlyCheckout(nowIso) && (await earlyCheckoutExemptFor(supabase, ctx.userId, ctx.orgId, date))
+  );
   outsideM = outsideSiteDistance(fence, input.lat, input.lng, input.accuracy);
   if (outsideM != null && !outsideReason) {
     return {
       error: `You are ~${formatMeters(outsideM)} from ${siteWord(currentSite)}. Choose a reason to check out from here.`,
       outsideDistanceM: outsideM,
+      ...(earlyOut.missingReason ? { earlyCheckoutRequired: true } : {}),
     };
   }
+  if (earlyOut.missingReason) return { error: EARLY_CHECKOUT_REQUIRED_MSG, earlyCheckoutRequired: true };
   const outsideNote = outsideM != null ? `Checked out ${outsideLabel(currentSite, outsideM)}: ${outsideReason}` : null;
+  const earlyNote = earlyOut.early ? earlyCheckoutNote(nowIso, earlyOut.reason) : null;
+  const newNotes = [outsideNote, earlyNote].filter(Boolean);
 
   // Deterministic path → upload first; the row is untouched on failure.
   const selfiePath = await uploadSelfie(ctx.orgId, ctx.userId, date, "out", input.selfieDataUrl);
   if (!selfiePath) return { error: "Selfie upload failed — please try again." };
 
-  const nowIso = new Date().toISOString();
   const totalMinutes = minutesBetween(row.check_in_at as string, nowIso);
   const { error } = await supabase
     .from("employee_attendance")
@@ -639,7 +707,8 @@ export async function checkOutAction(input: CheckOutInput): Promise<ActionResult
       check_out_selfie_path: selfiePath,
       total_minutes: totalMinutes,
       overtime_minutes: overtimeOf(totalMinutes),
-      ...(outsideNote ? { note: [row.note as string | null, outsideNote].filter(Boolean).join(" · ") } : {}),
+      ...(earlyOut.early && row.status !== "half_day" ? { status: "half_day" } : {}),
+      ...(newNotes.length ? { note: [row.note as string | null, ...newNotes].filter(Boolean).join(" · ") } : {}),
     })
     .eq("id", row.id);
   if (error) return { error: error.message };
@@ -651,9 +720,21 @@ export async function checkOutAction(input: CheckOutInput): Promise<ActionResult
     action: "updated",
     entityType: "attendance",
     entityId: row.id as string,
-    summary: `${ctx.name} checked out — ${h}h ${m}m worked`,
-    meta: { lat: input.lat, lng: input.lng, totalMinutes, outsideM, outsideReason: outsideReason || null },
+    summary: earlyOut.early
+      ? `${ctx.name} checked out early (Half-Day) — ${h}h ${m}m worked — ${earlyOut.reason}`
+      : `${ctx.name} checked out — ${h}h ${m}m worked`,
+    meta: {
+      lat: input.lat,
+      lng: input.lng,
+      totalMinutes,
+      outsideM,
+      outsideReason: outsideReason || null,
+      earlyCheckout: earlyOut.early,
+      earlyReason: earlyOut.early ? earlyOut.reason : null,
+    },
   });
+
+  if (earlyOut.early) await notifyEarlyCheckout({ ...ctx, orgId: ctx.orgId }, nowIso, earlyOut.reason, "/payroll");
 
   if (outsideM != null) {
     await dispatchNotification({
@@ -677,7 +758,7 @@ export async function checkOutAction(input: CheckOutInput): Promise<ActionResult
     href: "/payroll",
   });
 
-  return { id: row.id as string };
+  return { id: row.id as string, ...(earlyOut.early ? { markedHalfDay: true } : {}) };
 }
 
 export interface SwitchSiteInput {
@@ -1239,19 +1320,33 @@ export async function officeCheckOutAction(input: OfficePunchInput): Promise<Act
   const date = orgToday();
   const { data: row } = await supabase
     .from("employee_attendance")
-    .select("id, check_in_at, check_out_at, note")
+    .select("id, check_in_at, check_out_at, note, status")
     .eq("user_id", ctx.userId)
     .eq("date", date)
     .maybeSingle();
   if (!row) return { error: "Punch in first." };
   if (row.check_out_at) return { error: "Already punched out today." };
 
+  // One timestamp for the early-check-out decision and the saved punch-out.
+  const nowIso = new Date().toISOString();
+  const earlyOut = evaluateEarlyCheckout(
+    nowIso,
+    input.earlyReason,
+    isEarlyCheckout(nowIso) && (await earlyCheckoutExemptFor(supabase, ctx.userId, ctx.orgId, date))
+  );
   const away = await officePunchFence(supabase, { ...ctx, orgId: ctx.orgId }, input, "out");
-  if (away.result) return away.result;
+  if (away.result) {
+    // Away-reason prompt: flag a missing early reason too, so both are collected at once.
+    return away.result.outsideDistanceM != null && earlyOut.missingReason
+      ? { ...away.result, earlyCheckoutRequired: true }
+      : away.result;
+  }
+  if (earlyOut.missingReason) return { error: EARLY_CHECKOUT_REQUIRED_MSG, earlyCheckoutRequired: true };
   const { outsideM, outsideReason } = away;
   const outsideNote = outsideM != null ? awayFromOfficeNote("out", outsideM, outsideReason) : null;
+  const earlyNote = earlyOut.early ? earlyCheckoutNote(nowIso, earlyOut.reason) : null;
+  const newNotes = [outsideNote, earlyNote].filter(Boolean);
 
-  const nowIso = new Date().toISOString();
   const totalMinutes = minutesBetween(row.check_in_at as string, nowIso);
   const { error } = await supabase
     .from("employee_attendance")
@@ -1262,7 +1357,8 @@ export async function officeCheckOutAction(input: OfficePunchInput): Promise<Act
       check_out_accuracy: input.accuracy,
       total_minutes: totalMinutes,
       overtime_minutes: overtimeOf(totalMinutes),
-      ...(outsideNote ? { note: [row.note as string | null, outsideNote].filter(Boolean).join(" · ") } : {}),
+      ...(earlyOut.early && row.status !== "half_day" ? { status: "half_day" } : {}),
+      ...(newNotes.length ? { note: [row.note as string | null, ...newNotes].filter(Boolean).join(" · ") } : {}),
     })
     .eq("id", row.id);
   if (error) return { error: error.message };
@@ -1273,9 +1369,22 @@ export async function officeCheckOutAction(input: OfficePunchInput): Promise<Act
     action: "updated",
     entityType: "attendance",
     entityId: row.id as string,
-    summary: `${ctx.name} punched out (office) — ${h}h ${m}m worked`,
-    meta: { office: true, lat: input.lat, lng: input.lng, totalMinutes, outsideM, outsideReason: outsideReason || null },
+    summary: earlyOut.early
+      ? `${ctx.name} punched out early (office, Half-Day) — ${h}h ${m}m worked — ${earlyOut.reason}`
+      : `${ctx.name} punched out (office) — ${h}h ${m}m worked`,
+    meta: {
+      office: true,
+      lat: input.lat,
+      lng: input.lng,
+      totalMinutes,
+      outsideM,
+      outsideReason: outsideReason || null,
+      earlyCheckout: earlyOut.early,
+      earlyReason: earlyOut.early ? earlyOut.reason : null,
+    },
   });
+
+  if (earlyOut.early) await notifyEarlyCheckout({ ...ctx, orgId: ctx.orgId }, nowIso, earlyOut.reason, "/attendance");
 
   if (outsideM != null) {
     await dispatchNotification({
@@ -1299,7 +1408,7 @@ export async function officeCheckOutAction(input: OfficePunchInput): Promise<Act
     href: "/payroll",
   });
 
-  return { id: row.id as string };
+  return { id: row.id as string, ...(earlyOut.early ? { markedHalfDay: true } : {}) };
 }
 
 /**
@@ -1343,7 +1452,11 @@ export interface AdminMarkAttendanceInput {
   userId: string;
   date: string; // "YYYY-MM-DD"
   projectId: string | null;
-  /** "present" requires checkInTime; half_day/leave/absent ignore the time fields entirely. */
+  /**
+   * "present" requires checkInTime; half_day/leave/absent ignore the time
+   * fields entirely. On an existing SELF record, present/half_day with the
+   * punch unchanged keeps the real punch (see adminMarkAttendanceAction).
+   */
   status: "present" | "half_day" | "leave" | "absent";
   checkInTime: string; // "HH:MM" — required only when status === "present"
   checkOutTime: string; // "HH:MM" or "" (leave open) — only used when status === "present"
@@ -1351,6 +1464,15 @@ export interface AdminMarkAttendanceInput {
 }
 
 const HHMM = /^\d{2}:\d{2}$/;
+
+async function projectNameOf(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  id: string | null
+): Promise<string | null> {
+  if (!id) return null;
+  const { data } = await supabase.from("projects").select("name").eq("id", id).maybeSingle();
+  return (data?.name as string | undefined) ?? null;
+}
 const YMD = /^\d{4}-\d{2}-\d{2}$/;
 
 /** Human-readable "field changed X → Y" lines for the audit trail. */
@@ -1387,6 +1509,13 @@ function statusLabel(status: string): string {
  * can never silently masquerade as GPS+selfie verified. Every call logs a
  * before/after diff to the activity log (surfaced as this record's Edit
  * History) in addition to the existing plain summary.
+ *
+ * Editing an existing SELF record (a real GPS/selfie punch) to Present or
+ * Half-Day without changing its times/project (always so for Half-Day) only
+ * changes `status` and appends the admin's note: punch times, project,
+ * minutes, GPS and selfies are kept and `source` stays "self"; who edited it
+ * is in the Edit History. Only an explicit Leave/Absent (or a Present time /
+ * project correction, as before) replaces the record with a manual one.
  */
 export async function adminMarkAttendanceAction(input: AdminMarkAttendanceInput): Promise<ActionResult> {
   if (!isSupabaseConfigured()) return { id: "mock" };
@@ -1430,17 +1559,51 @@ export async function adminMarkAttendanceAction(input: AdminMarkAttendanceInput)
   const supabase = await createClient();
   const { data: existing } = await supabase
     .from("employee_attendance")
-    .select("id, check_in_at, check_out_at, status, project_id")
+    .select("id, check_in_at, check_out_at, status, project_id, source, note")
     .eq("user_id", input.userId)
     .eq("date", input.date)
     .maybeSingle();
   if (!existing && targetIsExternal) return { error: ATTENDANCE_EMPLOYEES_ONLY };
 
-  const projectName = async (id: string | null) => {
-    if (!id) return null;
-    const { data } = await supabase.from("projects").select("name").eq("id", id).maybeSingle();
-    return (data?.name as string | undefined) ?? null;
-  };
+  // Self record, status change (present ⇄ half_day) and/or a note: keep the punch.
+  if (existing && existing.source === "self" && (input.status === "present" || input.status === "half_day")) {
+    const existingOut = (existing.check_out_at as string | null) ?? null;
+    const punchUnchanged =
+      input.status === "half_day" ||
+      (input.checkInTime === timeInOrgTimezone(existing.check_in_at as string) &&
+        input.checkOutTime === (existingOut ? timeInOrgTimezone(existingOut) : "") &&
+        (input.projectId || null) === ((existing.project_id as string | null) || null));
+    if (punchUnchanged) {
+      const prevNote = (existing.note as string | null) ?? "";
+      const addNote = `Admin (${ctx.name}): ${note}`;
+      const { error: upErr } = await supabase
+        .from("employee_attendance")
+        .update({
+          status: input.status,
+          note: [prevNote, addNote].filter(Boolean).join(" · "),
+        })
+        .eq("id", existing.id);
+      if (upErr) return { error: upErr.message };
+      const keptProject = await projectNameOf(supabase, existing.project_id as string | null);
+      const punch = {
+        checkInAt: (existing.check_in_at as string) || null,
+        checkOutAt: existingOut,
+        projectName: keptProject,
+      };
+      const before = { ...punch, status: (existing.status as string) || "present" };
+      const after = { ...punch, status: input.status };
+      await logActivity({
+        action: "updated",
+        entityType: "attendance",
+        entityId: existing.id as string,
+        summary: `${ctx.name}: ${diffSummary(before, after)} (self punch kept) — ${note}`,
+        meta: { userId: input.userId, date: input.date, before, after, reason: note, keptSelfPunch: true },
+      });
+      return { id: existing.id as string };
+    }
+  }
+
+  const projectName = (id: string | null) => projectNameOf(supabase, id);
   const [beforeProjectName, afterProjectName] = existing
     ? await Promise.all([projectName(existing.project_id as string | null), projectName(input.projectId)])
     : [null, await projectName(input.projectId)];
@@ -1457,7 +1620,12 @@ export async function adminMarkAttendanceAction(input: AdminMarkAttendanceInput)
     status: input.status,
     source: "admin",
     marked_by: ctx.userId,
-    note,
+    // A Present time/project correction of a self record keeps its notes
+    // (the dialog starts the reason empty for self records).
+    note:
+      existing?.source === "self" && existing.note && !isDeclarative
+        ? `${existing.note as string} · Admin (${ctx.name}): ${note}`
+        : note,
   };
 
   const result = existing
