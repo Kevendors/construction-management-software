@@ -385,6 +385,10 @@ export function weekOffDatesForMonth(
   for (const d of days) {
     if (isWeeklyOff(d, rule)) {
       out.add(d);
+      // A fixed/alternate weekly off actually taken (not worked) earlier this
+      // month counts toward the same monthly limit, so switching to Flexible
+      // mid-month can't grant a fresh full allowance on top of it.
+      if (!recorded.has(d) && (!startDate || d >= startDate)) allowance -= 1;
       continue;
     }
     if (allowance <= 0 || weekOffPatternOn(rule, d).kind !== "flexible") continue;
