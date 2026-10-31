@@ -377,7 +377,10 @@ export function weekOffDatesForMonth(
 ): Set<string> {
   const days = daysOfMonth(month);
   const recorded = new Set(records.filter((r) => r.date.startsWith(month)).map((r) => r.date));
-  let allowance = days.filter((d) => dowOf(d) === 0).length;
+  // Flexible allowance = Sundays in the month — only those on/after the
+  // member's start date, so a mid-month joiner gets a pro-rated allowance
+  // (joined 28 Oct → no Sundays left → no flexible offs that month).
+  let allowance = days.filter((d) => dowOf(d) === 0 && (!startDate || d >= startDate)).length;
   const out = new Set<string>();
   for (const d of days) {
     if (isWeeklyOff(d, rule)) {
