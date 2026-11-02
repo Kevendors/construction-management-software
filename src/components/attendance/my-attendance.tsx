@@ -17,6 +17,7 @@ import {
 import { currentProjectIdFrom, isSiteFlowShift, OFFICE_SITE, OFFICE_SITE_NAME } from "@/lib/attendance/site-visits";
 import type { EmployeeAttendance } from "@/lib/types";
 import { CheckInCard } from "./check-in-card";
+import { ClientVisitCard } from "./client-visit-card";
 import { CheckInFlow, type FlowMode, type FlowSuccess } from "./check-in-flow";
 import { OfficeCheckInFlow } from "./office-check-in-flow";
 import { HistoryCalendar } from "./history-calendar";
@@ -184,6 +185,10 @@ export function MyAttendance({ data }: { data: MyAttendanceData }) {
           canSwitchSite={canSwitchSite}
           onStart={setFlowMode}
         />
+
+        {data.clientVisitsAllowed && (
+          <ClientVisitCard visits={data.todayClientVisits} shiftOpen={isOpenSelfShift && !usesSiteFlow} />
+        )}
 
         <LiveTrackingStatus status={tracking.status} lastError={tracking.lastError} />
 

@@ -7,6 +7,7 @@ import type {
   Challan,
   ChallanItem,
   Client,
+  ClientVisit,
   Drawing,
   DrawingVersion,
   Equipment,
@@ -774,4 +775,42 @@ export const mapSpotCheck = (r: SpotCheckRow): SpotCheck => ({
   distanceM: r.distance_m ?? null,
   status: r.status as SpotCheckStatus,
   excuseNote: r.excuse_note ?? "",
+});
+
+export interface ClientVisitRow {
+  id: string;
+  attendance_id: string;
+  user_id: string;
+  date: string;
+  client_name: string;
+  purpose: string;
+  started_at: string;
+  start_lat: number;
+  start_lng: number;
+  start_distance_m: number | null;
+  start_in_office: boolean | null;
+  ended_at: string | null;
+  end_lat: number | null;
+  end_lng: number | null;
+  end_distance_m: number | null;
+  auto_closed: boolean | null;
+}
+
+export const mapClientVisit = (r: ClientVisitRow): ClientVisit => ({
+  id: r.id,
+  attendanceId: r.attendance_id,
+  userId: r.user_id,
+  date: r.date,
+  clientName: r.client_name,
+  purpose: r.purpose,
+  startedAt: r.started_at,
+  startLat: r.start_lat,
+  startLng: r.start_lng,
+  startDistanceM: r.start_distance_m ?? null,
+  startInOffice: r.start_in_office === true,
+  endedAt: r.ended_at ?? "",
+  endLat: r.end_lat ?? null,
+  endLng: r.end_lng ?? null,
+  endDistanceM: r.end_distance_m ?? null,
+  autoClosed: r.auto_closed === true,
 });

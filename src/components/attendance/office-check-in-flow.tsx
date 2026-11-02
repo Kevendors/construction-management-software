@@ -5,6 +5,7 @@ import { AlertTriangle, CheckCircle2, LocateFixed } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { haversineMeters, formatTime, isEarlyCheckout } from "@/lib/attendance/compute";
+import { formatMeters, OTHER_PURPOSE, VISIT_PURPOSES } from "@/lib/attendance/client-visits";
 import { officeCheckInAction, officeCheckOutAction } from "@/app/attendance/actions";
 import { useGeolocation, type GeoResult } from "./use-geolocation";
 import type { FlowSuccess } from "./check-in-flow";
@@ -312,9 +313,5 @@ export function OfficeCheckInFlow({
   );
 }
 
-const AWAY_REASONS = ["Client meeting", "Client site visit", "Vendor / supplier meeting"];
-const OTHER_REASON = "Other";
-
-function formatMeters(m: number): string {
-  return m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${m} m`;
-}
+const AWAY_REASONS = VISIT_PURPOSES;
+const OTHER_REASON = OTHER_PURPOSE;

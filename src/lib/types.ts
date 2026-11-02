@@ -622,6 +622,29 @@ export interface SpotCheck {
   excuseNote: string;
 }
 
+/** One client visit logged during an Office shift (migration 0052). */
+export interface ClientVisit {
+  id: string;
+  attendanceId: string;
+  userId: string;
+  date: string;
+  clientName: string;
+  purpose: string;
+  startedAt: string;
+  startLat: number;
+  startLng: number;
+  /** Metres from the office; null = no office location set. */
+  startDistanceM: number | null;
+  startInOffice: boolean;
+  /** "" while the visit is open. */
+  endedAt: string;
+  endLat: number | null;
+  endLng: number | null;
+  endDistanceM: number | null;
+  /** Closed by punch-out, not by the employee — the time spent isn't known. */
+  autoClosed: boolean;
+}
+
 export interface Advance {
   id: string;
   partyType: AdvanceParty;

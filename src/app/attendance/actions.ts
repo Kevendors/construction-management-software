@@ -8,6 +8,7 @@ import { logActivity } from "@/lib/activity/log";
 import { dispatchNotification } from "@/lib/notifications/dispatch";
 import { earlyCheckoutExemptFor } from "@/lib/data/attendance";
 import { cancelSpotChecks, scheduleSpotChecks, scheduleSpotChecksFrom } from "@/lib/attendance/spot-check-store";
+import { closeOpenClientVisit } from "@/lib/attendance/client-visit-store";
 import { currentSiteFor, currentSitesFor, workFromOfficeUserIds } from "@/lib/attendance/site-visit-store";
 import {
   currentProjectIdFrom,
@@ -1362,6 +1363,13 @@ export async function officeCheckOutAction(input: OfficePunchInput): Promise<Act
     })
     .eq("id", row.id);
   if (error) return { error: error.message };
+
+  await closeOpenClientVisit(row.id as string, nowIso, {
+    lat: input.lat,
+    lng: input.lng,
+    accuracy: input.accuracy,
+    distanceM: outsideM,
+  });
 
   const h = Math.floor(totalMinutes / 60);
   const m = totalMinutes % 60;

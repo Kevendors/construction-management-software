@@ -38,6 +38,7 @@ import type { EmployeeAttendance, Project } from "@/lib/types";
 import { paidDaysFromRecords } from "@/lib/payroll/paid-days";
 import { getSpotCheckSummaryAction } from "@/app/attendance/spot-check-actions";
 import { getSiteVisitCountsAction } from "@/app/attendance/actions";
+import { EmployeeClientVisits } from "./client-visit-list";
 import { deleteWeekOffSwapAction } from "@/app/attendance/week-off-actions";
 import { useRole } from "@/components/layout/role-provider";
 import { RecordDetailDialog } from "./record-detail-dialog";
@@ -933,6 +934,8 @@ export function AdminAttendanceTab({
                   </p>
                 </div>
               </div>
+
+              <EmployeeClientVisits userId={employee.userId} from={fromDate} to={toDate} />
 
               {/* Always listed when present (even if the swap UI is off for this
                   category), so existing swaps can still be seen and deleted. */}

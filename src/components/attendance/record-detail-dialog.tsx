@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { AlertTriangle, ArrowRightLeft, ExternalLink, History, MapPin } from "lucide-react";
+import { AlertTriangle, ArrowRightLeft, Briefcase, ExternalLink, History, MapPin } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Dialog } from "@/components/ui/dialog";
 import {
@@ -18,11 +18,13 @@ import {
   type AttendanceEditHistoryEntry,
   type SiteVisitDetail,
 } from "@/app/attendance/actions";
+import { getClientVisitsForDayAction } from "@/app/attendance/client-visit-actions";
 import { getPunchFenceAction, reverseGeocodeAction, type PunchFence } from "@/app/attendance/geocode-actions";
+import { ClientVisitList } from "./client-visit-list";
 import { SpotChecksSection } from "./spot-checks-section";
 import { LocationMiniMap } from "./location-mini-map";
 import { MAX_SITE_VISITS_PER_DAY } from "@/lib/attendance/site-visits";
-import type { EmployeeAttendance } from "@/lib/types";
+import type { ClientVisit, EmployeeAttendance } from "@/lib/types";
 
 function mapsLink(lat: number | null, lng: number | null): string | null {
   if (lat == null || lng == null) return null;
@@ -80,6 +82,8 @@ export function RecordDetailDialog({
   // Switch Site (0050) visits, oldest first — keyed by record like addresses.
   const [visits, setVisits] = React.useState<{ forId: string; list: SiteVisitDetail[] } | null>(null);
   const [fence, setFence] = React.useState<{ forId: string; fence: PunchFence | null } | null>(null);
+  // Client visits (0052) — keyed by record like addresses.
+  const [clientVisits, setClientVisits] = React.useState<{ forId: string; list: ClientVisit[] } | null>(null);
 
   React.useEffect(() => {
     if (!record) return;
@@ -90,6 +94,9 @@ export function RecordDetailDialog({
     // Any real punch — incl. a self Half-Day (late arrival / early check-out).
     if (!isDeclarativeRecord(record)) {
       getPunchFenceAction(record.projectId || null).then((f) => setFence({ forId: record.id, fence: f }));
+      getClientVisitsForDayAction(record.id)
+        .catch((): ClientVisit[] => [])
+        .then((list) => setClientVisits({ forId: record.id, list }));
       const inPt = record.checkInLat != null && record.checkInLng != null ? { lat: record.checkInLat, lng: record.checkInLng } : null;
       const outPt = record.checkOutLat != null && record.checkOutLng != null ? { lat: record.checkOutLat, lng: record.checkOutLng } : null;
       const punchPoints = [inPt, outPt].filter((p): p is { lat: number; lng: number } => p !== null);
@@ -135,6 +142,7 @@ export function RecordDetailDialog({
   const punchFence = fence?.forId === record.id ? fence.fence : null;
   const visitList = visits?.forId === record.id ? visits.list : [];
   const visitAddresses = addresses?.forId === record.id ? addresses.visits : null;
+  const clientVisitList = clientVisits?.forId === record.id ? clientVisits.list : [];
   // After a Switch Site, check-out was judged against the current site at
   // check-out: the LAST visit to a project or the Office (a null-project
   // visit by anyone else was a since-deleted project — skipped, as on the server).
@@ -393,6 +401,15 @@ export function RecordDetailDialog({
                 );
               })}
             </ol>
+          </div>
+        )}
+
+        {!isDeclarative && clientVisitList.length > 0 && (
+          <div className="space-y-2">
+            <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+              <Briefcase className="h-3.5 w-3.5" /> Client visits
+            </p>
+            <ClientVisitList visits={clientVisitList} />
           </div>
         )}
 

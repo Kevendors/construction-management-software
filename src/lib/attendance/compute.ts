@@ -1,7 +1,7 @@
 // Client-safe pure helpers + board types for employee attendance (no mock
 // imports, no server-only code) — same role as src/lib/payroll/compute.ts.
 
-import type { EmployeeAttendance, Project, Role, SpotCheck } from "@/lib/types";
+import type { ClientVisit, EmployeeAttendance, Project, Role, SpotCheck } from "@/lib/types";
 
 export interface MyAttendanceData {
   /** Today's record (checked in, maybe not yet out) — null if none. */
@@ -49,6 +49,8 @@ export interface MyAttendanceData {
    * the migration is applied.
    */
   clientVisitsAllowed: boolean;
+  /** Start / End Visit (0052): today's client visits, oldest first. Empty until the migration is applied. */
+  todayClientVisits: ClientVisit[];
   /** Org's shared office location for the office punch flow (all null = fence disabled). */
   officeGeofence: { lat: number | null; lng: number | null; radiusM: number | null };
   /** Declared company holidays — excluded from the office 1-paid-Leave-per-month count. */

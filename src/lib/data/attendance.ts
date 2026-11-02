@@ -21,7 +21,7 @@ import {
   type WeekOffRule,
   type WeekOffSwap,
 } from "@/lib/attendance/compute";
-import { mapProject, mapSpotCheck, type ProjectRow, type SpotCheckRow } from "./mappers";
+import { mapClientVisit, mapProject, mapSpotCheck, type ClientVisitRow, type ProjectRow, type SpotCheckRow } from "./mappers";
 import { OFFICE_SITE_NAME } from "@/lib/attendance/site-visits";
 
 // Re-export the client-safe board types for existing import sites.
@@ -340,6 +340,7 @@ export async function getMyAttendancePage(month?: string): Promise<MyAttendanceD
       // Sample data demos the "Office as a site" option for the Site user.
       canWorkFromOffice: mockIsSite,
       clientVisitsAllowed: false,
+      todayClientVisits: [],
       officeGeofence: { lat: null, lng: null, radiusM: null },
       holidays: [],
       weekOff: SUNDAY_OFF,
@@ -365,6 +366,7 @@ export async function getMyAttendancePage(month?: string): Promise<MyAttendanceD
       isOffice: false,
       canWorkFromOffice: false,
       clientVisitsAllowed: false,
+      todayClientVisits: [],
       officeGeofence: { lat: null, lng: null, radiusM: null },
       holidays: [],
       weekOff: SUNDAY_OFF,
@@ -478,6 +480,14 @@ export async function getMyAttendancePage(month?: string): Promise<MyAttendanceD
     assignedProjects = ((openRows ?? []) as ProjectRow[]).map((r) => ({ ...mapProject(r), value: 0 }));
   }
   const { todayVisits, todayProjectName } = await myTodaySites(supabase, ctx.orgId, todayRow, !isOffice && canWorkFromOfficeRaw);
+  // Errors (incl. 0052 not applied yet) just mean "no visits".
+  const { data: clientVisitRows } = todayRow
+    ? await supabase
+        .from("attendance_client_visits")
+        .select("*")
+        .eq("attendance_id", todayRow.id)
+        .order("started_at", { ascending: true })
+    : { data: [] };
   const officeRow = orgRes?.data as { office_lat: number | null; office_lng: number | null; office_radius_m: number | null } | null;
   const holidays = (holidaysRes?.data ?? []).map((h) => ({
     date: (h as { date: string }).date,
@@ -500,6 +510,7 @@ export async function getMyAttendancePage(month?: string): Promise<MyAttendanceD
     canWorkFromOffice: !isOffice && canWorkFromOfficeRaw,
     // Only Office members punch away from the office (client visits).
     clientVisitsAllowed: isOffice && clientVisitsAllowedRaw,
+    todayClientVisits: ((clientVisitRows ?? []) as ClientVisitRow[]).map(mapClientVisit),
     officeGeofence: {
       lat: officeRow?.office_lat ?? null,
       lng: officeRow?.office_lng ?? null,
