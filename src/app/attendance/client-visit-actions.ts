@@ -3,15 +3,17 @@
 import { logActivity } from "@/lib/activity/log";
 import { getAuthContext } from "@/lib/auth/context";
 import { ATTENDANCE_EMPLOYEES_ONLY, isExternalRole } from "@/lib/auth/roles";
-import { haversineMeters, orgToday } from "@/lib/attendance/compute";
+import { formatDuration, formatTime, haversineMeters, minutesBetween, orgToday } from "@/lib/attendance/compute";
 import {
   CLIENT_VISITS_PENDING_MSG,
+  formatMeters,
   MAX_CLIENT_NAME,
   MAX_CLIENT_VISITS_PER_DAY,
   MAX_VISIT_PURPOSE,
 } from "@/lib/attendance/client-visits";
 import { isMissingTableError } from "@/lib/attendance/site-visits";
 import { mapClientVisit, type ClientVisitRow } from "@/lib/data/mappers";
+import { dispatchNotification } from "@/lib/notifications/dispatch";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createClient } from "@/lib/supabase/server";
@@ -136,6 +138,17 @@ export async function startClientVisitAction(
     meta: { clientVisitId: visit.id, lat: input.lat, lng: input.lng, distanceM, inOffice },
   });
 
+  const where = inOffice ? "started inside the office" : distanceM != null ? `${formatMeters(distanceM)} from office` : null;
+  await dispatchNotification({
+    orgId: ctx.orgId,
+    roles: ["super_admin", "hr"],
+    excludeUserId: ctx.userId,
+    kind: "info",
+    title: `${ctx.name} started a client visit`,
+    body: [`${clientName} — ${purpose}`, where].filter(Boolean).join(" · "),
+    href: "/attendance",
+  });
+
   return { id: visit.id as string };
 }
 
@@ -150,10 +163,11 @@ export async function endClientVisitAction(input: VisitPoint & { visitId: string
 
   const supabase = await createClient();
   const { distanceM } = await fromOffice(supabase, ctx.orgId, input);
+  const endedAt = new Date().toISOString();
   const { data: visit, error } = await createAdminClient()
     .from(TABLE)
     .update({
-      ended_at: new Date().toISOString(),
+      ended_at: endedAt,
       end_lat: input.lat,
       end_lng: input.lng,
       end_accuracy: input.accuracy,
@@ -163,7 +177,7 @@ export async function endClientVisitAction(input: VisitPoint & { visitId: string
     .eq("user_id", ctx.userId)
     .eq("org_id", ctx.orgId)
     .is("ended_at", null)
-    .select("id, attendance_id, client_name")
+    .select("id, attendance_id, client_name, started_at")
     .maybeSingle();
   if (error) return { error: isMissingTableError(error) ? CLIENT_VISITS_PENDING_MSG : error.message };
   if (!visit) return { error: "This visit has already ended." };
@@ -174,6 +188,17 @@ export async function endClientVisitAction(input: VisitPoint & { visitId: string
     entityId: visit.attendance_id as string,
     summary: `${ctx.name} ended a client visit — ${visit.client_name as string}`,
     meta: { clientVisitId: visit.id, lat: input.lat, lng: input.lng, distanceM },
+  });
+
+  const startedAt = visit.started_at as string;
+  await dispatchNotification({
+    orgId: ctx.orgId,
+    roles: ["super_admin", "hr"],
+    excludeUserId: ctx.userId,
+    kind: "info",
+    title: `${ctx.name} ended a client visit`,
+    body: `${visit.client_name as string} — ${formatTime(startedAt)} to ${formatTime(endedAt)} (${formatDuration(minutesBetween(startedAt, endedAt))})`,
+    href: "/attendance",
   });
 
   return { id: visit.id as string };
