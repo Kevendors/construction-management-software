@@ -54,9 +54,14 @@ export function WeekOffSwapDialog({
   const [offDate, setOffDate] = React.useState("");
   const [note, setNote] = React.useState("");
   const [saving, setSaving] = React.useState(false);
-  // Flexible staff have no fixed off days to swap — say so up front.
-  const isFlexible = weekOffPatternOn(member.weekOff, orgToday()).kind === "flexible";
-  const [error, setError] = React.useState<string | null>(isFlexible ? FLEXIBLE_SWAP_ERROR : null);
+  // Flexible staff have no fixed off days to swap — judged on the chosen
+  // dates, not today: someone switched to Flexible can still swap days from
+  // before the switch (same per-date rule validateWeekOffSwap applies).
+  const isFlexible =
+    weekOffPatternOn(member.weekOff, workedDate || orgToday()).kind === "flexible" ||
+    Boolean(offDate && weekOffPatternOn(member.weekOff, offDate).kind === "flexible");
+  const [submitError, setError] = React.useState<string | null>(null);
+  const error = isFlexible ? FLEXIBLE_SWAP_ERROR : submitError;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
