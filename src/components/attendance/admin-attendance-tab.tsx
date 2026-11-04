@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeftRight, Building2, Download, Eye, Pencil, Plus, Search, Trash2, UserPlus } from "lucide-react";
+import { AlertCircle, ArrowLeftRight, Building2, Download, Eye, Pencil, Plus, Search, Trash2, UserPlus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -27,6 +27,7 @@ import {
   isBeforeJoining,
   isDeclarativeRecord,
   isHolidayFor,
+  isMissedCheckout,
   missedAbsentReason,
   orgThisMonth,
   orgToday,
@@ -256,6 +257,12 @@ export function AdminAttendanceTab({
     )
     .sort((a, b) => b.workedDate.localeCompare(a.workedDate));
 
+  // Missed check-outs from earlier dates, newest first — board.records has
+  // active employees' whole history; a disabled member's old rows are skipped.
+  const missedCheckouts = board.records
+    .filter((r) => isMissedCheckout(r, today) && board.members.some((m) => m.userId === r.userId))
+    .sort((a, b) => b.date.localeCompare(a.date));
+
   async function deleteSwap(id: string) {
     if (!window.confirm("Remove this weekly-off swap? The default weekly off applies again.")) return;
     setDeletingSwap(id);
@@ -354,6 +361,42 @@ export function AdminAttendanceTab({
 
   return (
     <div className="space-y-4">
+      {missedCheckouts.length > 0 && (
+        <Card className="border-amber-400/50 bg-amber-500/5">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+              Pending missed check-outs ({missedCheckouts.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <ul className="max-h-72 divide-y divide-border overflow-y-auto rounded-md border border-border bg-card">
+              {missedCheckouts.map((r) => (
+                <li key={r.id} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
+                  <div className="min-w-0">
+                    <p className="font-medium">
+                      {r.userName}
+                      {r.employeeId && <span className="font-normal text-muted-foreground"> · {r.employeeId}</span>}
+                    </p>
+                    <p className="text-xs tabular-nums text-muted-foreground">
+                      {shortDate(r.date)} · checked in {formatTime(r.checkInAt)}
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="shrink-0"
+                    onClick={() => setMarkContext({ userId: r.userId, date: r.date, existing: r })}
+                  >
+                    Close Shift
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
+
       <UnfencedSitesCard projects={projects} />
       <OfficeLocationCard />
       <HolidaysCard />

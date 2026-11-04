@@ -25,9 +25,12 @@ const thisMonth = () => new Date().toISOString().slice(0, 7);
 export function PayrollModule({
   board,
   attendanceBoard,
+  initialTab = "payroll",
 }: {
   board: PayrollBoard;
   attendanceBoard: AttendanceAdminBoard;
+  /** Opens on this tab, e.g. from an alert's /payroll?tab=attendance link. */
+  initialTab?: string;
 }) {
   const activeMonth = latestSlipMonth(board.slips) || thisMonth();
   const [month, setMonth] = React.useState(activeMonth);
@@ -53,7 +56,7 @@ export function PayrollModule({
         <StatCard label="Advances Outstanding" value={formatINR(advances, { compact: true })} icon={HandCoins} accent="destructive" />
       </div>
 
-      <Tabs defaultValue="payroll">
+      <Tabs defaultValue={initialTab}>
         <TabsList>
           <TabsTrigger value="payroll">Staff Payroll</TabsTrigger>
           <TabsTrigger value="attendance">Attendance</TabsTrigger>

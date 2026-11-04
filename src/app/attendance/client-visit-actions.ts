@@ -146,7 +146,7 @@ export async function startClientVisitAction(
     kind: "info",
     title: `${ctx.name} started a client visit`,
     body: [`${clientName} — ${purpose}`, where].filter(Boolean).join(" · "),
-    href: "/attendance",
+    href: "/payroll?tab=attendance",
   });
 
   return { id: visit.id as string };
@@ -198,7 +198,7 @@ export async function endClientVisitAction(input: VisitPoint & { visitId: string
     kind: "info",
     title: `${ctx.name} ended a client visit`,
     body: `${visit.client_name as string} — ${formatTime(startedAt)} to ${formatTime(endedAt)} (${formatDuration(minutesBetween(startedAt, endedAt))})`,
-    href: "/attendance",
+    href: "/payroll?tab=attendance",
   });
 
   return { id: visit.id as string };

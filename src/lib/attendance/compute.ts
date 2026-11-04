@@ -151,6 +151,14 @@ export function isDeclarativeRecord(r: Pick<EmployeeAttendance, "status" | "sour
   return r.status !== "present" && r.source !== "self";
 }
 
+/** A real punch from an earlier date with no check-out — pending Super Admin/HR correction. */
+export function isMissedCheckout(
+  r: Pick<EmployeeAttendance, "status" | "source" | "date" | "checkOutAt">,
+  today: string
+): boolean {
+  return r.date < today && !r.checkOutAt && !isDeclarativeRecord(r);
+}
+
 /** "HH:mm" in ORG_TIMEZONE (24-hour clock, zero-padded). */
 export function timeInOrgTimezone(iso: string): string {
   if (!iso) return "";
