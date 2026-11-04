@@ -23,7 +23,6 @@ import type { AuthContext } from "@/lib/auth/context";
 import type { Role } from "@/lib/types";
 import { ATTENDANCE_EMPLOYEES_ONLY, isExternalRole } from "@/lib/auth/roles";
 import {
-  formatDuration,
   formatTime,
   haversineMeters,
   isEarlyCheckout,
@@ -37,8 +36,6 @@ import {
   orgToday,
   ORG_UTC_OFFSET,
   overtimeOf,
-  SHIFT_END_TIME,
-  STANDARD_WORKDAY_MINUTES,
 } from "@/lib/attendance/compute";
 
 const BUCKET = "attendance-selfies";
@@ -99,9 +96,8 @@ export interface OfficePunchInput {
 }
 
 /**
- * Early check-out rule (self check-out only — not admin edits, not
- * closePreviousShiftAction): before SHIFT_END_TIME IST a reason is required
- * and the day becomes a single Half-Day (an existing half_day stays one).
+ * Early check-out rule (self check-out only — not admin edits): before
+ * SHIFT_END_TIME IST a reason is required and the day becomes a single Half-Day (an existing half_day stays one).
  */
 interface EarlyCheckout {
   early: boolean;
@@ -1699,89 +1695,6 @@ export async function getAttendanceEditHistoryAction(attendanceId: string): Prom
     summary: r.summary,
     createdAt: r.created_at,
   }));
-}
-
-export interface ClosePreviousShiftInput {
-  recordId: string;
-  checkOutTime?: string; // "HH:MM"
-  note?: string;
-}
-
-/**
- * Close an unclosed / forgotten shift from an earlier date.
- * Callable by the employee themselves or by super_admin/hr.
- */
-export async function closePreviousShiftAction(
-  input: ClosePreviousShiftInput
-): Promise<ActionResult> {
-  if (!isSupabaseConfigured()) return { id: input.recordId };
-
-  const ctx = await getAuthContext();
-  if (!ctx?.orgId || !ctx?.userId) return { error: "You must be signed in." };
-  if (isExternalRole(ctx.role)) return { error: ATTENDANCE_EMPLOYEES_ONLY };
-
-  const admin = createAdminClient();
-  const { data: record, error: fetchErr } = await admin
-    .from("employee_attendance")
-    .select("id, user_id, date, check_in_at, check_out_at, note")
-    .eq("id", input.recordId)
-    .maybeSingle();
-
-  if (fetchErr || !record) return { error: "Attendance record not found." };
-
-  const isOwner = record.user_id === ctx.userId;
-  const isAdmin = ctx.role === "super_admin" || ctx.role === "hr";
-  if (!isOwner && !isAdmin) {
-    return { error: "Not authorized to close this shift." };
-  }
-
-  if (record.check_out_at) {
-    return { error: "This shift is already closed." };
-  }
-
-  let checkOutIso: string;
-  let totalMinutes: number;
-
-  if (input.checkOutTime && /^\d{2}:\d{2}$/.test(input.checkOutTime)) {
-    checkOutIso = `${record.date}T${input.checkOutTime}:00${ORG_UTC_OFFSET}`;
-    totalMinutes = minutesBetween(record.check_in_at as string, checkOutIso);
-  } else {
-    // Default to standard 18:00 (6:00 PM) shift end
-    checkOutIso = `${record.date}T${SHIFT_END_TIME}:00${ORG_UTC_OFFSET}`;
-    const diff = minutesBetween(record.check_in_at as string, checkOutIso);
-    totalMinutes = diff > 0 ? diff : STANDARD_WORKDAY_MINUTES;
-  }
-
-  const updateNote = input.note?.trim()
-    ? input.note.trim()
-    : isOwner
-    ? "Shift closed retroactively"
-    : `Shift closed by ${ctx.name}`;
-
-  const existingNote = record.note as string | null;
-  const finalNote = existingNote ? `${existingNote} · ${updateNote}` : updateNote;
-
-  const { error: updateErr } = await admin
-    .from("employee_attendance")
-    .update({
-      check_out_at: checkOutIso,
-      total_minutes: totalMinutes,
-      overtime_minutes: overtimeOf(totalMinutes),
-      note: finalNote,
-    })
-    .eq("id", record.id);
-
-  if (updateErr) return { error: updateErr.message };
-
-  await logActivity({
-    action: "updated",
-    entityType: "attendance",
-    entityId: record.id,
-    summary: `${ctx.name} closed previous shift for ${record.date} (${formatDuration(totalMinutes)})`,
-    meta: { recordId: record.id, date: record.date, totalMinutes },
-  });
-
-  return { id: record.id };
 }
 
 // ----------------------------------------------------------------------------
