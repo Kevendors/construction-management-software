@@ -61,6 +61,9 @@ export interface ActionResult {
   markedHalfDay?: boolean;
 }
 
+// Punch writes use the service-role client: employees have no direct write access to
+// employee_attendance (0054), so times can only be the server's clock here, or set
+// by super_admin/hr through adminMarkAttendanceAction.
 export interface CheckInInput {
   projectId: string;
   lat: number;
@@ -521,7 +524,7 @@ export async function checkInAction(input: CheckInInput): Promise<ActionResult> 
   const nowIso = new Date().toISOString();
   const lateEval = await evaluateLateArrival(supabase, ctx.userId, date, nowIso);
 
-  const { data: row, error } = await supabase
+  const { data: row, error } = await createAdminClient()
     .from("employee_attendance")
     .insert({
       org_id: ctx.orgId,
@@ -549,7 +552,7 @@ export async function checkInAction(input: CheckInInput): Promise<ActionResult> 
     await createAdminClient().from("employee_attendance").delete().eq("id", row.id);
     return { error: "Selfie upload failed — please try again." };
   }
-  await supabase.from("employee_attendance").update({ check_in_selfie_path: selfiePath }).eq("id", row.id);
+  await createAdminClient().from("employee_attendance").update({ check_in_selfie_path: selfiePath }).eq("id", row.id);
 
   // Site shift → random location spot-checks (0045). Office punch-in — and a
   // site-flow check-in at the Office (0050 addendum) — never gets these.
@@ -694,7 +697,7 @@ export async function checkOutAction(input: CheckOutInput): Promise<ActionResult
   if (!selfiePath) return { error: "Selfie upload failed — please try again." };
 
   const totalMinutes = minutesBetween(row.check_in_at as string, nowIso);
-  const { error } = await supabase
+  const { error } = await createAdminClient()
     .from("employee_attendance")
     .update({
       check_out_at: nowIso,
@@ -1228,7 +1231,7 @@ export async function officeCheckInAction(input: OfficePunchInput): Promise<Acti
   const nowIso = new Date().toISOString();
   const lateEval = await evaluateLateArrival(supabase, ctx.userId, date, nowIso);
 
-  const { data: row, error } = await supabase
+  const { data: row, error } = await createAdminClient()
     .from("employee_attendance")
     .insert({
       org_id: ctx.orgId,
@@ -1345,7 +1348,7 @@ export async function officeCheckOutAction(input: OfficePunchInput): Promise<Act
   const newNotes = [outsideNote, earlyNote].filter(Boolean);
 
   const totalMinutes = minutesBetween(row.check_in_at as string, nowIso);
-  const { error } = await supabase
+  const { error } = await createAdminClient()
     .from("employee_attendance")
     .update({
       check_out_at: nowIso,
