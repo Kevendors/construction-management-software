@@ -406,7 +406,7 @@ export interface WeeklyOffPatternInput {
 
 function describeWeekOff(kind: WeekOffKind, dow: number, anchor: string | null): string {
   if (kind === "alternate_sunday") return `alternate Sundays (off ${anchor})`;
-  if (kind === "flexible") return "flexible (= Sundays in month)";
+  if (kind === "flexible") return "flexible (one chosen day per week)";
   return WEEKDAY_NAMES[dow];
 }
 

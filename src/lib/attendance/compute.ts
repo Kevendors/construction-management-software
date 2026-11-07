@@ -275,9 +275,9 @@ export function isHolidayFor(date: string, holidays: OrgHoliday[], isOffice: boo
  * - "alternate_sunday": every other Sunday — `anchor` is one off Sunday; a
  *   Sunday an even number of weeks from it (either direction) is off, the
  *   other Sundays are working days.
- * - "flexible": no fixed off days — the employee may skip as many days as
- *   the month has Sundays; the first that many missed days (no record) are
- *   weekly offs. Resolved per month, see weekOffDatesForMonth.
+ * - "flexible": no fixed off day — the employee chooses one day per
+ *   Monday–Sunday week (`flexOffs`, 0055). Only a chosen day is a weekly
+ *   off: missed days are never turned into weekly offs (they stay Absent).
  */
 export type WeekOffKind = "fixed" | "alternate_sunday" | "flexible";
 export const WEEK_OFF_KINDS: WeekOffKind[] = ["fixed", "alternate_sunday", "flexible"];
@@ -314,6 +314,8 @@ export interface WeekOffRule {
    */
   history?: { dow: number; from: string; kind?: WeekOffKind; anchor?: string }[];
   swaps: { workedDate: string; offDate: string }[];
+  /** Flexible: the chosen off days ("YYYY-MM-DD", at most one per Mon–Sun week) — 0055. */
+  flexOffs?: string[];
 }
 
 /** The pre-0047 behaviour: everyone is off on Sunday, no swaps. */
@@ -346,7 +348,7 @@ export function defaultDowOn(rule: WeekOffRule, date: string): number {
   return weekOffPatternOn(rule, date).dow;
 }
 
-/** Whether `date` is off under one pattern, ignoring swaps. Flexible is never off here (month-level, see weekOffDatesForMonth). */
+/** Whether `date` is off under one pattern, ignoring swaps. Flexible is never off here (chosen days, see isWeeklyOff). */
 function isOffUnderPattern(date: string, p: WeekOffPattern): boolean {
   if (p.kind === "flexible") return false;
   if (p.kind === "alternate_sunday") {
@@ -359,63 +361,67 @@ function isOffUnderPattern(date: string, p: WeekOffPattern): boolean {
 }
 
 /**
- * True when `date` is a weekly off under `rule` (a swap's off day, or the
- * default day not swapped away). Always false on a "flexible" day — those
- * offs depend on the month's records; use weekOffDatesForMonth.
+ * True when `date` is a weekly off under `rule`. On a "flexible" day: only a
+ * day the employee (or HR) chose. Otherwise a swap's off day, or the default
+ * day not swapped away.
  */
 export function isWeeklyOff(date: string, rule: WeekOffRule = SUNDAY_OFF): boolean {
+  if (weekOffPatternOn(rule, date).kind === "flexible") return Boolean(rule.flexOffs?.includes(date));
   if (rule.swaps.some((s) => s.offDate === date)) return true;
   return isOffUnderPattern(date, weekOffPatternOn(rule, date)) && !rule.swaps.some((s) => s.workedDate === date);
 }
 
 /**
- * Every weekly-off date in `month` for one member. Fixed / alternate days
- * come from isWeeklyOff. On days where "flexible" is in force, the first N
- * missed days in date order are weekly offs, N = Sundays in the month; a
- * missed day is before `today`, has no record, isn't a declared holiday for
- * the member and is on/after `startDate` when given. Missed days beyond N
- * stay working days (Absent). Days with any row never use up the allowance.
+ * Every weekly-off date in `month` for one member (isWeeklyOff per day:
+ * fixed / alternate days, swaps, and Flexible days the employee chose).
+ * Days before `startDate` are never weekly offs (they're Not Joined).
  */
-export function weekOffDatesForMonth(
-  month: string,
+export function weekOffDatesForMonth(month: string, rule: WeekOffRule, startDate?: string): Set<string> {
+  return new Set(daysOfMonth(month).filter((d) => (!startDate || d >= startDate) && isWeeklyOff(d, rule)));
+}
+
+/** Monday ("YYYY-MM-DD") of `date`'s Monday–Sunday week. */
+export function mondayOf(date: string): string {
+  const dow = dowOf(date);
+  return addDaysIso(date, dow === 0 ? -6 : 1 - dow);
+}
+
+/** "YYYY-MM-DD" shifted by `n` days (UTC arithmetic). */
+export function addDaysIso(date: string, n: number): string {
+  const [y, m, d] = date.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
+}
+
+/**
+ * Why `date` can't be a Flexible weekly off for this rule, or null. One
+ * weekly off per Monday–Sunday week: any other off day that week (another
+ * chosen day, or a fixed/swap off from before a switch to Flexible) blocks
+ * it — except `replacing`, the chosen day being moved.
+ */
+export function flexWeekOffProblem(
   rule: WeekOffRule,
-  records: EmployeeAttendance[],
+  date: string,
   holidays: OrgHoliday[],
   isOffice: boolean,
-  today: string = orgToday(),
-  startDate?: string
-): Set<string> {
-  const days = daysOfMonth(month);
-  const recorded = new Set(records.filter((r) => r.date.startsWith(month)).map((r) => r.date));
-  // Flexible allowance = Sundays in the month — only those on/after the
-  // member's start date, so a mid-month joiner gets a pro-rated allowance
-  // (joined 28 Oct → no Sundays left → no flexible offs that month).
-  let allowance = days.filter((d) => dowOf(d) === 0 && (!startDate || d >= startDate)).length;
-  const out = new Set<string>();
-  for (const d of days) {
-    if (isWeeklyOff(d, rule)) {
-      out.add(d);
-      // A fixed/alternate weekly off actually taken (not worked) earlier this
-      // month counts toward the same monthly limit, so switching to Flexible
-      // mid-month can't grant a fresh full allowance on top of it.
-      if (!recorded.has(d) && (!startDate || d >= startDate)) allowance -= 1;
-      continue;
-    }
-    if (allowance <= 0 || weekOffPatternOn(rule, d).kind !== "flexible") continue;
-    if (d < today && !recorded.has(d) && !isHolidayFor(d, holidays, isOffice) && (!startDate || d >= startDate)) {
-      out.add(d);
-      allowance -= 1;
-    }
+  replacing?: string
+): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return "Choose a valid date.";
+  if (weekOffPatternOn(rule, date).kind !== "flexible") return "That day isn't on Flexible weekly off.";
+  if (isHolidayFor(date, holidays, isOffice)) return "That day is already a company holiday.";
+  const week = mondayOf(date);
+  for (let i = 0; i < 7; i++) {
+    const d = addDaysIso(week, i);
+    if (d === date || d === replacing) continue;
+    if (isWeeklyOff(d, rule)) return `There's already a weekly off this week (${d}). Only one per week (Mon–Sun).`;
   }
-  return out;
+  return null;
 }
 
 /**
  * True when the early check-out rule doesn't apply on `date` for this member:
- * their weekly off (same weekOffDatesForMonth the month evaluation uses) or a
- * declared holiday for them (isHolidayFor). Such a day never becomes Half-Day.
- * `date` is the check-out day, which already has a row (checked in), so a
- * flexible member's month-level offs never include it.
+ * their weekly off (isWeeklyOff — incl. a chosen Flexible day they came in on)
+ * or a declared holiday for them (isHolidayFor). Such a day never becomes
+ * Half-Day.
  */
 export function isEarlyCheckoutExemptDay(
   date: string,
@@ -424,7 +430,7 @@ export function isEarlyCheckoutExemptDay(
   isOffice: boolean
 ): boolean {
   if (isHolidayFor(date, holidays, isOffice)) return true;
-  return weekOffDatesForMonth(date.slice(0, 7), rule, [], holidays, isOffice, date).has(date);
+  return isWeeklyOff(date, rule);
 }
 
 /**
@@ -572,7 +578,7 @@ export interface MonthlyAttendanceEvaluation {
   joiningMonth: boolean;
   /** Office staff: days off counted toward the 1-paid-Leave rule (explicit Leave + auto-leave + Absent marks). 0 for Site. */
   daysOffCount: number;
-  /** Every weekly-off date of the month (weekOffDatesForMonth) — incl. flexible offs, which isWeeklyOff alone can't see. */
+  /** Every weekly-off date of the month (weekOffDatesForMonth) — incl. chosen Flexible days, never before the start date. */
   weekOffDates: Set<string>;
 }
 
@@ -614,8 +620,8 @@ function badgeLabelFor(status: string): string {
  * Site staff: a missed day stays Absent, and from SITE_UNPAID_LEAVE_FROM an
  * explicit Leave is unpaid (no paid leave); before it Leave stays paid.
  *
- * Weekly offs come from weekOffDatesForMonth (so a flexible member's first N
- * missed days are offs, never missed days); pay treats them like Sundays.
+ * Weekly offs come from weekOffDatesForMonth (a Flexible member's chosen
+ * days only — missed days stay missed); pay treats them like Sundays.
  *
  * All of that only applies on/after OFFICE_AUTO_LEAVE_FROM, and missed days
  * also only from `startDate` (the member's join date, IST) when given —
@@ -645,7 +651,7 @@ export function evaluateEmployeeMonthAttendance(
     .filter((r) => r.date.startsWith(month))
     .sort((a, b) => a.date.localeCompare(b.date) || a.checkInAt.localeCompare(b.checkInAt));
 
-  const weekOffDates = weekOffDatesForMonth(month, rule, records, holidays, isOffice, today, startDate);
+  const weekOffDates = weekOffDatesForMonth(month, rule, startDate);
   // Declarative marks only — a self half_day (real punch) on a holiday is
   // handled by the half_day branch below (worked, paid in full).
   const isDeclaredHolidayRecord = (r: EmployeeAttendance) =>

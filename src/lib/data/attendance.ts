@@ -180,12 +180,14 @@ async function myWeekOff(
   supabase: Awaited<ReturnType<typeof createSupabase>>,
   userId: string
 ): Promise<WeekOffRule> {
-  const [dowRes, swapsRes, historyRes, kindRes, historyKindRes] = await Promise.all([
+  const [dowRes, swapsRes, historyRes, kindRes, historyKindRes, flexRes] = await Promise.all([
     supabase.from("memberships").select("weekly_off_dow").eq("user_id", userId).limit(1).maybeSingle(),
     supabase.from("attendance_week_off_swaps").select("user_id, worked_date, off_date").eq("user_id", userId),
     supabase.from("attendance_weekly_off_history").select("dow, effective_from").eq("user_id", userId),
     supabase.from("memberships").select("weekly_off_kind, weekly_off_anchor").eq("user_id", userId).limit(1).maybeSingle(),
     supabase.from("attendance_weekly_off_history").select("effective_from, kind, anchor").eq("user_id", userId),
+    // Chosen Flexible offs (0055) — missing table = none chosen.
+    supabase.from("attendance_flex_week_offs").select("date").eq("user_id", userId),
   ]);
   const dow = dowRes.error ? null : (dowRes.data?.weekly_off_dow as number | null | undefined);
   const kind = kindRes.error ? null : (kindRes.data as KindRow | null);
@@ -200,6 +202,7 @@ async function myWeekOff(
           historyKindRes.error ? [] : ((historyKindRes.data ?? []) as HistoryKindRow[])
         ),
     swaps: swapsRes.error ? [] : ((swapsRes.data ?? []) as SwapRow[]).map(toSwap),
+    flexOffs: flexRes.error ? [] : ((flexRes.data ?? []) as { date: string }[]).map((r) => r.date),
   };
 }
 
@@ -624,7 +627,7 @@ export async function getAttendanceAdminBoard(): Promise<AttendanceAdminBoard> {
   memRows = memRows.filter((m) => (m.is_active ?? true) && !externalIds.has(m.user_id));
 
   const ids = memRows.map((m) => m.user_id);
-  const [profRes, attRes, pmRes, holidaysRes, dowRes, swapsRes, historyRes, startRes, kindRes, historyKindRes, wfoRes] = await Promise.all([
+  const [profRes, attRes, pmRes, holidaysRes, dowRes, swapsRes, historyRes, startRes, kindRes, historyKindRes, wfoRes, flexRes] = await Promise.all([
     admin
       .from("profiles")
       .select("id, name")
@@ -648,7 +651,15 @@ export async function getAttendanceAdminBoard(): Promise<AttendanceAdminBoard> {
     admin.from("attendance_weekly_off_history").select("user_id, effective_from, kind, anchor").eq("org_id", ctx.orgId),
     // "Can work from office" (0050) — own query: a missing column = false for everyone.
     admin.from("memberships").select("user_id, can_work_from_office").eq("org_id", ctx.orgId),
+    // Chosen Flexible offs (0055) — own query: a missing table = none chosen.
+    admin.from("attendance_flex_week_offs").select("user_id, date").eq("org_id", ctx.orgId),
   ]);
+  const flexOffsById = new Map<string, string[]>();
+  if (!flexRes.error) {
+    for (const r of (flexRes.data ?? []) as { user_id: string; date: string }[]) {
+      flexOffsById.set(r.user_id, [...(flexOffsById.get(r.user_id) ?? []), r.date]);
+    }
+  }
   const wfoIds = new Set(
     wfoRes.error
       ? []
@@ -729,6 +740,7 @@ export async function getAttendanceAdminBoard(): Promise<AttendanceAdminBoard> {
         anchor: kindById.get(m.user_id)?.weekly_off_anchor ?? undefined,
         history: toWeekOffHistory(historyRowsById.get(m.user_id) ?? [], historyKindsById.get(m.user_id) ?? []),
         swaps: swapsById.get(m.user_id) ?? [],
+        flexOffs: flexOffsById.get(m.user_id) ?? [],
       },
       startDate: startById.get(m.user_id),
     }))

@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { AlertCircle, ArrowLeftRight, Building2, Download, Eye, Pencil, Plus, Search, Trash2, UserPlus } from "lucide-react";
+import { AlertCircle, ArrowLeftRight, Building2, CalendarCheck, Download, Eye, Pencil, Plus, Search, Trash2, UserPlus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -26,8 +26,11 @@ import {
   formatTime,
   isBeforeJoining,
   isDeclarativeRecord,
+  addDaysIso,
   isHolidayFor,
   isMissedCheckout,
+  mondayOf,
+  weekOffPatternOn,
   missedAbsentReason,
   orgThisMonth,
   orgToday,
@@ -49,6 +52,7 @@ import { HolidaysCard } from "./holidays-card";
 import { UnfencedSitesCard } from "./unfenced-sites-card";
 import { LiveLocationsMap } from "./live-locations-map";
 import { WeekOffSwapDialog } from "./week-off-swap-dialog";
+import { FlexWeekOffDialog, FlexWeekOffList, chosenOffInWeek } from "./flex-week-off";
 
 const STATUS_LABEL: Record<string, string> = {
   half_day: "Half Day",
@@ -98,6 +102,7 @@ export function AdminAttendanceTab({
   const [selected, setSelected] = React.useState<EmployeeAttendance | null>(null);
   const [markContext, setMarkContext] = React.useState<MarkContext | null>(null);
   const [swapOpen, setSwapOpen] = React.useState(false);
+  const [flexOpen, setFlexOpen] = React.useState(false);
   const [deletingSwap, setDeletingSwap] = React.useState<string | null>(null);
 
   const projectById = new Map(projects.map((p) => [p.id, p]));
@@ -951,10 +956,17 @@ export function AdminAttendanceTab({
                 <Badge variant="outline" className="text-[10px] font-normal">
                   {employee.isOffice ? "Office" : "Site"}
                 </Badge>
-                {weekOffUiEnabled(employee.isOffice) && (
-                  <Button size="sm" variant="outline" className="ml-auto font-normal" onClick={() => setSwapOpen(true)}>
-                    <ArrowLeftRight /> Swap weekly off
+                {/* Flexible staff have no fixed day to swap: HR marks their chosen weekly off instead. */}
+                {weekOffPatternOn(employee.weekOff, orgToday()).kind === "flexible" ? (
+                  <Button size="sm" variant="outline" className="ml-auto font-normal" onClick={() => setFlexOpen(true)}>
+                    <CalendarCheck /> Mark weekly off
                   </Button>
+                ) : (
+                  weekOffUiEnabled(employee.isOffice) && (
+                    <Button size="sm" variant="outline" className="ml-auto font-normal" onClick={() => setSwapOpen(true)}>
+                      <ArrowLeftRight /> Swap weekly off
+                    </Button>
+                  )
                 )}
               </CardTitle>
             </CardHeader>
@@ -979,6 +991,14 @@ export function AdminAttendanceTab({
               </div>
 
               <EmployeeClientVisits userId={employee.userId} from={fromDate} to={toDate} />
+
+              <FlexWeekOffList
+                userId={employee.userId}
+                rule={employee.weekOff}
+                from={fromDate}
+                to={toDate}
+                onChanged={() => router.refresh()}
+              />
 
               {/* Always listed when present (even if the swap UI is off for this
                   category), so existing swaps can still be seen and deleted. */}
@@ -1193,6 +1213,19 @@ export function AdminAttendanceTab({
           onClose={() => setSelected(null)}
           canExcuse={role === "super_admin" || role === "hr"}
           showName
+        />
+      )}
+
+      {flexOpen && employee && (
+        <FlexWeekOffDialog
+          userId={employee.userId}
+          rule={employee.weekOff}
+          holidays={board.holidays}
+          isOffice={employee.isOffice}
+          initialDate={chosenOffInWeek(employee.weekOff, orgToday()) ?? orgToday()}
+          maxDate={addDaysIso(mondayOf(orgToday()), 13)}
+          onClose={() => setFlexOpen(false)}
+          onSaved={() => router.refresh()}
         />
       )}
 

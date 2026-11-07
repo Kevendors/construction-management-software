@@ -18,6 +18,7 @@ import { currentProjectIdFrom, isSiteFlowShift, OFFICE_SITE, OFFICE_SITE_NAME } 
 import type { EmployeeAttendance } from "@/lib/types";
 import { CheckInCard } from "./check-in-card";
 import { ClientVisitCard } from "./client-visit-card";
+import { MyFlexWeekOffCard } from "./flex-week-off";
 import { CheckInFlow, type FlowMode, type FlowSuccess } from "./check-in-flow";
 import { OfficeCheckInFlow } from "./office-check-in-flow";
 import { HistoryCalendar } from "./history-calendar";
@@ -189,6 +190,8 @@ export function MyAttendance({ data }: { data: MyAttendanceData }) {
         {data.clientVisitsAllowed && (
           <ClientVisitCard visits={data.todayClientVisits} shiftOpen={isOpenSelfShift && !usesSiteFlow} />
         )}
+
+        <MyFlexWeekOffCard rule={data.weekOff} holidays={data.holidays} isOffice={data.isOffice} />
 
         <LiveTrackingStatus status={tracking.status} lastError={tracking.lastError} />
 
