@@ -27,6 +27,31 @@ export function daysElapsedIn(month: string, today: string): number {
   return 0;
 }
 
+/** Calendar days of `month` passed so far: the whole month once over, today's date while in progress, 0 if future. */
+function calendarDaysElapsedIn(month: string, today: string): number {
+  if (month < today.slice(0, 7)) return daysOfMonth(month).length;
+  if (month === today.slice(0, 7)) return Number(today.slice(8, 10));
+  return 0;
+}
+
+/**
+ * Not Joined days actually charged. The 30-day basis would otherwise eat a
+ * worked day of someone who joins partway through a 31-day month (joins
+ * 28 Oct, works the 4 days to the 31st → 30 − 27 = 3 instead of 4), so the
+ * days from joining are counted as the calendar days they really were,
+ * capped at 30. Never charges more than before, so February joiners keep
+ * today's pay and full-month staff (no Not Joined days) are unchanged.
+ */
+export function notJoinedCharged(month: string, today: string, notJoined: number): number {
+  if (notJoined <= 0) return 0;
+  const daysElapsed = daysElapsedIn(month, today);
+  const daysSinceJoining = Math.max(
+    daysElapsed - notJoined,
+    Math.min(SALARY_BASIS_DAYS, calendarDaysElapsedIn(month, today) - notJoined)
+  );
+  return Math.max(0, daysElapsed - daysSinceJoining);
+}
+
 export interface MemberMatch {
   member: AttendanceMember | undefined;
   /** How the attendance member was found — "profile" (linked login) or "name" (unlinked, unique name). */
@@ -65,7 +90,7 @@ export interface MemberPaidDays {
   summary: MonthlySummary;
   /** Salary days elapsed (daysElapsedIn). */
   daysElapsed: number;
-  /** Absent + 0.5 × Half-Day + Not Joined. */
+  /** Absent + 0.5 × Half-Day + Not Joined (as charged — see notJoinedCharged). */
   unpaidDays: number;
   /** Salary days to pay (0…30). 0 when there's no attendance at all this month. */
   paidDays: number;
@@ -77,7 +102,8 @@ export interface MemberPaidDays {
  * Paid days for ONE attendance member from their own records — the single
  * formula behind payroll, the admin attendance grid total and the My
  * Attendance "Paid Days (salary)" chip (Fixed Day Basis):
- * paidDays = max(0, daysElapsed − (Absent + 0.5 × Half-Day + Not Joined)).
+ * paidDays = max(0, daysElapsed − (Absent + 0.5 × Half-Day + Not Joined)),
+ * Not Joined as charged by notJoinedCharged (31-day-month joiners).
  * A member with no attendance rows at all this month gets 0 (deliberate: a
  * missing month must never silently become pay). `records` may contain other
  * months; only `month`'s rows are used.
@@ -94,7 +120,8 @@ export function paidDaysFromRecords(input: {
   const records = input.records.filter((r) => r.date.startsWith(input.month));
   const summary = monthlySummary(records, input.month, input.today, input.holidays, input.isOffice, input.weekOff, input.startDate);
   const daysElapsed = daysElapsedIn(input.month, input.today);
-  const unpaidDays = summary.absent + summary.halfDay * 0.5 + summary.notJoined;
+  const unpaidDays =
+    summary.absent + summary.halfDay * 0.5 + notJoinedCharged(input.month, input.today, summary.notJoined);
   const noAttendance = records.length === 0;
   return {
     recordCount: records.length,
